@@ -1,0 +1,320 @@
+{% extends "base.html" %} {% block title %}Pelidum MPAC - You lost, choom?{% endblock %}
+{% block content %}
+<style>
+  :root {
+    --bg: #0c0f12;
+    --ink: #e7e7e7;
+    --muted: #8b93a1;
+    --gold: #aa914f;
+    --gold-2: #cca139;
+    --accent: #1e293b;
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    color: var(--ink);
+    background: radial-gradient(1200px 800px at 20% 10%,
+        #131720 0%,
+        #0b0e13 45%,
+        #07090d 100%),
+      linear-gradient(135deg,
+        rgba(170, 145, 79, 0.12),
+        rgba(204, 161, 57, 0.06));
+    display: grid;
+    place-items: center;
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+      Inter, "Helvetica Neue", Arial;
+  }
+
+  /* make canvas sit just behind content, not behind the page */
+  #bg {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    /* <-- not -1 */
+    pointer-events: none;
+    /* clicks pass through */
+  }
+
+  .nf-wrap,
+  main,
+  header,
+  footer {
+    position: relative;
+    z-index: 1;
+  }
+
+  .wrap {
+    width: min(100%, 920px);
+    padding: 56px 24px;
+    text-align: center;
+  }
+
+  .glitch {
+    position: relative;
+    display: inline-block;
+    font-size: clamp(48px, 8vw, 132px);
+    font-weight: 800;
+    text-transform: uppercase;
+    color: var(--ink);
+    filter: drop-shadow(0 18px 36px rgba(0, 0, 0, 0.35));
+    isolation: isolate;
+  }
+
+  .glitch::before,
+  .glitch::after {
+    content: attr(data-text);
+    position: absolute;
+    inset: 0;
+    mix-blend-mode: screen;
+    opacity: 0;
+  }
+
+  .glitch.glitching::before,
+  .glitch.glitching::after {
+    opacity: 0.8;
+  }
+
+  .glitch::before {
+    color: #8df;
+    transform: translate(-2px, 0);
+    text-shadow: -1px 0 0 #0ff;
+  }
+
+  .glitch::after {
+    color: #f89;
+    transform: translate(2px, 0);
+    text-shadow: 1px 0 0 #f0f;
+  }
+
+  .glitch.glitching::before {
+    animation: shiftX 0.6s steps(12), clipA 0.6s steps(15);
+  }
+
+  .glitch.glitching::after {
+    animation: shiftY 0.6s steps(12), clipB 0.6s steps(15);
+  }
+
+  @keyframes shiftX {
+    50% {
+      transform: translate(-4px, 0);
+    }
+  }
+
+  @keyframes shiftY {
+    50% {
+      transform: translate(4px, 0);
+    }
+  }
+
+  @keyframes clipA {
+    0% {
+      clip-path: inset(0 0 84% 0);
+    }
+
+    25% {
+      clip-path: inset(10% 0 72% 0);
+    }
+
+    50% {
+      clip-path: inset(44% 0 44% 0);
+    }
+
+    75% {
+      clip-path: inset(72% 0 10% 0);
+    }
+
+    100% {
+      clip-path: inset(0 0 84% 0);
+    }
+  }
+
+  @keyframes clipB {
+    0% {
+      clip-path: inset(84% 0 0 0);
+    }
+
+    25% {
+      clip-path: inset(20% 0 40% 0);
+    }
+
+    50% {
+      clip-path: inset(62% 0 8% 0);
+    }
+
+    75% {
+      clip-path: inset(8% 0 62% 0);
+    }
+
+    100% {
+      clip-path: inset(84% 0 0 0);
+    }
+  }
+
+  .tag {
+    margin-top: 14px;
+    font-size: clamp(14px, 2.4vw, 18px);
+    color: var(--muted);
+  }
+
+  .rule {
+    width: min(680px, 86%);
+    margin: 28px auto 36px;
+    height: 2px;
+    background: linear-gradient(90deg,
+        transparent,
+        var(--gold) 15%,
+        var(--gold-2) 50%,
+        var(--gold) 85%,
+        transparent);
+    opacity: 0.75;
+  }
+
+  .actions {
+    display: inline-flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .btn {
+    border: 1px solid color-mix(in oklab, var(--gold) 80%, black 22%);
+    padding: 12px 16px;
+    border-radius: 14px;
+    background: linear-gradient(180deg,
+        color-mix(in oklab, var(--gold) 18%, black 86%),
+        color-mix(in oklab, var(--gold-2) 22%, black 78%));
+    color: var(--ink);
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+  }
+
+  .foot {
+    margin-top: 36px;
+    font-size: 13px;
+    color: var(--muted);
+    opacity: 0.85;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+
+    .glitch::before,
+    .glitch::after {
+      animation: none !important;
+      opacity: 0 !important;
+    }
+
+    canvas {
+      display: none;
+    }
+  }
+</style>
+<div class="nf-wrap">
+  <canvas id="bg"></canvas>
+  <main class="wrap" role="main" aria-labelledby="t">
+    <h1 id="t" class="glitch" data-text="404">404</h1>
+    <p class="tag">This path lies beyond the Blackwall...</p>
+    <div class="rule"></div>
+    <div class="actions">
+      <a class="btn" href="{{ url_for('home') }}">Return to safety</a>
+      <a class="btn" href="{{ url_for('help') }}">Report this glitch</a>
+    </div>
+    <p class="foot">Pelidum | MPAC</p>
+  </main>
+</div>
+{% endblock %} {% block scripts %}
+<script>
+  // Particle wall
+  (function () {
+    const c = document.getElementById("bg");
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const ctx = c.getContext("2d");
+    let W,
+      H,
+      t = 0;
+    const N = 180;
+    const P = [];
+    function resize() {
+      W = c.width = innerWidth * dpr;
+      H = c.height = innerHeight * dpr;
+      c.style.width = innerWidth + "px";
+      c.style.height = innerHeight + "px";
+    }
+    addEventListener("resize", resize);
+    resize();
+    function rand(a, b) {
+      return a + Math.random() * (b - a);
+    }
+    for (let i = 0; i < N; i++) {
+      P.push({
+        x: rand(0.15 * W, 0.85 * W),
+        y: rand(0.05 * H, 0.95 * H),
+        s: rand(0.4, 1.6) * dpr,
+        ph: rand(0, Math.PI * 2),
+        vx: rand(-0.08, 0.08) * dpr,
+        vy: rand(-0.22, -0.04) * dpr,
+      });
+    }
+    function step() {
+      t += 0.005;
+      ctx.clearRect(0, 0, W, H);
+      const g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, "rgba(170,145,79,0.05)");
+      g.addColorStop(0.5, "rgba(0,0,0,0)");
+      g.addColorStop(1, "rgba(204,161,57,0.05)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+      for (let i = 0; i < N; i++) {
+        const p = P[i];
+        const sway = Math.sin(p.y * 0.002 + t * 4 + p.ph) * 0.6 * dpr;
+        p.x += p.vx + sway * 0.02;
+        p.y += p.vy;
+        if (p.y < -8 * dpr) {
+          p.y = H + rand(0, 40 * dpr);
+          p.x = rand(0.15 * W, 0.85 * W);
+        }
+        const w = p.s * (1 + Math.sin(t * 10 + p.ph) * 0.4);
+        const h = p.s * (2 + Math.cos(t * 6 + p.ph) * 0.8);
+        ctx.globalCompositeOperation = "lighter";
+        ctx.fillStyle = "rgba(17,24,39,0.5)";
+        ctx.fillRect(p.x - w * 2, p.y - h * 2, w * 4, h * 4);
+        ctx.fillStyle = "rgba(255,255,255,0.9)";
+        ctx.fillRect(p.x - w / 2, p.y - h / 2, w, h);
+        const goldAlpha = 0.15 + 0.12 * Math.sin(t * 8 + p.ph);
+        ctx.fillStyle = `rgba(204,161,57,${goldAlpha.toFixed(3)})`;
+        ctx.fillRect(p.x - w / 2, p.y - h / 2, w, h);
+      }
+      requestAnimationFrame(step);
+    }
+    const mq = matchMedia("(prefers-reduced-motion: reduce)");
+    if (!mq.matches) requestAnimationFrame(step);
+  })();
+
+  // Intermittent glitch trigger
+  (function () {
+    const glitchEl = document.querySelector(".glitch");
+    function triggerGlitch() {
+      glitchEl.classList.add("glitching");
+      setTimeout(() => glitchEl.classList.remove("glitching"), 700);
+      const next = 2000 + Math.random() * 6000; // between 2-8s
+      setTimeout(triggerGlitch, next);
+    }
+    triggerGlitch();
+  })();
+</script>
+{% endblock %}

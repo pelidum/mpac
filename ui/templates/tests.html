@@ -1,0 +1,659 @@
+{% extends "base.html" %}
+{% block title %}Pelidum MPAC - Tests{% endblock %}
+
+{% block styles %}
+<style>
+  .test-card {
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  }
+
+  .test-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.13);
+    border-color: var(--color-accent-secondary) !important;
+  }
+
+  @keyframes cardIn {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .card-animate {
+    animation: cardIn 0.18s ease forwards;
+  }
+
+  .filter-sticky {
+    position: sticky;
+    top: 66px;
+    /* app-bar (64px) + 2px border */
+    z-index: 50;
+  }
+
+  .page-btn {
+    min-width: 2rem;
+    height: 2rem;
+    padding: 0 0.5rem;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    background: var(--color-bg-secondary);
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+  }
+
+  .page-btn:hover:not(:disabled):not(.page-btn-active) {
+    background-color: rgba(var(--color-accent-primary-rgb), 0.1);
+    border-color: var(--color-accent-secondary);
+    color: var(--color-accent-secondary);
+  }
+
+  .page-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .page-btn-active {
+    background-color: var(--color-accent-secondary) !important;
+    color: var(--color-text-on-accent) !important;
+    border-color: var(--color-accent-secondary) !important;
+    cursor: default;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── Server-side aggregates ─────────────────────────────── #}
+{% set eval_count = test_pbs | selectattr('type', 'equalto', 1) | list | length %}
+{% set survey_count = test_pbs | selectattr('type', 'equalto', 2) | list | length %}
+{% set total_items = test_pbs | sum(attribute='item_count') %}
+
+<div class="max-w-[1280px] mx-auto">
+
+  {# ── Page header ───────────────────────────────────────── #}
+  <div class="flex justify-between items-center mb-5">
+    <div>
+      <h1 class="content-title">Tests</h1>
+      <p class="mt-1 text-sm muted">Evaluation and survey test suites</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" onclick="document.getElementById('import-file').click()" class="button-secondary">
+        <span class="material-icons text-[20px]">upload_file</span>
+        Import
+      </button>
+      <input type="file" id="import-file" accept=".zip" class="hidden" onchange="importTestArchive(this)">
+      <a href="{{ url_for('create_test') }}" class="button-primary">
+        <span class="material-icons text-[20px]">add</span>
+        New Test
+      </a>
+    </div>
+  </div>
+
+  {# ── Summary stats ─────────────────────────────────────── #}
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+    <div class="card p-4 flex items-center gap-3 !mb-0">
+      <div
+        class="flex items-center justify-center w-10 h-10 rounded-lg bg-[var(--color-accent-secondary)]/10 flex-shrink-0">
+        <span class="material-icons text-[20px] text-[var(--color-accent-secondary)]">assignment</span>
+      </div>
+      <div>
+        <p id="stat-total" class="text-xl font-bold" data-full="{{ test_pbs | length }}">{{ test_pbs | length }}</p>
+        <p class="text-xs muted"><span id="stat-total-label">Total Tests</span></p>
+      </div>
+    </div>
+    <div class="card p-4 flex items-center gap-3 !mb-0">
+      <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-500/10 flex-shrink-0">
+        <span class="material-icons text-[20px] text-blue-500">fact_check</span>
+      </div>
+      <div>
+        <p id="stat-eval" class="text-xl font-bold" data-full="{{ eval_count }}">{{ eval_count }}</p>
+        <p class="text-xs muted">Evaluations</p>
+      </div>
+    </div>
+    <div class="card p-4 flex items-center gap-3 !mb-0">
+      <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-purple-500/10 flex-shrink-0">
+        <span class="material-icons text-[20px] text-purple-500">poll</span>
+      </div>
+      <div>
+        <p id="stat-survey" class="text-xl font-bold" data-full="{{ survey_count }}">{{ survey_count }}</p>
+        <p class="text-xs muted">Surveys</p>
+      </div>
+    </div>
+    <div class="card p-4 flex items-center gap-3 !mb-0">
+      <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-green-500/10 flex-shrink-0">
+        <span class="material-icons text-[20px] text-green-500">format_list_numbered</span>
+      </div>
+      <div>
+        <p id="stat-items" class="text-xl font-bold" data-full="{{ '{:,}'.format(total_items) }}">{{
+          "{:,}".format(total_items) }}</p>
+        <p class="text-xs muted">Total Items</p>
+      </div>
+    </div>
+  </div>
+
+  {# ── Filters (sticky) ──────────────────────────────────── #}
+  <div class="card p-4 mb-5 filter-sticky !mb-0" style="margin-bottom: 20px;">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+      <div class="lg:col-span-2">
+        <label for="filterName" class="block text-xs font-semibold mb-1 label-bold">Search</label>
+        <div class="relative">
+          <span
+            class="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-[var(--color-text-secondary)] pointer-events-none select-none">search</span>
+          <input type="text" id="filterName" class="input-field w-full pl-9 text-sm" placeholder="Name or description…">
+        </div>
+      </div>
+      <div>
+        <label for="filterType" class="block text-xs font-semibold mb-1 label-bold">Type</label>
+        <select id="filterType" class="select-field w-full text-sm">
+          <option value="">All Types</option>
+          <option value="EVALUATION">Evaluation</option>
+          <option value="SURVEY">Survey</option>
+        </select>
+      </div>
+      <div>
+        <label for="filterProvider" class="block text-xs font-semibold mb-1 label-bold">Provider</label>
+        <select id="filterProvider" class="select-field w-full text-sm">
+          <option value="">All Providers</option>
+          {% for provider in test_pbs | map(attribute='provider') | unique | sort %}
+          {% if provider %}
+          <option value="{{ provider | lower }}">{{ provider }}</option>
+          {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex gap-2">
+        <div class="flex-1">
+          <label for="sortBy" class="block text-xs font-semibold mb-1 label-bold">Sort</label>
+          <select id="sortBy" class="select-field w-full text-sm">
+            <option value="name-asc">Name A → Z</option>
+            <option value="name-desc">Name Z → A</option>
+            <option value="date-desc">Newest First</option>
+            <option value="date-asc">Oldest First</option>
+            <option value="items-desc">Most Items</option>
+          </select>
+        </div>
+        <div class="flex items-end">
+          <button id="clearFilters" class="button-secondary !px-3 flex-shrink-0" style="height:38px;"
+            title="Clear filters">
+            <span class="material-icons text-[18px]">clear</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Results bar ───────────────────────────────────────── #}
+  <div class="flex justify-between items-center mb-3 px-0.5">
+    <div>
+    </div>
+
+    {# ── Cards grid ────────────────────────────────────────── #}
+    <div id="testsGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      {% for test_pb in test_pbs %}
+      {# resolve type metadata #}
+      {% if test_pb.type == 1 %}
+      {% set type_key = 'EVALUATION' %}
+      {% set type_label = 'Evaluation' %}
+      {% set type_color = 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 ring-blue-700/10' %}
+      {% elif test_pb.type == 2 %}
+      {% set type_key = 'SURVEY' %}
+      {% set type_label = 'Survey' %}
+      {% set type_color = 'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 ring-purple-700/10'
+      %}
+      {% else %}
+      {% set type_key = 'UNSPECIFIED' %}
+      {% set type_label = 'Unspecified' %}
+      {% set type_color = 'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 ring-gray-500/10' %}
+      {% endif %}
+      {% set mod_dt = test_pb.modified_at_utc.ToDatetime() %}
+
+      <div class="test-card card flex flex-col !p-4 !mb-0 border border-[var(--color-border)]"
+        data-name="{{ test_pb.name | lower }}" data-desc="{{ test_pb.description | lower }}" data-type="{{ type_key }}"
+        data-provider="{{ test_pb.provider | lower }}"
+        data-created="{{ test_pb.created_at_utc.ToDatetime().strftime('%Y-%m-%dT%H:%M:%S') }}"
+        data-items="{{ test_pb.item_count }}">
+
+        {# Header: name + type badge #}
+        <div class="flex justify-between items-start gap-2 mb-2">
+          <h3 class="text-sm font-semibold text-[var(--color-text-primary)] leading-snug flex-1 line-clamp-2">
+            {{ test_pb.name }}
+          </h3>
+          <span
+            class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset flex-shrink-0 {{ type_color }}">
+            {{ type_label }}
+          </span>
+        </div>
+
+        {# Description #}
+        {% if test_pb.description %}
+        <p class="text-xs muted line-clamp-2 mb-3 leading-relaxed" title="{{ test_pb.description }}">
+          {{ test_pb.description }}
+        </p>
+        {% else %}
+        <div class="mb-3"></div>
+        {% endif %}
+
+        {# Meta rows #}
+        <div class="flex-1 space-y-1.5 text-xs muted">
+          <div class="flex items-center gap-1.5">
+            <span class="material-icons text-[13px] text-[var(--color-accent-secondary)]">source</span>
+            <span class="font-medium text-[var(--color-accent-secondary)] truncate">{{ test_pb.provider or '—' }}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1.5">
+              <span class="material-icons text-[13px]">format_list_numbered</span>
+              <span>{{ "{:,}".format(test_pb.item_count) }} items</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="material-icons text-[13px]">schedule</span>
+              <span>{{ test_pb.created_at_utc.ToDatetime().strftime('%Y-%m-%d') }}</span>
+            </div>
+          </div>
+          {% if mod_dt.year > 1970 %}
+          <div class="flex items-center gap-1.5">
+            <span class="material-icons text-[13px]">edit_calendar</span>
+            <span>Updated {{ mod_dt.strftime('%Y-%m-%d') }}</span>
+          </div>
+          {% endif %}
+        </div>
+
+        {# Labels #}
+        {% if test_pb.labels %}
+        <div class="flex flex-wrap gap-1 mt-3">
+          {% for label in test_pb.labels %}
+          <span
+            class="inline-flex items-center rounded-full bg-[var(--color-accent-secondary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-accent-secondary)]">
+            {{ label }}
+          </span>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {# Footer #}
+        <div class="mt-3 pt-3 border-t border-[var(--color-border)] flex justify-end">
+          <a href="{{ url_for('test_details', test_id=test_pb.id) }}"
+            class="text-[var(--color-accent-secondary)] hover:underline text-xs font-semibold flex items-center gap-1 group">
+            View Details
+            <span
+              class="material-icons text-[14px] transition-transform group-hover:translate-x-0.5">arrow_forward</span>
+          </a>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {# ── Empty state ───────────────────────────────────────── #}
+    <div id="noResults" class="card p-12 text-center hidden">
+      <span class="material-icons text-5xl muted block mb-3">search_off</span>
+      <h3 class="text-lg font-semibold mb-1">No tests found</h3>
+      <p class="text-sm muted">Try adjusting your search or filters</p>
+    </div>
+
+    {# ── Pagination ────────────────────────────────────────── #}
+    <div id="paginationBar" class="flex justify-center items-center gap-1.5 mt-6 mb-4 hidden">
+      <button id="prevPage" class="page-btn" aria-label="Previous page">
+        <span class="material-icons text-[18px]">chevron_left</span>
+      </button>
+      <div id="pageNumbers" class="flex gap-1"></div>
+      <button id="nextPage" class="page-btn" aria-label="Next page">
+        <span class="material-icons text-[18px]">chevron_right</span>
+      </button>
+    </div>
+
+    {# ── Load-all banner (shown when server truncated results) #}
+    {% if is_truncated %}
+    <div class="flex justify-center mt-4 mb-8">
+      <div class="text-center">
+        <p class="text-sm muted mb-3">Showing {{ total_shown }} most recent tests. There may be more.</p>
+        <a href="{{ url_for('tests', show_all='true') }}" class="button-secondary">
+          <span class="material-icons text-[20px]">expand_more</span>
+          Load All Tests
+        </a>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+  {% endblock %}
+
+  {% block scripts %}
+  <script>
+    (function () {
+      'use strict';
+
+      // ── State ──────────────────────────────────────────────
+      let currentPage = 1;
+      const pageSize = 50;
+      let filteredCards = [];
+
+      // ── Elements ───────────────────────────────────────────
+      const filterName = document.getElementById('filterName');
+      const filterType = document.getElementById('filterType');
+      const filterProvider = document.getElementById('filterProvider');
+      const sortBy = document.getElementById('sortBy');
+      const clearBtn = document.getElementById('clearFilters');
+      const grid = document.getElementById('testsGrid');
+      const noResults = document.getElementById('noResults');
+      const paginationBar = document.getElementById('paginationBar');
+      const pageNumbers = document.getElementById('pageNumbers');
+      const prevBtn = document.getElementById('prevPage');
+      const nextBtn = document.getElementById('nextPage');
+
+      const allCards = Array.from(document.querySelectorAll('.test-card'));
+
+      const statTotal = document.getElementById('stat-total');
+      const statEval = document.getElementById('stat-eval');
+      const statSurvey = document.getElementById('stat-survey');
+      const statItems = document.getElementById('stat-items');
+      const statTotalLabel = document.getElementById('stat-total-label');
+
+      // ── URL param plumbing ─────────────────────────────────
+      // Filters + sort survive as query-string params so any view is shareable.
+      const PARAM_KEYS = {
+        search: 'q',
+        type: 'type',
+        provider: 'provider',
+        sort: 'sort',
+        page: 'page',
+      };
+
+      function readParamsIntoUI() {
+        const p = new URLSearchParams(window.location.search);
+        if (p.has(PARAM_KEYS.search)) filterName.value = p.get(PARAM_KEYS.search);
+        if (p.has(PARAM_KEYS.type)) filterType.value = p.get(PARAM_KEYS.type);
+        if (p.has(PARAM_KEYS.provider)) filterProvider.value = p.get(PARAM_KEYS.provider);
+        if (p.has(PARAM_KEYS.sort)) sortBy.value = p.get(PARAM_KEYS.sort);
+        const pg = parseInt(p.get(PARAM_KEYS.page) || '1', 10);
+        if (pg > 0) currentPage = pg;
+      }
+
+      function writeParamsFromUI() {
+        const p = new URLSearchParams();
+        if (filterName.value.trim()) p.set(PARAM_KEYS.search, filterName.value.trim());
+        if (filterType.value) p.set(PARAM_KEYS.type, filterType.value);
+        if (filterProvider.value) p.set(PARAM_KEYS.provider, filterProvider.value);
+        if (sortBy.value !== 'name-asc') p.set(PARAM_KEYS.sort, sortBy.value);
+        if (currentPage > 1) p.set(PARAM_KEYS.page, String(currentPage));
+        const qs = p.toString();
+        const next = window.location.pathname + (qs ? '?' + qs : '');
+        if (next !== window.location.pathname + window.location.search) {
+          history.replaceState(null, '', next);
+        }
+      }
+
+      // ── Stat cards reflect the active filter set ───────────
+      function updateStats(filtered) {
+        const anyFilter =
+          filterName.value.trim() !== '' ||
+          filterType.value !== '' ||
+          filterProvider.value !== '';
+
+        const evalN = filtered.filter(c => c.dataset.type === 'EVALUATION').length;
+        const surveyN = filtered.filter(c => c.dataset.type === 'SURVEY').length;
+        const itemsN = filtered.reduce((s, c) => s + (parseInt(c.dataset.items || '0', 10) || 0), 0);
+
+        statTotal.textContent = filtered.length.toLocaleString();
+        statEval.textContent = evalN.toLocaleString();
+        statSurvey.textContent = surveyN.toLocaleString();
+        statItems.textContent = itemsN.toLocaleString();
+        statTotalLabel.textContent = anyFilter ? `Matching Tests (of ${statTotal.dataset.full})` : 'Total Tests';
+      }
+
+      // ── Filter + Sort ──────────────────────────────────────
+      function getFilteredSorted() {
+        const name = filterName.value.toLowerCase().trim();
+        const type = filterType.value;
+        const provider = filterProvider.value.toLowerCase().trim();
+        const sort = sortBy.value;
+
+        let cards = allCards.filter(c => {
+          const nameHit = !name || (c.dataset.name || '').includes(name) || (c.dataset.desc || '').includes(name);
+          const typeHit = !type || c.dataset.type === type;
+          const providerHit = !provider || (c.dataset.provider || '').includes(provider);
+          return nameHit && typeHit && providerHit;
+        });
+
+        cards.sort((a, b) => {
+          const providerCmp = (a.dataset.provider || '').localeCompare(b.dataset.provider || '');
+          if (providerCmp !== 0) return providerCmp;
+          switch (sort) {
+            case 'name-asc': return (a.dataset.name || '').localeCompare(b.dataset.name || '');
+            case 'name-desc': return (b.dataset.name || '').localeCompare(a.dataset.name || '');
+            case 'date-desc': return (b.dataset.created || '').localeCompare(a.dataset.created || '');
+            case 'date-asc': return (a.dataset.created || '').localeCompare(b.dataset.created || '');
+            case 'items-desc': return parseInt(b.dataset.items || '0') - parseInt(a.dataset.items || '0');
+            default: return 0;
+          }
+        });
+
+        return cards;
+      }
+
+      // ── Keep the Provider dropdown in sync with the other filters ──
+      // Rebuilds the dropdown so it only lists providers with matches under the
+      // current name + type selection. `option[hidden]` isn't reliably honoured
+      // in native selects across browsers, so we drop/re-add instead. The
+      // currently selected provider is kept (labelled "no matches") so users
+      // can see why the grid is empty rather than a silently-cleared filter.
+      const PROVIDER_OPTIONS = Array.from(filterProvider.options).map(o => ({
+        value: o.value, label: o.textContent,
+      }));
+
+      function refreshProviderOptions() {
+        const name = filterName.value.toLowerCase().trim();
+        const type = filterType.value;
+        const currentProvider = filterProvider.value;
+
+        const valid = new Set();
+        allCards.forEach(c => {
+          const nameHit = !name || (c.dataset.name || '').includes(name) || (c.dataset.desc || '').includes(name);
+          const typeHit = !type || c.dataset.type === type;
+          if (nameHit && typeHit) valid.add(c.dataset.provider || '');
+        });
+
+        filterProvider.innerHTML = '';
+        PROVIDER_OPTIONS.forEach(({ value, label }) => {
+          const isAll = value === '';
+          const isValid = valid.has(value);
+          const isSelected = value === currentProvider;
+          if (!isAll && !isValid && !isSelected) return; // drop entirely
+          const opt = document.createElement('option');
+          opt.value = value;
+          opt.textContent = (!isAll && !isValid && isSelected) ? `${label} (no matches)` : label;
+          if (isSelected) opt.selected = true;
+          filterProvider.appendChild(opt);
+        });
+      }
+
+      // ── Render page ────────────────────────────────────────
+      function renderPage() {
+        refreshProviderOptions();
+        filteredCards = getFilteredSorted();
+        updateStats(filteredCards);
+        writeParamsFromUI();
+        const total = filteredCards.length;
+        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+        if (currentPage > totalPages) currentPage = totalPages;
+
+        const start = (currentPage - 1) * pageSize;
+        const end = Math.min(start + pageSize, total);
+        const pageCards = filteredCards.slice(start, end);
+
+        // Remove old provider headers
+        grid.querySelectorAll('.provider-group-header').forEach(h => h.remove());
+
+        // Hide every card first
+        allCards.forEach(c => c.classList.add('hidden'));
+
+        // Group page cards by provider, preserving order
+        const groups = [];
+        const seen = {};
+        pageCards.forEach(card => {
+          const p = card.dataset.provider || '';
+          if (!seen[p]) { seen[p] = true; groups.push({ provider: p, cards: [] }); }
+          groups[groups.length - 1].cards.push(card);
+        });
+
+        // Re-append with provider headers
+        let animIdx = 0;
+        groups.forEach(({ provider, cards }, groupIdx) => {
+          const header = document.createElement('div');
+          header.className = 'col-span-full provider-group-header';
+          header.style.cssText = `
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--color-text-primary);
+        padding: ${groupIdx === 0 ? '8px' : '28px'} 0 12px;
+        margin-bottom: 4px;
+        background-image: linear-gradient(to right, transparent, var(--color-border) 15%, var(--color-border) 85%, transparent);
+        background-repeat: no-repeat;
+        background-position: bottom;
+        background-size: 100% 1px;
+      `;
+          header.textContent = provider || 'Unknown';
+          grid.appendChild(header);
+          cards.forEach(card => {
+            card.classList.remove('hidden', 'card-animate');
+            void card.offsetWidth;
+            card.classList.add('card-animate');
+            card.style.animationDelay = (animIdx++ * 20) + 'ms';
+            grid.appendChild(card);
+          });
+        });
+
+        // Empty state
+        if (total === 0) {
+          noResults.classList.remove('hidden');
+          grid.style.display = 'none';
+          paginationBar.classList.add('hidden');
+        } else {
+          noResults.classList.add('hidden');
+          grid.style.display = '';
+
+          if (totalPages <= 1) {
+            paginationBar.classList.add('hidden');
+          } else {
+            paginationBar.classList.remove('hidden');
+            renderPageNumbers(totalPages);
+            prevBtn.disabled = currentPage === 1;
+            nextBtn.disabled = currentPage === totalPages;
+          }
+        }
+      }
+
+      // ── Page number buttons ────────────────────────────────
+      function renderPageNumbers(totalPages) {
+        pageNumbers.innerHTML = '';
+
+        const pages = buildPageRange(currentPage, totalPages);
+
+        pages.forEach(p => {
+          if (p === '…') {
+            const el = document.createElement('span');
+            el.textContent = '…';
+            el.className = 'px-1 text-sm muted self-center';
+            pageNumbers.appendChild(el);
+            return;
+          }
+          const btn = document.createElement('button');
+          btn.textContent = p;
+          btn.className = 'page-btn' + (p === currentPage ? ' page-btn-active' : '');
+          btn.setAttribute('aria-label', `Page ${p}`);
+          if (p !== currentPage) {
+            btn.addEventListener('click', () => { currentPage = p; renderPage(); scrollToGrid(); });
+          }
+          pageNumbers.appendChild(btn);
+        });
+      }
+
+      function buildPageRange(cur, total) {
+        if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+        const pages = [1];
+        if (cur > 3) pages.push('…');
+        for (let i = Math.max(2, cur - 1); i <= Math.min(total - 1, cur + 1); i++) pages.push(i);
+        if (cur < total - 2) pages.push('…');
+        pages.push(total);
+        return pages;
+      }
+
+      function scrollToGrid() {
+        grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+
+      // ── Debounce helper ────────────────────────────────────
+      function debounce(fn, ms) {
+        let t;
+        return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+      }
+
+      // ── Event listeners ────────────────────────────────────
+      filterName.addEventListener('input', debounce(() => { currentPage = 1; renderPage(); }, 200));
+      filterProvider.addEventListener('change', () => { currentPage = 1; renderPage(); });
+      filterType.addEventListener('change', () => { currentPage = 1; renderPage(); });
+      sortBy.addEventListener('change', () => { renderPage(); });
+
+      prevBtn.addEventListener('click', () => {
+        if (currentPage > 1) { currentPage--; renderPage(); scrollToGrid(); }
+      });
+      nextBtn.addEventListener('click', () => {
+        const total = filteredCards.length;
+        if (currentPage < Math.ceil(total / pageSize)) { currentPage++; renderPage(); scrollToGrid(); }
+      });
+
+      clearBtn.addEventListener('click', () => {
+        filterName.value = '';
+        filterType.value = '';
+        filterProvider.value = '';
+        sortBy.value = 'name-asc';
+        currentPage = 1;
+        renderPage();
+      });
+
+      // ── Initial render ─────────────────────────────────────
+      readParamsIntoUI();
+      renderPage();
+    })();
+
+    async function importTestArchive(input) {
+      const file = input.files[0];
+      if (!file) return;
+      input.value = '';
+
+      const form = new FormData();
+      form.append('file', file);
+
+      const btn = input.previousElementSibling;
+      const origHTML = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="material-icons text-[20px] animate-spin">refresh</span> Importing...';
+
+      try {
+        const resp = await fetch('/tests/import', { method: 'POST', body: form });
+        const data = await resp.json();
+        if (resp.ok && data.test_id) {
+          window.location.href = '/tests/' + data.test_id;
+        } else {
+          alert(data.error || 'Import failed');
+        }
+      } catch (e) {
+        alert('Import failed: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = origHTML;
+      }
+    }
+  </script>
+  {% endblock %}

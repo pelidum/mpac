@@ -1,0 +1,14 @@
+{
+    "id": "weft",
+    "name": "WEFT: Aircraft Visual Identification Testing",
+    "description": "Testing visual LLM efficacy using OSINT dataset of Russian / US military aircraft. WEFT stands for: Wings, Engine, Fuselage, Tail.",
+    "owner": "mike@pelidum.com",
+    "provider": "pelidum",
+    "labels": [
+        "vision",
+        "weft",
+        "aircraft",
+        "medium"
+    ],
+    "type": "EVALUATION"
+}

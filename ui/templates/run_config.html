@@ -1,0 +1,558 @@
+{% extends "base.html" %}
+{% block title %}Pelidum MPAC - Start Test Run{% endblock %}
+
+{% block content %}
+{% set daily_over = user_daily_limit_usd > 0 and user_daily_usd >= user_daily_limit_usd %}
+{% set monthly_over = user_monthly_limit_usd > 0 and user_monthly_usd >= user_monthly_limit_usd %}
+{% if daily_over or monthly_over %}
+<div id="budget-toast"
+    class="fixed top-[118px] right-4 z-50 max-w-sm w-full bg-white dark:bg-gray-900 border border-red-300 dark:border-red-700 rounded-xl shadow-2xl p-4 flex gap-3 items-start fade-in-up">
+    <span class="material-icons text-red-500 mt-0.5 flex-shrink-0">money_off</span>
+    <div class="flex-1 min-w-0">
+        <p class="font-semibold text-red-700 dark:text-red-400 text-sm leading-snug">
+            {% if daily_over %}Daily budget reached{% else %}Monthly budget reached{% endif %}
+        </p>
+        <p class="text-xs text-[var(--color-text-secondary)] mt-1 leading-snug">
+            {% if daily_over %}
+            You've used ${{ "%.2f"|format(user_daily_usd) }} of your ${{ "%.2f"|format(user_daily_limit_usd) }} daily
+            limit.
+            Resets at midnight UTC.
+            {% else %}
+            You've used ${{ "%.2f"|format(user_monthly_usd) }} of your ${{ "%.2f"|format(user_monthly_limit_usd) }}
+            monthly limit.
+            Resets on the 1st of next month (UTC).
+            {% endif %}
+            New runs will be cancelled immediately.
+        </p>
+        <a href="/settings"
+            class="inline-flex items-center gap-1 mt-2 text-xs font-semibold text-red-600 dark:text-red-400 hover:underline">
+            <span class="material-icons text-[14px]">settings</span>View limits in Settings
+        </a>
+    </div>
+    <button onclick="document.getElementById('budget-toast').remove()"
+        class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] flex-shrink-0 -mt-0.5">
+        <span class="material-icons text-sm">close</span>
+    </button>
+</div>
+{% endif %}
+
+<div class="max-w-4xl mx-auto pb-24">
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="content-title">Run a test</h1>
+        </div>
+    </div>
+
+    <div class="card p-6 mb-6">
+        <h3
+            class="flex items-center gap-2.5 text-xl font-semibold pb-3 mb-4 border-b border-[var(--color-border)] text-accent">
+            Step 1: Select a test
+        </h3>
+
+        <form>
+            <div class="mb-4">
+                <label for="run_selected_test"
+                    class="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">
+                    Choose a test:
+                </label>
+
+                <select id="run_selected_test" name="run_selected_test"
+                    class="w-full p-2 border rounded bg-[var(--color-bg-primary)] border-[var(--color-border)] focus:ring-2 focus:ring-accent outline-none transition-all cursor-pointer">
+
+                    {% for test_pb in test_pbs %}
+                    <option value="{{ test_pb.id }}" data-description="{{ test_pb.description }}"
+                        data-item-count="{{ test_pb.item_count }}"
+                        data-labels='{{ test_pb.labels | list | tojson | safe }}' {% if test_id is defined and
+                        test_id==test_pb.id %}selected{% endif %}>
+                        {{ test_pb.name }}
+                    </option>
+                    {% endfor %}
+
+                </select>
+            </div>
+
+            <div class="mb-4">
+                <div class="flex justify-between items-center mb-1">
+                    <label for="item_count_input" class="block text-xs font-medium text-[var(--color-text-secondary)]">
+                        Sample size
+                    </label>
+                    <input id="item_count_input" type="text" inputmode="numeric" pattern="[0-9,]*"
+                        class="w-24 text-right text-xs font-bold text-accent bg-transparent border-b border-[var(--color-border)] focus:border-accent focus:outline-none px-1 py-0.5"
+                        autocomplete="off">
+                </div>
+
+                <input type="range" id="item_count_slider" name="item_count" min="1" step="1"
+                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+
+                <div class="flex justify-between text-[10px] text-[var(--color-text-secondary)] px-1 mt-1">
+                    <span>1</span>
+                    <span id="item_count_max_label">Max</span>
+                </div>
+            </div>
+        </form>
+
+        <p id="test_description_display" class="mt-4 text-sm text-[var(--color-text-secondary)]">
+            Description will appear here.
+        </p>
+
+        <div id="chip_container" class="flex flex-wrap gap-2 mt-4">
+        </div>
+    </div>
+
+    <div class="mt-8 mb-4">
+        <h3
+            class="flex items-center gap-2.5 text-xl font-semibold pb-3 mb-4 border-b border-[var(--color-border)] text-accent">
+            Step 2: Choose models
+        </h3>
+    </div>
+
+    <div class="flex flex-wrap gap-4 mb-6" id="card-container">
+        <div id="add-card-btn" onclick="addNewCard()"
+            class="card p-6 w-full md:w-[calc(33.333%-1rem)] flex flex-col justify-center items-center cursor-pointer border-2 border-dashed border-[var(--color-border)] hover:border-[var(--color-accent)] hover:bg-[var(--color-bg-secondary)] transition-all group min-h-[220px]">
+            <div
+                class="h-12 w-12 rounded-full bg-[var(--color-bg-secondary)] group-hover:bg-[var(--color-accent)] flex items-center justify-center transition-colors mb-3">
+                <span
+                    class="material-icons text-[var(--color-text-secondary)] group-hover:text-white transition-colors">add</span>
+            </div>
+            <p class="font-semibold text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)]">Add
+                a new model</p>
+        </div>
+    </div>
+
+    <div
+        class="card p-4 mt-8 sticky bottom-6 z-20 shadow-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
+        <div class="flex justify-between items-center">
+            <div class="flex items-center gap-4 pl-2">
+                <span class="material-icons text-accent text-3xl">start</span>
+                <div class="flex flex-col">
+                    <h3 class="font-bold text-lg text-accent">Step 3: Start Test Run</h3>
+                    <p class="text-sm text-[var(--color-text-secondary)]">
+                        <span id="model-count-badge"
+                            class="font-bold text-primary text-lg transition-all duration-200">0</span>
+                        models selected
+                    </p>
+                    <p class="text-sm text-[var(--color-text-secondary)]">
+                        <span id="sample-size-badge"
+                            class="font-bold text-primary text-lg transition-all duration-200">0</span>
+                        items in sample
+                    </p>
+                    <p class="text-sm text-[var(--color-text-secondary)] flex items-center gap-1 mt-0.5">
+                        <span class="material-icons text-[15px] opacity-60">attach_money</span>
+                        Est. cost:
+                        <span id="cost-estimate-badge" class="font-semibold text-primary">—</span>
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex flex-col justify-center gap-1 px-6 py-2 border-l border-r border-[var(--color-border)]">
+                <div class="flex items-center gap-3">
+                    <span class="material-icons text-[var(--color-text-secondary)]">psychology</span>
+                    <label class="inline-flex items-center cursor-pointer gap-2">
+                        <input id="reasoning_checkbox" name="reasoning" type="checkbox" value="true"
+                            class="sr-only peer" onchange="updateGlobalState()">
+                        <div
+                            class="relative w-9 h-5 bg-[var(--color-border)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accent">
+                        </div>
+                        <span class="font-semibold text-[var(--color-text-primary)] select-none">Reasoning</span>
+                    </label>
+                </div>
+                <p class="text-xs text-[var(--color-text-secondary)] leading-tight max-w-xs">
+                    Reasoning gives models the opportunity to explain / justify their responses and explain why they
+                    chose it.
+                </p>
+            </div>
+
+            <button onclick="submitRun()" id="submit-btn"
+                class="button-primary px-8 py-3 flex items-center gap-2 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed">
+                <span class="material-icons-outlined text-white">play_arrow</span>
+                <p class="text-white">Start</p>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Backend → { name, providers: { provider: [model_id] } }
+    const backendIndex = {{ backend_index | tojson | safe }};
+    // model_id → { input, output } token cost (per token, not per 1k)
+    const modelPricing = {{ model_pricing | tojson | safe }};
+    // User budget state (0 = unlimited)
+    const userDailyUsd = {{ user_daily_usd | tojson }};
+    const userMonthlyUsd = {{ user_monthly_usd | tojson }};
+    const userDailyLimitUsd = {{ user_daily_limit_usd | tojson }};
+    const userMonthlyLimitUsd = {{ user_monthly_limit_usd | tojson }};
+
+    // Rough per-item token estimates for cost projection.
+    // These mirror the DEBUG_RANDOM hard-coded values and are intentionally
+    // conservative for real models (system prompt + question + choices).
+    const EST_INPUT_TOKENS = 500;
+    const EST_OUTPUT_TOKENS = 25;
+    // Reasoning adds a second call with a longer context.
+    const EST_REASONING_EXTRA_INPUT = 600;
+    const EST_REASONING_EXTRA_OUTPUT = 200;
+
+    let cardCount = 0;
+    function init() {
+        updateDashboard();
+        addNewCard();
+    }
+
+    // --- Step 1 Logic ---
+    function fmtNum(n) {
+        return Number(n).toLocaleString('en-US');
+    }
+    function parseInput(s) {
+        return parseInt(s.replace(/,/g, ''), 10);
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+        const testSelect = document.getElementById('run_selected_test');
+        const slider = document.getElementById('item_count_slider');
+        const countInput = document.getElementById('item_count_input');
+        const maxLabel = document.getElementById('item_count_max_label');
+        const sampleSizeBadge = document.getElementById('sample-size-badge');
+
+        function syncFromValue(val) {
+            slider.value = val;
+            countInput.value = fmtNum(val);
+            if (sampleSizeBadge) sampleSizeBadge.textContent = fmtNum(val);
+            updateGlobalState();
+        }
+
+        function updateSliderState() {
+            const selectedOption = testSelect.options[testSelect.selectedIndex];
+            const maxItems = parseInt(selectedOption.dataset.itemCount || 0);
+            const defaultValue = Math.min(500, maxItems);
+            slider.max = maxItems;
+            maxLabel.textContent = fmtNum(maxItems);
+            syncFromValue(defaultValue);
+            if (typeof updateDashboard === "function") updateDashboard();
+        }
+
+        // Slider → input
+        slider.addEventListener('input', function () {
+            syncFromValue(parseInt(this.value, 10));
+        });
+
+        // Text input → slider (live as you type)
+        countInput.addEventListener('input', function () {
+            const raw = parseInput(this.value);
+            if (!isNaN(raw)) {
+                const clamped = Math.max(1, Math.min(raw, parseInt(slider.max, 10)));
+                slider.value = clamped;
+                if (sampleSizeBadge) sampleSizeBadge.textContent = fmtNum(clamped);
+                updateGlobalState();
+            }
+        });
+
+        // On blur: reformat and clamp
+        countInput.addEventListener('blur', function () {
+            const raw = parseInput(this.value);
+            if (isNaN(raw) || raw < 1) {
+                syncFromValue(parseInt(slider.value, 10));
+            } else {
+                const clamped = Math.max(1, Math.min(raw, parseInt(slider.max, 10)));
+                syncFromValue(clamped);
+            }
+        });
+
+        testSelect.addEventListener('change', updateSliderState);
+        updateSliderState();
+    });
+
+    function updateDashboard() {
+        const select = document.getElementById('run_selected_test');
+        const descDisplay = document.getElementById('test_description_display');
+        const chipContainer = document.getElementById('chip_container');
+        const selectedOption = select.options[select.selectedIndex];
+
+        if (!selectedOption) return;
+
+        const description = selectedOption.getAttribute('data-description');
+        const labels = JSON.parse(selectedOption.getAttribute('data-labels') || "[]");
+        descDisplay.textContent = description;
+        chipContainer.innerHTML = '';
+        labels.forEach(label => {
+            const chip = document.createElement('div');
+            chip.className = "rounded-md bg-[var(--color-accent-secondary)] py-0.5 px-2.5 border border-transparent text-sm text-white transition-all shadow-sm";
+            chip.textContent = label;
+            chipContainer.appendChild(chip);
+        });
+    }
+
+    // --- Step 2 Logic ---
+
+    const selectCls = "w-full p-2 border rounded bg-[var(--color-bg-primary)] border-[var(--color-border)] focus:ring-2 focus:ring-accent outline-none transition-all";
+    const disabledCls = "disabled:opacity-50 disabled:cursor-not-allowed";
+
+    function addNewCard() {
+        cardCount++;
+        const container = document.getElementById('card-container');
+        const addButton = document.getElementById('add-card-btn');
+        const card = document.createElement('div');
+        card.className = "card p-6 w-full md:w-[calc(33.333%-1rem)] flex flex-col relative selection-card min-h-[260px] fade-in-up";
+        card.id = `card-${cardCount}`;
+
+        // Build backend options
+        const backendEntries = Object.entries(backendIndex);
+        let backendOptions = `<option value="" selected disabled>Select Backend...</option>`;
+        backendEntries.forEach(([bid, bdata]) => {
+            backendOptions += `<option value="${bid}">${bdata.name}</option>`;
+        });
+
+        card.innerHTML = `
+            <div class="flex justify-between items-start mb-4 border-b border-[var(--color-border)] pb-2">
+                <h3 class="font-bold text-lg text-accent">Selection ${cardCount}</h3>
+                ${cardCount > 1 ? `<button onclick="removeCard('${card.id}')" class="text-[var(--color-text-secondary)] hover:text-red-500 transition-colors"><span class="material-icons text-sm">close</span></button>` : ''}
+            </div>
+
+            <div class="space-y-3 flex-grow">
+                <div>
+                    <label class="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">Backend</label>
+                    <select class="backend-select ${selectCls}" onchange="handleBackendChange(this)">
+                        ${backendOptions}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">Provider</label>
+                    <select class="provider-select ${selectCls} ${disabledCls}" disabled onchange="handleProviderChange(this)">
+                        <option value="" selected disabled>Select a backend first...</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">Model</label>
+                    <select class="model-select ${selectCls} ${disabledCls}" disabled onchange="updateGlobalState()">
+                        <option value="" selected disabled>Select a provider first...</option>
+                    </select>
+                </div>
+            </div>
+        `;
+        container.insertBefore(card, addButton);
+
+        // If only one backend, auto-select it
+        if (backendEntries.length === 1) {
+            const sel = card.querySelector('.backend-select');
+            sel.value = backendEntries[0][0];
+            handleBackendChange(sel);
+        }
+    }
+
+    function removeCard(cardId) {
+        const card = document.getElementById(cardId);
+        if (card) { card.remove(); updateGlobalState(); }
+    }
+
+    function handleBackendChange(backendSelect) {
+        const card = backendSelect.closest('.selection-card');
+        const providerSelect = card.querySelector('.provider-select');
+        const modelSelect = card.querySelector('.model-select');
+        const bid = backendSelect.value;
+
+        // Reset downstream
+        modelSelect.innerHTML = '<option value="" selected disabled>Select a provider first...</option>';
+        modelSelect.disabled = true;
+
+        if (bid && backendIndex[bid]) {
+            const providers = Object.keys(backendIndex[bid].providers || {}).sort();
+            providerSelect.innerHTML = '<option value="" selected disabled>Select Provider...</option>';
+            providers.forEach(p => {
+                providerSelect.innerHTML += `<option value="${p}">${p}</option>`;
+            });
+            providerSelect.disabled = false;
+
+            // Auto-select if only one provider
+            if (providers.length === 1) {
+                providerSelect.value = providers[0];
+                handleProviderChange(providerSelect);
+            }
+        } else {
+            providerSelect.innerHTML = '<option value="" selected disabled>Select a backend first...</option>';
+            providerSelect.disabled = true;
+        }
+        updateGlobalState();
+    }
+
+    function handleProviderChange(providerSelect) {
+        const card = providerSelect.closest('.selection-card');
+        const backendSelect = card.querySelector('.backend-select');
+        const modelSelect = card.querySelector('.model-select');
+        const bid = backendSelect.value;
+        const provider = providerSelect.value;
+
+        modelSelect.innerHTML = '<option value="" selected disabled>Select a model...</option>';
+        modelSelect.disabled = true;
+
+        if (bid && provider && backendIndex[bid]) {
+            const models = (backendIndex[bid].providers || {})[provider] || [];
+            models.forEach(modelId => {
+                const opt = document.createElement('option');
+                opt.value = modelId;
+                opt.textContent = modelId;
+                modelSelect.appendChild(opt);
+            });
+            if (models.length > 0) {
+                modelSelect.disabled = false;
+                // Auto-select if only one model
+                if (models.length === 1) {
+                    modelSelect.value = models[0];
+                    updateGlobalState();
+                    return;
+                }
+            }
+        }
+        updateGlobalState();
+    }
+
+    function updateGlobalState() {
+        const selectedModels = [];
+        document.querySelectorAll('.selection-card').forEach(card => {
+            const modelSelect = card.querySelector('.model-select');
+            if (modelSelect && modelSelect.value && !modelSelect.disabled) {
+                selectedModels.push(modelSelect.value);
+            }
+        });
+        const countSpan = document.getElementById('model-count-badge');
+        countSpan.textContent = fmtNum(selectedModels.length);
+        countSpan.classList.add('scale-150', 'text-green-500');
+        setTimeout(() => countSpan.classList.remove('scale-150', 'text-green-500'), 200);
+
+        updateCostEstimate(selectedModels);
+    }
+
+    function updateCostEstimate(selectedModels) {
+        const costBadge = document.getElementById('cost-estimate-badge');
+        if (!costBadge) return;
+
+        const sampleSize = parseInt(document.getElementById('item_count_slider')?.value || 0, 10);
+        const reasoning = document.getElementById('reasoning_checkbox')?.checked;
+
+        if (!selectedModels.length || !sampleSize) {
+            costBadge.textContent = '—';
+            costBadge.className = 'font-semibold text-primary';
+            return;
+        }
+
+        let totalCost = 0;
+        let allFree = true;
+        selectedModels.forEach(modelId => {
+            const p = modelPricing[modelId];
+            if (!p) return;
+            const inputCost = p.input || 0;
+            const outputCost = p.output || 0;
+            if (inputCost || outputCost) allFree = false;
+
+            let inTok = EST_INPUT_TOKENS;
+            let outTok = EST_OUTPUT_TOKENS;
+            if (reasoning) {
+                inTok += EST_REASONING_EXTRA_INPUT;
+                outTok += EST_REASONING_EXTRA_OUTPUT;
+            }
+            totalCost += sampleSize * (inTok * inputCost + outTok * outputCost);
+        });
+
+        if (allFree) {
+            costBadge.textContent = 'free';
+            costBadge.className = 'font-semibold text-green-600 dark:text-green-400';
+            return;
+        }
+
+        // Format: < $0.01 show "< $0.01", else "$X.XX"
+        let label;
+        if (totalCost < 0.005) {
+            label = '< $0.01';
+        } else if (totalCost < 1) {
+            label = '$' + totalCost.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+        } else {
+            label = '$' + totalCost.toFixed(2);
+        }
+
+        // Warn if estimate would push over a budget limit
+        const remainingDaily = userDailyLimitUsd > 0 ? Math.max(0, userDailyLimitUsd - userDailyUsd) : Infinity;
+        const remainingMonthly = userMonthlyLimitUsd > 0 ? Math.max(0, userMonthlyLimitUsd - userMonthlyUsd) : Infinity;
+        const remaining = Math.min(remainingDaily, remainingMonthly);
+
+        if (remaining === 0) {
+            costBadge.textContent = label + ' - budget exhausted';
+            costBadge.className = 'font-semibold text-red-600 dark:text-red-400';
+        } else if (remaining !== Infinity && totalCost > remaining) {
+            label += ` (budget: $${remaining.toFixed(2)} left)`;
+            costBadge.textContent = label;
+            costBadge.className = 'font-semibold text-amber-600 dark:text-amber-400';
+        } else {
+            costBadge.textContent = label;
+            costBadge.className = 'font-semibold text-primary';
+        }
+    }
+
+    // --- Step 3 Logic ---
+    async function submitRun() {
+        const testId = document.getElementById('run_selected_test').value;
+        const selectedModels = [];
+        document.querySelectorAll('.selection-card .model-select').forEach(select => {
+            if (select.value && !select.disabled) {
+                selectedModels.push(select.value);
+            }
+        });
+        if (selectedModels.length === 0) {
+            alert("Please select at least one model to run.");
+            return;
+        }
+
+        const slider = document.getElementById('item_count_slider');
+        const sample_size = parseInt(slider.value, 10);
+        const reasoning = document.getElementById('reasoning_checkbox').checked;
+        const confirmMsg = `Are you sure you want to run the test?\n\nTest: ${testId}\nModels Selected: ${selectedModels.length}\nReasoning: ${reasoning}`;
+        if (confirm(confirmMsg)) {
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="material-icons animate-spin">refresh</span> Processing...';
+            try {
+                const resp = await fetch('/runs/submit', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        test_id: testId,
+                        models: selectedModels,
+                        sample_size: sample_size,
+                        reasoning: reasoning
+                    })
+                });
+                const result = await resp.json();
+                if (!resp.ok) throw new Error(result.error || `HTTP ${resp.status}`);
+
+                if (result.success && result.redirect_url) {
+                    window.location.href = result.redirect_url;
+                } else {
+                    throw new Error('Did not receive a valid redirect URL from the server.');
+                }
+            } catch (err) {
+                console.error('Error starting run:', err);
+                alert('Failed to start the run: ' + err.message);
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<span class="material-icons-outlined text-white">play_arrow</span> <p class="text-white">Run</p>';
+            }
+        }
+    }
+    document.addEventListener('DOMContentLoaded', init);
+</script>
+
+<style>
+    .fade-in-up {
+        animation: fadeInUp 0.3s ease-out forwards;
+    }
+
+    @keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+</style>
+{% endblock %}

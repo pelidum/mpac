@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Pelidum MPAC - {{ attachment_pb.name }}{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+<script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
+<div class="max-w-4xl mx-auto">
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <p class="mt-1 muted">
+                <span class="font-semibold">ID:</span> {{ attachment_pb.id }}
+            </p>
+        </div>
+        <div class="flex items-center space-x-2">
+            <button type="button" onclick="history.back()" class="button-secondary">
+                <span class="material-icons text-[20px]">arrow_back</span>
+                Back to List
+            </button>
+        </div>
+    </div>
+    <div class="card p-6 mb-6">
+        <h3
+            class="flex items-center gap-2.5 text-xl font-semibold pb-3 mb-4 border-b border-[var(--color-border)] text-accent">
+            <span class="material-icons">attachment</span>
+            {{ attachment_pb.name }}
+        </h3>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div class="flex flex-col gap-6">
+                <div class="flex items-start gap-3">
+                    <span class="material-icons text-accent mt-px text-[20px]">person</span>
+                    <div>
+                        <span class="block text-sm font-medium text-muted mb-0.5">Owner</span>
+                        <p class="font-medium text-base break-words">{{ attachment_pb.owner }}</p>
+                    </div>
+                </div>
+
+                <div class="flex items-start gap-3">
+                    <span class="material-icons text-accent mt-px text-[20px]">audio_file</span>
+                    <div>
+                        <span class="block text-sm font-medium text-muted mb-0.5">Extension</span>
+                        <p class="font-medium text-base break-words">{{ attachment_pb.extension }}</p>
+                    </div>
+                </div>
+
+                <div class="flex items-start gap-3">
+                    <span class="material-icons text-accent mt-px text-[20px]">8k_plus</span>
+                    <div>
+                        <span class="block text-sm font-medium text-muted mb-0.5">File Size (kb)</span>
+                        <p class="font-medium text-base break-words">{{ attachment_pb.file_size }}</p>
+                    </div>
+                </div>
+            </div>
+            <div
+                class="flex items-center justify-center bg-gray-50/5 rounded-lg border border-[var(--color-border)] overflow-hidden min-h-[200px]">
+                {# --- AUDIO (1) --- #}
+                {% if attachment_pb.modality == 1 %}
+                <div class="w-full">
+                    <audio class="js-player" controls>
+                        <source src="{{ url_for('attachment_file', attachment_id=attachment_pb.id) }}" type="{{ attachment_pb.mime }}">
+                    </audio>
+                </div>
+
+                {# --- IMAGE (2) --- #}
+                {% elif attachment_pb.modality == 2 %}
+                <img src="{{ url_for('attachment_file', attachment_id=attachment_pb.id) }}" alt="{{ attachment_pb.name }}"
+                    class="w-full h-auto max-h-[300px] object-contain">
+
+                {# --- VIDEO (3) --- #}
+                {% elif attachment_pb.modality == 3 %}
+                <div class="w-full">
+                    <video class="js-player" playsinline controls>
+                        <source src="{{ url_for('attachment_file', attachment_id=attachment_pb.id) }}" type="{{ attachment_pb.mime }}">
+                    </video>
+                </div>
+
+                {# --- UNSPECIFIED/OTHER --- #}
+                {% else %}
+                <div class="text-center text-muted py-8">
+                    <span class="material-icons text-4xl mb-2">draft</span>
+                    <p>No preview available</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const players = Array.from(document.querySelectorAll('.js-player')).map(p => new Plyr(p));
+        });
+    </script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const players = Array.from(document.querySelectorAll('.js-player')).map(p => new Plyr(p));
+        });
+    </script>
+</div>
+{% endblock %}

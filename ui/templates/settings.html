@@ -1,0 +1,401 @@
+{% extends "base.html" %}
+
+{% block title %}Pelidum MPAC - Settings{% endblock %}
+
+{% block content %}
+
+<div class="content-header">
+  <h1 class="content-title">Settings</h1>
+</div>
+<p class="muted -mt-6 mb-10">
+  Manage your profile, API key, and monitor usage.
+</p>
+
+<!-- User Profile Card -->
+<div class="card p-6 mb-6">
+  <div class="flex flex-col sm:flex-row sm:items-center gap-6">
+    {% set avatar_url = user.get('avatar_url', '') %}
+    {% if avatar_url %}
+    <img src="{{ avatar_url }}" alt="User Avatar"
+      class="h-24 w-24 rounded-full object-cover bg-[var(--color-bg-primary)] border border-[var(--color-border)]">
+    {% else %}
+      {% set name = user.get('name', '') or user.get('email', '') %}
+      {% set parts = name.split() %}
+      {% if parts | length >= 2 %}
+        {% set initials = (parts[0][0] ~ parts[-1][0]) | upper %}
+      {% elif parts | length == 1 %}
+        {% set initials = parts[0][0] | upper %}
+      {% else %}
+        {% set initials = '?' %}
+      {% endif %}
+    <div class="h-24 w-24 rounded-full bg-[var(--color-accent-secondary)] flex items-center justify-center border border-[var(--color-border)] flex-shrink-0">
+      <span class="text-3xl font-bold text-white">{{ initials }}</span>
+    </div>
+    {% endif %}
+
+    <div class="flex-grow grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+      <div class="flex items-start gap-3">
+        <span class="material-icons text-accent mt-px text-[20px]">badge</span>
+        <div>
+          <span class="block text-sm font-medium text-muted mb-0.5">Name</span>
+          <p class="font-medium text-base break-words">{{ user.get('name', 'N/A') }}</p>
+        </div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="material-icons text-accent mt-px text-[20px]">business</span>
+        <div>
+          <span class="block text-sm font-medium text-muted mb-0.5">Organization</span>
+          <p class="font-medium text-base break-words">{{ user.get('org_domain', 'N/A') }}</p>
+        </div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="material-icons text-accent mt-px text-[20px]">manage_accounts</span>
+        <div>
+          <span class="block text-sm font-medium text-muted mb-0.5">Role</span>
+          <p class="font-medium text-base break-words">{{ user.get('role', 'NO_ROLE').replace('_', ' ').title() }}</p>
+        </div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="material-icons text-accent mt-px text-[20px]">event</span>
+        <div>
+          <span class="block text-sm font-medium text-muted mb-0.5">Member Since</span>
+          <p class="font-medium text-base break-words">
+            {% set created_date = user.get('created_at_utc') %}
+            {% if created_date %}
+            <time datetime="{{ created_date }}" data-format-date="true">{{ created_date }}</time>
+            {% else %}
+            N/A
+            {% endif %}
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- API Key Management Card -->
+{% set api_key = user.get('api_key', {}) %}
+<div class="card p-6 mb-6">
+  <div class="flex flex-wrap justify-between items-center gap-4 mb-4">
+    <div>
+      <h3 class="flex items-center gap-2.5 text-xl font-semibold text-accent">
+        <span class="material-icons">key</span>
+        API Key
+      </h3>
+      <p class="muted mt-1">The key used to authenticate API requests.</p>
+    </div>
+    <button type="button" id="regenerate-key-btn" class="button-primary">
+      <span class="material-icons">refresh</span>
+      Revoke & Regenerate
+    </button>
+  </div>
+
+  <div class="section-divider mb-4"></div>
+
+  {% if api_key %}
+  <div class="bg-[var(--color-highlight-shade1)] p-4 rounded-lg border border-[var(--color-border)]">
+    <div class="flex flex-wrap justify-between items-center gap-4">
+      <div class="flex items-center gap-4">
+        <span class="material-icons text-4xl text-muted">vpn_key</span>
+        <div>
+          <div class="font-semibold">{{ api_key.get('name', 'API Key') }}</div>
+          <div class="muted font-mono text-sm mt-0.5">
+            {{ api_key.get('display_name', 'sk_live_...xxxx') }}
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-6 muted text-sm">
+        {% if api_key.get('active') %}
+        <span class="inline-flex items-center gap-1.5 font-medium text-green-700 dark:text-green-300">
+          <span class="material-icons text-[16px]">check_circle</span>
+          Active
+        </span>
+        {% else %}
+        <span class="inline-flex items-center gap-1.5 font-medium">
+          <span class="material-icons text-[16px]">cancel</span>
+          Inactive
+        </span>
+        {% endif %}
+        <span>
+          Created:
+          {% set key_created_date = api_key.get('created_at_utc') %}
+          {% if key_created_date %}
+          <time datetime="{{ key_created_date }}" data-format-date="true">{{ key_created_date }}</time>
+          {% else %}
+          N/A
+          {% endif %}
+        </span>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="text-center py-6 muted">
+    <p>No API key found. Generate a new key to get started.</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Usage Limits Card -->
+{% set limits = user.get('rate_limits', {}) %}
+{% set daily_cents = limits.get('daily_spend', 0) | int %}
+{% set monthly_cents = limits.get('monthly_spend', 0) | int %}
+{% set tpm = limits.get('tokens_per_minute', 0) | int %}
+<div class="card p-6 mb-6">
+  <h3 class="flex items-center gap-2.5 text-xl font-semibold text-accent mb-4">
+    <span class="material-icons">speed</span>
+    Usage &amp; Limits
+  </h3>
+  <p class="muted -mt-3 mb-6">Your account's configured spending and rate limits.</p>
+
+  <!-- Spend progress bars -->
+  <div class="space-y-5 mb-6">
+
+    <!-- Daily spend -->
+    <div>
+      <div class="flex justify-between items-baseline mb-1.5">
+        <span class="flex items-center gap-1.5 text-sm font-medium muted">
+          <span class="material-icons text-[16px]">today</span>
+          Daily Spend
+        </span>
+        {% if daily_cents == 0 %}
+        <span class="text-sm font-semibold">
+          ${{ "{:,.4f}".format(daily_spend_usd) }} / Unlimited
+        </span>
+        {% else %}
+        {% set daily_pct = [[daily_spend_usd * 100 / daily_cents * 100, 0] | max, 100] | min %}
+        <span class="text-sm font-semibold">
+          ${{ "{:,.4f}".format(daily_spend_usd) }} / ${{ "{:,.2f}".format(daily_cents / 100) }}
+          <span class="muted font-normal">({{ "{:.1f}".format(daily_pct) }}%)</span>
+        </span>
+        {% endif %}
+      </div>
+      {% if daily_cents == 0 %}
+      <div class="h-2 rounded-full bg-[var(--color-highlight-shade1)] border border-[var(--color-border)]">
+        <div class="h-full rounded-full bg-[var(--color-accent-secondary)] opacity-30" style="width: 100%"></div>
+      </div>
+      {% else %}
+      {% set daily_pct = [[daily_spend_usd * 100 / daily_cents * 100, 0] | max, 100] | min %}
+      {% set bar_color = "bg-red-500" if daily_pct >= 90 else ("bg-yellow-500" if daily_pct >= 70 else "bg-[var(--color-accent-secondary)]") %}
+      <div class="h-2 rounded-full bg-[var(--color-highlight-shade1)] border border-[var(--color-border)]">
+        <div class="h-full rounded-full {{ bar_color }} transition-all duration-300"
+             style="width: {{ daily_pct }}%"></div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Monthly spend -->
+    <div>
+      <div class="flex justify-between items-baseline mb-1.5">
+        <span class="flex items-center gap-1.5 text-sm font-medium muted">
+          <span class="material-icons text-[16px]">calendar_month</span>
+          Monthly Spend
+        </span>
+        {% if monthly_cents == 0 %}
+        <span class="text-sm font-semibold">
+          ${{ "{:,.4f}".format(monthly_spend_usd) }} / Unlimited
+        </span>
+        {% else %}
+        {% set monthly_pct = [[monthly_spend_usd * 100 / monthly_cents * 100, 0] | max, 100] | min %}
+        <span class="text-sm font-semibold">
+          ${{ "{:,.4f}".format(monthly_spend_usd) }} / ${{ "{:,.2f}".format(monthly_cents / 100) }}
+          <span class="muted font-normal">({{ "{:.1f}".format(monthly_pct) }}%)</span>
+        </span>
+        {% endif %}
+      </div>
+      {% if monthly_cents == 0 %}
+      <div class="h-2 rounded-full bg-[var(--color-highlight-shade1)] border border-[var(--color-border)]">
+        <div class="h-full rounded-full bg-[var(--color-accent-secondary)] opacity-30" style="width: 100%"></div>
+      </div>
+      {% else %}
+      {% set monthly_pct = [[monthly_spend_usd * 100 / monthly_cents * 100, 0] | max, 100] | min %}
+      {% set bar_color = "bg-red-500" if monthly_pct >= 90 else ("bg-yellow-500" if monthly_pct >= 70 else "bg-[var(--color-accent-secondary)]") %}
+      <div class="h-2 rounded-full bg-[var(--color-highlight-shade1)] border border-[var(--color-border)]">
+        <div class="h-full rounded-full {{ bar_color }} transition-all duration-300"
+             style="width: {{ monthly_pct }}%"></div>
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+
+  <div class="section-divider mb-6"></div>
+
+  <!-- Stat tiles -->
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+    <div class="bg-[var(--color-highlight-shade1)] p-4 rounded-lg border border-[var(--color-border)]">
+      <dl>
+        <dt class="flex items-center gap-2 muted text-sm font-medium">
+          <span class="material-icons text-[16px]">today</span>
+          Daily Limit
+        </dt>
+        <dd class="text-xl font-semibold mt-2">{{
+          "Unlimited" if daily_cents == 0 else "$" + "{:,.2f}".format(daily_cents / 100) }}</dd>
+      </dl>
+    </div>
+
+    <div class="bg-[var(--color-highlight-shade1)] p-4 rounded-lg border border-[var(--color-border)]">
+      <dl>
+        <dt class="flex items-center gap-2 muted text-sm font-medium">
+          <span class="material-icons text-[16px]">calendar_month</span>
+          Monthly Limit
+        </dt>
+        <dd class="text-xl font-semibold mt-2">{{
+          "Unlimited" if monthly_cents == 0 else "$" + "{:,.2f}".format(monthly_cents / 100) }}</dd>
+      </dl>
+    </div>
+
+    <div class="bg-[var(--color-highlight-shade1)] p-4 rounded-lg border border-[var(--color-border)]">
+      <dl>
+        <dt class="flex items-center gap-2 muted text-sm font-medium">
+          <span class="material-icons text-[16px]">token</span>
+          Tokens / Min
+        </dt>
+        <dd class="text-xl font-semibold mt-2">{{
+          "Unlimited" if tpm == 0 else "{:,}".format(tpm) }}</dd>
+      </dl>
+    </div>
+
+    <div class="bg-[var(--color-highlight-shade1)] p-4 rounded-lg border border-[var(--color-border)]">
+      <dl>
+        <dt class="flex items-center gap-2 muted text-sm font-medium">
+          <span class="material-icons text-[16px]">assignment</span>
+          Tests
+        </dt>
+        <dd class="text-xl font-semibold mt-2">{{ "{:,}".format(test_count) }}</dd>
+      </dl>
+    </div>
+
+    <div class="bg-[var(--color-highlight-shade1)] p-4 rounded-lg border border-[var(--color-border)]">
+      <dl>
+        <dt class="flex items-center gap-2 muted text-sm font-medium">
+          <span class="material-icons text-[16px]">history</span>
+          Runs
+        </dt>
+        <dd class="text-xl font-semibold mt-2">{{ "{:,}".format(run_count) }}</dd>
+      </dl>
+    </div>
+  </div>
+</div>
+
+<!-- API Key Modal -->
+<!-- FIX: Added 'flex' class to enable centering -->
+<div id="api-key-modal" class="overlay hidden flex items-center justify-center">
+  <div class="card max-w-lg w-full">
+    <h2 class="text-xl font-semibold">API Key Generated</h2>
+    <p class="muted mt-2 mb-4">
+      Please copy your new API key. This is the <strong>only</strong> time it will be shown.
+    </p>
+    <div class="flex items-center gap-2">
+      <input id="new-api-key-display" type="text" readonly class="input-field font-mono min-w-0" />
+      <button id="copy-key-btn" class="pagination-button flex items-center gap-1.5 flex-shrink-0"
+        title="Copy to clipboard">
+        <span id="copy-key-icon" class="material-icons text-[18px]">content_copy</span>
+        <span id="copy-key-label">Copy</span>
+      </button>
+    </div>
+    <button id="close-modal-btn" class="button-primary mt-6 w-full">I have copied my key</button>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const regenButton = document.getElementById('regenerate-key-btn');
+    const apiKeyModal = document.getElementById('api-key-modal');
+    const newApiKeyDisplay = document.getElementById('new-api-key-display');
+    const copyButton = document.getElementById('copy-key-btn');
+    const closeButton = document.getElementById('close-modal-btn');
+
+    document.querySelectorAll('[data-format-date="true"]').forEach(el => {
+      const ts = el.getAttribute('datetime');
+      if (ts) {
+        try {
+          const date = new Date(ts);
+          if (!isNaN(date.getTime())) {
+            el.textContent = date.toLocaleString();
+          }
+        } catch (e) {
+          console.error("Could not format date:", ts, e);
+        }
+      }
+    });
+
+    if (regenButton) {
+      regenButton.addEventListener('click', async () => {
+        if (!confirm('Are you sure you want to revoke your old key and generate a new one? This action cannot be undone.')) {
+          return;
+        }
+
+        regenButton.disabled = true;
+        regenButton.innerHTML = '<span>Generating...</span>';
+
+        try {
+          const response = await fetch('/settings/mint_api_key', { method: 'POST' });
+          const data = await response.json();
+
+          if (response.ok && data.success) {
+            newApiKeyDisplay.value = data.raw_key;
+            apiKeyModal.classList.remove('hidden');
+            apiKeyModal.classList.add('visible');
+          } else {
+            alert('Error: ' + (data.error || 'Could not generate new API key.'));
+          }
+        } catch (error) {
+          console.error('Fetch error:', error);
+          alert('A network error occurred. Please try again.');
+        } finally {
+          regenButton.disabled = false;
+          regenButton.innerHTML = '<span class="material-icons">refresh</span> Revoke & Regenerate';
+        }
+      });
+    }
+
+    if (copyButton) {
+      copyButton.addEventListener('click', () => {
+        const key = newApiKeyDisplay.value;
+        const icon = document.getElementById('copy-key-icon');
+        const label = document.getElementById('copy-key-label');
+
+        const onSuccess = () => {
+          icon.textContent = 'check';
+          label.textContent = 'Copied!';
+          copyButton.disabled = true;
+          setTimeout(() => {
+            icon.textContent = 'content_copy';
+            label.textContent = 'Copy';
+            copyButton.disabled = false;
+          }, 2000);
+        };
+
+        const onFailure = () => {
+          // execCommand fallback for HTTP or permission-denied contexts
+          newApiKeyDisplay.select();
+          newApiKeyDisplay.setSelectionRange(0, 99999);
+          try {
+            document.execCommand('copy');
+            onSuccess();
+          } catch {
+            alert('Could not copy automatically. Please select the key and copy it manually.');
+          }
+        };
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(key).then(onSuccess).catch(onFailure);
+        } else {
+          onFailure();
+        }
+      });
+    }
+
+    if (closeButton) {
+      closeButton.addEventListener('click', () => {
+        apiKeyModal.classList.add('hidden');
+        apiKeyModal.classList.remove('visible');
+        window.location.reload();
+      });
+    }
+  });
+</script>
+{% endblock %}

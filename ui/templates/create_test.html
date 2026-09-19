@@ -1,0 +1,1223 @@
+{% extends "base.html" %}
+{% block title %}Pelidum MPAC - {{ page_title }}{% endblock %}
+{% block content %}
+<style>
+    .table-scroll::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+
+    .table-scroll::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .table-scroll::-webkit-scrollbar-thumb {
+        background: var(--color-border);
+        border-radius: 3px;
+    }
+
+    .table-scroll::-webkit-scrollbar-thumb:hover {
+        background: var(--color-text-secondary);
+    }
+
+    .field {
+        width: 100%;
+        padding: 8px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--color-border);
+        background: var(--color-bg-primary);
+        font-size: 13px;
+        color: var(--color-text-primary);
+        font-family: inherit;
+        transition: border-color 0.15s, box-shadow 0.15s;
+        outline: none;
+    }
+
+    .field:focus {
+        border-color: var(--color-accent-primary);
+        box-shadow: 0 0 0 3px rgba(var(--color-accent-primary-rgb), 0.12);
+    }
+
+    textarea.field {
+        resize: vertical;
+    }
+
+    .field-label {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--color-text-secondary);
+    }
+
+    /* Spreadsheet cells */
+    .ss-input {
+        width: 100%;
+        background: transparent;
+        border: none;
+        padding: 6px 8px;
+        font-size: 13px;
+        color: var(--color-text-primary);
+        font-family: inherit;
+        outline: none;
+        min-width: 0;
+    }
+
+    .ss-input:focus {
+        background: var(--color-bg-primary);
+    }
+
+    .ss-input.selected {
+        background: rgba(var(--color-accent-primary-rgb), 0.08) !important;
+        box-shadow: inset 0 0 0 1.5px var(--color-accent-primary);
+    }
+
+    .ss-input.invalid {
+        box-shadow: inset 0 0 0 1.5px #ef5350;
+    }
+
+    /* Table rows */
+    @keyframes rowSlideIn {
+        from {
+            opacity: 0;
+            transform: translateY(-4px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .row-enter {
+        animation: rowSlideIn 0.15s ease-out;
+    }
+
+    #item-table tbody tr:hover {
+        background: var(--color-highlight-shade1);
+    }
+
+    #item-table th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--color-bg-primary);
+    }
+
+    /* Attachment cell */
+    .attachment-cell {
+        padding: 4px 6px !important;
+    }
+
+    .row-dropzone {
+        width: 100%;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1.5px dashed var(--color-border);
+        border-radius: 6px;
+        cursor: pointer;
+        transition: border-color 0.15s, background 0.15s;
+    }
+
+    .row-dropzone:hover,
+    .row-dropzone.drag-over {
+        border-color: var(--color-accent-primary);
+        background: rgba(var(--color-accent-primary-rgb), 0.06);
+    }
+
+    .att-preview {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        position: relative;
+    }
+
+    .att-preview img {
+        max-height: 48px;
+        max-width: 88px;
+        border-radius: 4px;
+        object-fit: cover;
+        cursor: pointer;
+    }
+
+    .att-preview audio {
+        width: 88px;
+        height: 28px;
+    }
+
+    .att-preview video {
+        max-height: 48px;
+        max-width: 88px;
+        border-radius: 4px;
+    }
+
+    .att-preview .att-label {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        font-size: 10px;
+        color: var(--color-text-secondary);
+        max-width: 88px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .att-preview .remove-file {
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        background: var(--color-bg-secondary);
+        border: 1px solid var(--color-border);
+        border-radius: 50%;
+        width: 16px;
+        height: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: var(--color-text-secondary);
+        font-size: 12px;
+        line-height: 1;
+        padding: 0;
+        opacity: 0;
+        transition: opacity 0.1s, color 0.1s;
+    }
+
+    .att-preview:hover .remove-file {
+        opacity: 1;
+    }
+
+    .att-preview .remove-file:hover {
+        color: #ef5350;
+        border-color: #ef5350;
+    }
+
+    .att-lightbox {
+        position: fixed;
+        inset: 0;
+        z-index: 200;
+        background: rgba(0,0,0,0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: zoom-out;
+    }
+
+    .att-lightbox img,
+    .att-lightbox video {
+        max-width: 90vw;
+        max-height: 90vh;
+        border-radius: 8px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    .file-pill {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 12px;
+        background: rgba(var(--color-accent-primary-rgb), 0.1);
+        font-size: 11px;
+        max-width: 100%;
+    }
+
+    .file-pill .file-name {
+        max-width: 72px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--color-text-primary);
+    }
+
+    .file-pill .remove-file {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--color-text-secondary);
+        font-size: 14px;
+        line-height: 1;
+        padding: 0 2px;
+        margin-left: 2px;
+    }
+
+    .file-pill .remove-file:hover {
+        color: #ef5350;
+    }
+
+    /* Table drag overlay */
+    #table-container.drag-over-table {
+        outline: 2px dashed var(--color-accent-primary);
+        outline-offset: -2px;
+        background: rgba(var(--color-accent-primary-rgb), 0.03);
+    }
+
+    /* Delete button */
+    .action-delete {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--color-text-secondary);
+        padding: 2px;
+        border-radius: 4px;
+        transition: color 0.15s, background 0.15s;
+        display: flex;
+        align-items: center;
+    }
+
+    .action-delete:hover {
+        color: #ef5350;
+        background: rgba(239, 83, 80, 0.08);
+    }
+
+    /* Undo toast */
+    .undo-toast {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--color-bg-secondary);
+        border: 1px solid var(--color-border);
+        border-radius: 10px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        padding: 10px 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 13px;
+        z-index: 100;
+        animation: rowSlideIn 0.15s ease-out;
+    }
+</style>
+
+<!-- Shared hidden file inputs -->
+<input type="file" id="row-file-input" accept="audio/*,image/*,video/*,text/*" class="hidden">
+<input type="file" id="import-files-input" multiple accept="audio/*,image/*,video/*,text/*" class="hidden">
+
+<!-- Page header -->
+<div class="content-header">
+    <h1 class="content-title">{{ 'Edit Test' if edit_mode else 'Create Test' }}</h1>
+</div>
+
+<!-- Stacked layout -->
+<div class="flex flex-col gap-6 pb-8">
+
+    <!-- Test Details -->
+    <div class="card">
+        <h3
+            class="flex items-center gap-2.5 text-xl font-semibold text-accent pb-3 mb-5 border-b border-[var(--color-border)]">
+            <span class="material-icons">info</span>
+            Test Info
+        </h3>
+        <div class="flex flex-col gap-5">
+            <div class="flex flex-col gap-1.5">
+                <label class="field-label">Name *</label>
+                <input id="test-name" class="field" placeholder="Enter test name" oninput="updateSubmitState()" {% if
+                    edit_mode %}value="{{ test_pb.name }}" {% endif %}>
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="field-label">Description</label>
+                <textarea id="test-description" rows="3" class="field"
+                    placeholder="Describe your test…">{% if edit_mode %}{{ test_pb.description }}{% endif %}</textarea>
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="field-label">Test Type</label>
+                <select id="test-type" class="field" onchange="onTypeChange()">
+                    <option value="1" {% if edit_mode and test_pb.type==1 %}selected{% endif %}>Evaluation - has correct
+                        answers, scored on precision/recall</option>
+                    <option value="2" {% if edit_mode and test_pb.type==2 %}selected{% endif %}>Survey - blind
+                        classification, no ground truth</option>
+                </select>
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="field-label">Provider</label>
+                <input id="test-provider" class="field" placeholder="e.g. acme.com"
+                    value="{{ test_pb.provider if edit_mode else default_provider }}">
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="field-label">Labels</label>
+                <input id="test-labels" class="field" placeholder="tag1, tag2, tag3" {% if edit_mode
+                    %}value="{{ test_pb.labels | join(', ') }}" {% endif %}>
+            </div>
+        </div>
+    </div>
+
+    <!-- Items Table -->
+    <div class="card flex flex-col">
+
+        <!-- Action Bar -->
+        <div class="flex justify-between items-center pb-3 mb-3 border-b border-[var(--color-border)] shrink-0">
+            <h3 class="flex items-center gap-2.5 text-xl font-semibold text-accent">
+                <span class="material-icons">quiz</span>
+                Questions
+                <span id="item-count"
+                    class="inline-flex items-center justify-center bg-[rgba(var(--color-accent-primary-rgb),0.12)] text-[var(--color-accent-secondary)] text-xs font-bold px-2.5 py-0.5 rounded-full min-w-[26px]">0</span>
+            </h3>
+            <div class="flex items-center gap-2">
+                <button class="button-secondary" style="padding:6px 12px; font-size:13px;" onclick="addRowAndFocus()">
+                    <span class="material-icons" style="font-size:16px;">add</span>
+                    Add Row
+                </button>
+                <button class="button-secondary" style="padding:6px 12px; font-size:13px;"
+                    onclick="document.getElementById('import-files-input').click()">
+                    <span class="material-icons" style="font-size:16px;">upload_file</span>
+                    Import Files
+                </button>
+            </div>
+        </div>
+
+        <!-- Eval banner (hidden by default, shown when type=Evaluation) -->
+        <div id="eval-banner"
+            class="flex flex-col gap-2 text-xs text-[var(--color-text-secondary)] bg-[var(--color-bg-primary)] rounded-md px-4 py-3 mb-3 shrink-0">
+            <div class="flex items-start gap-2">
+                <span class="material-icons shrink-0" style="font-size:14px; opacity:0.5; margin-top:1px;">info</span>
+                <div class="flex flex-col gap-1.5">
+                    <p><strong class="text-[var(--color-text-primary)]">Answer</strong> is the ground truth for each
+                        item. The model's response is scored against this value.</p>
+                    <p><strong class="text-[var(--color-text-primary)]">Positive?</strong> marks items where the correct
+                        answer represents a detected case. For example, if your test asks whether a picture contains a
+                        hot dog, the items that actually contain a hot dog are positives. Items left unchecked are
+                        treated as negatives. This is what drives Precision, Recall, and F1 scores. If your test has no
+                        positive/negative distinction (e.g. multiple-choice knowledge questions), leave all items
+                        unchecked; accuracy will still be calculated.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Table container (scrollable, drag target) -->
+        <div id="table-container" class="table-scroll flex-1 overflow-auto pr-1">
+
+            <!-- The table -->
+            <table id="item-table" class="w-full text-sm"
+                style="border-collapse: collapse; border: 1px solid var(--color-border);">
+                <thead>
+                    <tr class="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide">
+                        <th class="px-2 py-2 text-center" style="width:36px; border: 1px solid var(--color-border);">#
+                        </th>
+                        <th class="px-2 py-2 text-center" style="width:110px; border: 1px solid var(--color-border);"
+                            title="Attach an image, audio, video, or text file. Click or drag onto any row.">
+                            <span class="material-icons"
+                                style="font-size:14px; vertical-align:middle;">attach_file</span> File
+                        </th>
+                        <th class="px-2 py-2 text-left" style="min-width:200px; border: 1px solid var(--color-border);"
+                            title="The prompt shown to the AI model being evaluated">Question *</th>
+                        <th class="px-2 py-2 text-left" style="min-width:120px; border: 1px solid var(--color-border);"
+                            title="Additional context appended after the question (e.g., instructions, background)">
+                            Context</th>
+                        <th class="px-2 py-2 text-left" style="min-width:160px; border: 1px solid var(--color-border);"
+                            title="Valid response options separated by semicolons. E.g.: Yes; No; Unsure">Choices *
+                            <span class="normal-case font-normal">(semicolons)</span>
+                        </th>
+                        <th class="eval-col px-2 py-2 text-left"
+                            style="min-width:120px; border: 1px solid var(--color-border);"
+                            title="The ground truth / canonical answer. The model's response is scored against this.">
+                            Answer</th>
+                        <th class="eval-col px-2 py-2 text-center"
+                            style="width:72px; border: 1px solid var(--color-border);"
+                            title="Mark items where the correct answer represents a detected case (e.g. pictures that contain a hot dog). Leave unchecked for negatives. Drives Precision, Recall, and F1. If your test has no positive/negative distinction, leave all unchecked.">
+                            Positive?</th>
+                        <th class="px-2 py-2 text-center" style="width:68px; border: 1px solid var(--color-border);">
+                        </th>
+                    </tr>
+                </thead>
+                <tbody id="table-body"></tbody>
+            </table>
+        </div>
+
+        <!-- Fill-down toolbar (appears when selection spans 2+ rows) -->
+        <div id="fill-toolbar"
+            class="hidden shrink-0 flex items-center gap-3 px-3 py-2 mt-2 border-t border-[var(--color-border)]">
+            <span class="text-xs text-[var(--color-text-secondary)]" id="fill-selection-label"></span>
+            <button onclick="fillDown()" class="button-secondary" style="padding:4px 10px; font-size:12px;">
+                <span class="material-icons" style="font-size:14px;">south</span> Fill Down
+                <span class="text-[var(--color-text-secondary)] ml-1">Ctrl+D</span>
+            </button>
+            <button onclick="clearSelection()"
+                class="text-xs px-2 py-1 rounded text-[var(--color-text-secondary)] hover:bg-[var(--color-highlight-shade1)] transition-colors">Clear</button>
+        </div>
+
+    </div>
+
+    <!-- Submit -->
+    <button id="create-btn" class="button-primary w-full" onclick="submitTest()" disabled>
+        <span class="material-icons" style="font-size:18px;">check</span>
+        {{ 'Save Changes' if edit_mode else 'Submit' }}
+    </button>
+</div>
+
+<script>
+    if (!crypto.randomUUID) {
+        crypto.randomUUID = function () {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                const r = Math.random() * 16 | 0;
+                return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+            });
+        };
+    }
+
+    // ── State ─────────────────────────────────────────────────────────────────
+
+    const EDIT_MODE = {{ edit_mode | tojson }};
+    const EDIT_TEST_ID = {{ (test_pb.id if edit_mode else None) | tojson }};
+
+    let rows = [];
+    let attachments = new Map();
+    let selection = null;
+    let fileTargetRowIdx = null;
+    let undoToastTimeout = null;
+    let dragCounter = 0;
+
+    const EVAL_ONLY = new Set(['answer', 'is_relevant']);
+
+    // ── File helpers ──────────────────────────────────────────────────────────
+
+    function getFileModality(mime) {
+        if (mime.startsWith('audio/')) return 1;
+        if (mime.startsWith('image/')) return 2;
+        if (mime.startsWith('video/')) return 3;
+        if (mime.startsWith('text/')) return 4;
+        return 0;
+    }
+    function getFileExtension(name) {
+        const parts = name.split('.');
+        return parts.length > 1 ? parts[parts.length - 1] : '';
+    }
+    function formatFileSize(bytes) {
+        if (!bytes) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i];
+    }
+    function getModalityLabel(m) { return (['Unknown', 'Audio', 'Image', 'Video', 'Text'])[m] || 'File'; }
+    function getModalityIcon(m) { return (['📄', '🎵', '🖼️', '🎬', '📝'])[m] || '📄'; }
+
+    function escHtml(str) {
+        if (str == null) return '';
+        return String(str)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function readFileAsDataURL(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = e => resolve(e.target.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
+    function makeAttachmentObject(file, dataUrl) {
+        return {
+            id: crypto.randomUUID(),
+            name: file.name,
+            extension: getFileExtension(file.name),
+            modality: getFileModality(file.type),
+            file: dataUrl.split(',')[1],
+            file_size: file.size,
+            mime: file.type,
+            dataUrl: dataUrl,
+        };
+    }
+
+    function getAttSrc(att) {
+        if (att.dataUrl) return att.dataUrl;
+        if (att.existing) return `/attachments/${att.id}/file`;
+        if (att.file && att.mime) return `data:${att.mime};base64,${att.file}`;
+        return '';
+    }
+
+    function openLightbox(src, modality) {
+        const overlay = document.createElement('div');
+        overlay.className = 'att-lightbox';
+        overlay.addEventListener('click', () => overlay.remove());
+        if (modality === 3) {
+            const v = document.createElement('video');
+            v.src = src;
+            v.controls = true;
+            v.autoplay = true;
+            v.addEventListener('click', e => e.stopPropagation());
+            overlay.appendChild(v);
+        } else {
+            const img = document.createElement('img');
+            img.src = src;
+            overlay.appendChild(img);
+        }
+        document.body.appendChild(overlay);
+    }
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') {
+            const lb = document.querySelector('.att-lightbox');
+            if (lb) lb.remove();
+        }
+    });
+
+    // ── Eval field visibility ─────────────────────────────────────────────────
+
+    function onTypeChange() {
+        const isEval = document.getElementById('test-type').value === '1';
+        document.querySelectorAll('.eval-col').forEach(el => {
+            el.style.display = isEval ? '' : 'none';
+        });
+        document.getElementById('eval-banner').classList.toggle('hidden', !isEval);
+    }
+
+    // ── Item count ────────────────────────────────────────────────────────────
+
+    function updateItemCount() {
+        const count = rows.filter(r => r.question.trim()).length;
+        document.getElementById('item-count').textContent = count;
+        updateSubmitState();
+    }
+
+    function updateSubmitState() {
+        const name = document.getElementById('test-name').value.trim();
+        const hasItems = rows.some(r => r.question.trim());
+        document.getElementById('create-btn').disabled = !(name && hasItems);
+    }
+
+    // ── Table rendering ───────────────────────────────────────────────────────
+
+    function renderTable() {
+        const tbody = document.getElementById('table-body');
+        const isEval = document.getElementById('test-type').value === '1';
+
+        updateItemCount();
+
+        document.querySelectorAll('.eval-col').forEach(el => {
+            el.style.display = isEval ? '' : 'none';
+        });
+
+        tbody.innerHTML = '';
+        rows.forEach((row, idx) => {
+            tbody.appendChild(makeTableRow(idx, row, isEval));
+        });
+
+        applySelectionHighlight();
+    }
+
+    function makeTableRow(idx, row, isEval) {
+        const tr = document.createElement('tr');
+        tr.className = 'row-enter';
+        tr.dataset.idx = idx;
+
+        // #
+        const numTd = document.createElement('td');
+        numTd.className = 'text-center text-xs text-[var(--color-text-secondary)]';
+        numTd.style.cssText = 'border: 1px solid var(--color-border); padding: 2px; width: 36px;';
+        numTd.textContent = idx + 1;
+        tr.appendChild(numTd);
+
+        // Attachment
+        const attTd = document.createElement('td');
+        attTd.className = 'attachment-cell';
+        attTd.style.cssText = 'border: 1px solid var(--color-border);';
+        const att = row.attachment_id ? attachments.get(row.attachment_id) : null;
+
+        if (att) {
+            const src = getAttSrc(att);
+            const wrap = document.createElement('div');
+            wrap.className = 'att-preview';
+            wrap.title = `${att.name} (${formatFileSize(att.file_size)})`;
+
+            if (att.modality === 2 && src) {
+                const img = document.createElement('img');
+                img.src = src;
+                img.alt = att.name;
+                img.addEventListener('click', () => openLightbox(src, 2));
+                wrap.appendChild(img);
+            } else if (att.modality === 1 && src) {
+                const audio = document.createElement('audio');
+                audio.src = src;
+                audio.controls = true;
+                audio.preload = 'metadata';
+                wrap.appendChild(audio);
+            } else if (att.modality === 3 && src) {
+                const video = document.createElement('video');
+                video.src = src;
+                video.preload = 'metadata';
+                video.muted = true;
+                video.addEventListener('click', () => openLightbox(src, 3));
+                wrap.appendChild(video);
+            } else {
+                const icon = document.createElement('span');
+                icon.style.cssText = 'font-size: 24px;';
+                icon.textContent = getModalityIcon(att.modality);
+                wrap.appendChild(icon);
+            }
+
+            const label = document.createElement('span');
+            label.className = 'att-label';
+            label.textContent = att.name;
+            wrap.appendChild(label);
+
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'remove-file';
+            removeBtn.textContent = '×';
+            removeBtn.addEventListener('click', e => { e.stopPropagation(); removeRowAttachment(idx); });
+            wrap.appendChild(removeBtn);
+
+            attTd.appendChild(wrap);
+        } else {
+            const dz = document.createElement('div');
+            dz.className = 'row-dropzone';
+            dz.title = 'Click or drag to attach';
+            dz.innerHTML = '<span class="material-icons" style="font-size:16px; opacity:0.3;">add_photo_alternate</span>';
+            dz.addEventListener('click', () => triggerRowFileInput(idx));
+            dz.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); dz.classList.add('drag-over'); });
+            dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+            dz.addEventListener('drop', e => {
+                e.preventDefault(); e.stopPropagation();
+                dz.classList.remove('drag-over');
+                if (e.dataTransfer.files.length) handleRowFile(idx, e.dataTransfer.files[0]);
+            });
+            attTd.appendChild(dz);
+        }
+        tr.appendChild(attTd);
+
+        // Text columns: question, context, choices
+        ['question', 'context', 'choices'].forEach(col => {
+            const td = document.createElement('td');
+            td.style.cssText = 'border: 1px solid var(--color-border); padding: 0;';
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'ss-input';
+            input.value = row[col] || '';
+            input.dataset.col = col;
+            input.dataset.row = idx;
+            if (col === 'question') input.placeholder = 'Question…';
+            else if (col === 'choices') input.placeholder = 'A; B; C';
+            input.addEventListener('input', function () {
+                rows[idx][col] = this.value;
+                updateItemCount();
+                if (idx === rows.length - 1 && this.value.trim()) appendNewRow();
+            });
+            input.addEventListener('keydown', e => handleSsKey(e, idx));
+            input.addEventListener('paste', e => handleSsPaste(e, idx));
+            input.addEventListener('mousedown', e => handleCellMouseDown(e, idx, col));
+            td.appendChild(input);
+            tr.appendChild(td);
+        });
+
+        // Answer (eval only)
+        const ansTd = document.createElement('td');
+        ansTd.className = 'eval-col';
+        ansTd.style.cssText = 'border: 1px solid var(--color-border); padding: 0;';
+        if (!isEval) ansTd.style.display = 'none';
+        const ansInput = document.createElement('input');
+        ansInput.type = 'text';
+        ansInput.className = 'ss-input';
+        ansInput.value = row.answer || '';
+        ansInput.dataset.col = 'answer';
+        ansInput.dataset.row = idx;
+        ansInput.placeholder = 'Answer';
+        ansInput.addEventListener('input', function () { rows[idx].answer = this.value; });
+        ansInput.addEventListener('keydown', e => handleSsKey(e, idx));
+        ansInput.addEventListener('paste', e => handleSsPaste(e, idx));
+        ansInput.addEventListener('mousedown', e => handleCellMouseDown(e, idx, 'answer'));
+        ansTd.appendChild(ansInput);
+        tr.appendChild(ansTd);
+
+        // Positive? (eval only)
+        const relTd = document.createElement('td');
+        relTd.className = 'eval-col';
+        relTd.style.cssText = 'border: 1px solid var(--color-border); text-align: center; padding: 4px;';
+        if (!isEval) relTd.style.display = 'none';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.style.cssText = 'width:16px; height:16px; cursor:pointer; accent-color: var(--color-accent-primary);';
+        cb.checked = !!row.is_relevant;
+        cb.addEventListener('change', function () { rows[idx].is_relevant = this.checked; });
+        relTd.appendChild(cb);
+        tr.appendChild(relTd);
+
+        // Actions (duplicate + delete)
+        const actTd = document.createElement('td');
+        actTd.style.cssText = 'border: 1px solid var(--color-border); text-align: center; padding: 2px;';
+        actTd.className = 'flex items-center justify-center gap-0.5';
+
+        const dupBtn = document.createElement('button');
+        dupBtn.className = 'action-delete';
+        dupBtn.title = 'Duplicate row';
+        dupBtn.innerHTML = '<span class="material-icons" style="font-size:15px;">content_copy</span>';
+        dupBtn.addEventListener('click', () => duplicateRow(idx));
+        actTd.appendChild(dupBtn);
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'action-delete';
+        delBtn.title = 'Delete row';
+        delBtn.innerHTML = '<span class="material-icons" style="font-size:16px;">close</span>';
+        delBtn.addEventListener('click', () => deleteRow(idx));
+        actTd.appendChild(delBtn);
+
+        tr.appendChild(actTd);
+
+        return tr;
+    }
+
+    function appendNewRow() {
+        const newRow = makeEmptyRow();
+        rows.push(newRow);
+        const tbody = document.getElementById('table-body');
+        const isEval = document.getElementById('test-type').value === '1';
+        tbody.appendChild(makeTableRow(rows.length - 1, newRow, isEval));
+    }
+
+    function makeEmptyRow() {
+        return {
+            id: crypto.randomUUID(),
+            server_id: null,
+            question: '', context: '', choices: '',
+            answer: '', is_relevant: false, attachment_id: null
+        };
+    }
+
+    // ── Row operations ────────────────────────────────────────────────────────
+
+    function addRow() {
+        rows.push(makeEmptyRow());
+        renderTable();
+    }
+
+    function addRowAndFocus() {
+        rows.push(makeEmptyRow());
+        renderTable();
+        focusCell(rows.length - 1, 'question');
+    }
+
+    function focusCell(rowIdx, col) {
+        setTimeout(() => {
+            const input = document.querySelector(`#table-body input[data-row="${rowIdx}"][data-col="${col}"]`);
+            if (input) input.focus();
+        }, 0);
+    }
+
+    function duplicateRow(idx) {
+        const src = rows[idx];
+        const dup = { ...src, id: crypto.randomUUID(), server_id: null };
+        rows.splice(idx + 1, 0, dup);
+        renderTable();
+        focusCell(idx + 1, 'question');
+    }
+
+    function deleteRow(idx) {
+        const deleted = rows.splice(idx, 1)[0];
+        renderTable();
+        showUndoToast(`Deleted item #${idx + 1}`, () => {
+            rows.splice(Math.min(idx, rows.length), 0, deleted);
+            renderTable();
+        });
+    }
+
+    // ── Undo toast ────────────────────────────────────────────────────────────
+
+    function showUndoToast(message, undoFn) {
+        clearTimeout(undoToastTimeout);
+        const existing = document.getElementById('undo-toast');
+        if (existing) existing.remove();
+
+        const toast = document.createElement('div');
+        toast.id = 'undo-toast';
+        toast.className = 'undo-toast';
+
+        const msg = document.createElement('span');
+        msg.textContent = message;
+        toast.appendChild(msg);
+
+        const btn = document.createElement('button');
+        btn.textContent = 'Undo';
+        btn.style.cssText = 'color: var(--color-accent-secondary); font-weight: 600; background: none; border: none; cursor: pointer; font-size: 13px;';
+        btn.addEventListener('click', () => {
+            undoFn();
+            toast.remove();
+            clearTimeout(undoToastTimeout);
+        });
+        btn.addEventListener('mouseenter', () => { btn.style.textDecoration = 'underline'; });
+        btn.addEventListener('mouseleave', () => { btn.style.textDecoration = 'none'; });
+        toast.appendChild(btn);
+
+        document.body.appendChild(toast);
+        undoToastTimeout = setTimeout(() => toast.remove(), 5000);
+    }
+
+    // ── Keyboard navigation ───────────────────────────────────────────────────
+
+    function getVisibleTextInputs(tr) {
+        if (!tr) return [];
+        return Array.from(tr.querySelectorAll('input[type=text]')).filter(inp => inp.offsetParent !== null);
+    }
+
+    function handleSsKey(e, rowIdx) {
+        const tbody = document.getElementById('table-body');
+        const trs = Array.from(tbody.querySelectorAll('tr'));
+
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const inputs = getVisibleTextInputs(trs[rowIdx]);
+            const ci = inputs.indexOf(e.target);
+            if (e.shiftKey) {
+                if (ci > 0) inputs[ci - 1].focus();
+                else if (rowIdx > 0) {
+                    const prev = getVisibleTextInputs(trs[rowIdx - 1]);
+                    if (prev.length) prev[prev.length - 1].focus();
+                }
+            } else {
+                if (ci < inputs.length - 1) inputs[ci + 1].focus();
+                else if (rowIdx + 1 < trs.length) {
+                    const next = getVisibleTextInputs(trs[rowIdx + 1]);
+                    if (next.length) next[0].focus();
+                }
+            }
+        }
+
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (rowIdx + 1 >= rows.length) {
+                appendNewRow();
+            }
+            setTimeout(() => {
+                const updated = Array.from(document.getElementById('table-body').querySelectorAll('tr'));
+                if (updated[rowIdx + 1]) {
+                    const col = e.target.dataset.col;
+                    const inputs = getVisibleTextInputs(updated[rowIdx + 1]);
+                    const target = inputs.find(inp => inp.dataset.col === col) || inputs[0];
+                    if (target) target.focus();
+                }
+            }, 0);
+        }
+    }
+
+    // ── Paste from spreadsheet ────────────────────────────────────────────────
+
+    function handleSsPaste(e, startRow) {
+        const text = (e.clipboardData || window.clipboardData).getData('text');
+        if (!text.includes('\t') && !text.includes('\n')) return;
+        e.preventDefault();
+
+        const isEval = document.getElementById('test-type').value === '1';
+        const colOrder = ['question', 'context', 'choices', 'answer', 'is_relevant']
+            .filter(c => isEval || !EVAL_ONLY.has(c));
+        const startCol = e.target.dataset.col;
+        const startColIdx = colOrder.indexOf(startCol);
+        if (startColIdx === -1) return;
+
+        const pasted = text.trimEnd().split('\n').map(r => r.split('\t'));
+        pasted.forEach((pRow, dr) => {
+            const ri = startRow + dr;
+            while (ri >= rows.length) rows.push(makeEmptyRow());
+            pRow.forEach((cell, dc) => {
+                const colName = colOrder[startColIdx + dc];
+                if (!colName) return;
+                if (colName === 'is_relevant') rows[ri].is_relevant = /^(yes|true|1)$/i.test(cell.trim());
+                else rows[ri][colName] = cell.trim();
+            });
+        });
+        renderTable();
+    }
+
+    // ── File attachment: per-row ───────────────────────────────────────────────
+
+    function triggerRowFileInput(idx) {
+        fileTargetRowIdx = idx;
+        document.getElementById('row-file-input').click();
+    }
+
+    document.getElementById('row-file-input').addEventListener('change', function () {
+        if (fileTargetRowIdx !== null && this.files[0]) {
+            handleRowFile(fileTargetRowIdx, this.files[0]);
+        }
+        fileTargetRowIdx = null;
+        this.value = '';
+    });
+
+    function handleRowFile(idx, file) {
+        if (!file) return;
+        if (file.size > 1024 ** 3) { alert(file.name + ' exceeds 1 GB'); return; }
+        readFileAsDataURL(file).then(dataUrl => {
+            if (idx >= rows.length) return;
+            const oldId = rows[idx].attachment_id;
+            if (oldId && !rows.some((r, i) => i !== idx && r.attachment_id === oldId)) {
+                attachments.delete(oldId);
+            }
+            const att = makeAttachmentObject(file, dataUrl);
+            attachments.set(att.id, att);
+            rows[idx].attachment_id = att.id;
+            renderTable();
+        });
+    }
+
+    function removeRowAttachment(idx) {
+        const oldId = rows[idx].attachment_id;
+        rows[idx].attachment_id = null;
+        if (oldId && !rows.some(r => r.attachment_id === oldId)) {
+            attachments.delete(oldId);
+        }
+        renderTable();
+    }
+
+    // ── File import ──────────────────────────────────────────────────────────
+
+    function isRowEmpty(r) {
+        return !r.question.trim() && !r.context.trim() && !r.choices.trim() && !r.answer.trim() && !r.attachment_id;
+    }
+
+    document.getElementById('import-files-input').addEventListener('change', function () {
+        const files = Array.from(this.files);
+        this.value = '';
+        if (!files.length) return;
+
+        Promise.all(files.map(f => {
+            if (f.size > 1024 ** 3) { alert(f.name + ' exceeds 1 GB'); return null; }
+            return readFileAsDataURL(f).then(d => makeAttachmentObject(f, d));
+        })).then(atts => {
+            const valid = atts.filter(Boolean);
+            let emptyIdx = 0;
+            let firstIdx = null;
+            valid.forEach(att => {
+                attachments.set(att.id, att);
+                while (emptyIdx < rows.length && !isRowEmpty(rows[emptyIdx])) emptyIdx++;
+                if (emptyIdx < rows.length) {
+                    rows[emptyIdx].attachment_id = att.id;
+                    if (firstIdx === null) firstIdx = emptyIdx;
+                    emptyIdx++;
+                } else {
+                    rows.push({ ...makeEmptyRow(), attachment_id: att.id });
+                    if (firstIdx === null) firstIdx = rows.length - 1;
+                }
+            });
+            renderTable();
+            if (firstIdx !== null) focusCell(firstIdx, 'question');
+        });
+    });
+
+    // ── Drag and drop: table level ────────────────────────────────────────────
+
+    const tableContainer = document.getElementById('table-container');
+
+    tableContainer.addEventListener('dragover', e => { e.preventDefault(); });
+
+    tableContainer.addEventListener('dragenter', e => {
+        dragCounter++;
+        tableContainer.classList.add('drag-over-table');
+    });
+
+    tableContainer.addEventListener('dragleave', e => {
+        dragCounter--;
+        if (dragCounter <= 0) {
+            dragCounter = 0;
+            tableContainer.classList.remove('drag-over-table');
+        }
+    });
+
+    tableContainer.addEventListener('drop', e => {
+        e.preventDefault();
+        dragCounter = 0;
+        tableContainer.classList.remove('drag-over-table');
+
+        const files = Array.from(e.dataTransfer.files);
+        if (!files.length) return;
+
+        const attCell = e.target.closest('.attachment-cell');
+        if (attCell) {
+            const tr = attCell.closest('tr');
+            if (tr && tr.dataset.idx != null) {
+                handleRowFile(Number(tr.dataset.idx), files[0]);
+                return;
+            }
+        }
+
+        Promise.all(files.map(f => {
+            if (f.size > 1024 ** 3) { alert(f.name + ' exceeds 1 GB'); return null; }
+            return readFileAsDataURL(f).then(d => makeAttachmentObject(f, d));
+        })).then(atts => {
+            atts.filter(Boolean).forEach(att => {
+                attachments.set(att.id, att);
+                rows.push({ ...makeEmptyRow(), attachment_id: att.id });
+            });
+            renderTable();
+        });
+    });
+
+    // ── Fill-down / selection ─────────────────────────────────────────────────
+
+    function handleCellMouseDown(e, idx, col) {
+        if (col === 'is_relevant') return;
+        if (e.shiftKey && selection && selection.col === col) {
+            e.preventDefault();
+            selection.endRow = idx;
+            if (selection.endRow < selection.startRow) {
+                const tmp = selection.startRow;
+                selection.startRow = selection.endRow;
+                selection.endRow = tmp;
+            }
+        } else {
+            selection = { col, startRow: idx, endRow: idx };
+        }
+        applySelectionHighlight();
+    }
+
+    function applySelectionHighlight() {
+        document.querySelectorAll('.ss-input.selected').forEach(el => el.classList.remove('selected'));
+        const toolbar = document.getElementById('fill-toolbar');
+
+        if (!selection || selection.startRow === selection.endRow) {
+            toolbar.classList.add('hidden');
+            return;
+        }
+
+        for (let i = selection.startRow; i <= selection.endRow; i++) {
+            const input = document.querySelector(`#table-body input[data-row="${i}"][data-col="${selection.col}"]`);
+            if (input) input.classList.add('selected');
+        }
+
+        const count = selection.endRow - selection.startRow + 1;
+        document.getElementById('fill-selection-label').textContent = `${count} cells selected in "${selection.col}"`;
+        toolbar.classList.remove('hidden');
+    }
+
+    function fillDown() {
+        if (!selection || selection.startRow === selection.endRow) return;
+        const sourceVal = rows[selection.startRow][selection.col];
+        for (let i = selection.startRow + 1; i <= selection.endRow; i++) {
+            rows[i][selection.col] = sourceVal;
+            const input = document.querySelector(`#table-body input[data-row="${i}"][data-col="${selection.col}"]`);
+            if (input) input.value = sourceVal;
+        }
+        clearSelection();
+        updateItemCount();
+    }
+
+    function clearSelection() {
+        selection = null;
+        applySelectionHighlight();
+    }
+
+    document.addEventListener('keydown', e => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'd' && selection && selection.startRow !== selection.endRow) {
+            e.preventDefault();
+            fillDown();
+        }
+    });
+
+    // ── Submit ────────────────────────────────────────────────────────────────
+
+    function submitTest() {
+        const name = document.getElementById('test-name').value.trim();
+        const testType = Number(document.getElementById('test-type').value);
+        if (!name) { alert('Test name is required'); return; }
+
+        const validRows = rows.filter(r => r.question.trim());
+        if (!validRows.length) { alert('At least one test item with a question is required'); return; }
+
+        const invalid = validRows.find(r => {
+            const choices = r.choices ? r.choices.split(/[;\n]/).map(c => c.trim()).filter(Boolean) : [];
+            return choices.length === 0;
+        });
+        if (invalid) {
+            const idx = rows.indexOf(invalid);
+            const input = document.querySelector(`#table-body input[data-row="${idx}"][data-col="choices"]`);
+            if (input) { input.classList.add('invalid'); input.focus(); input.addEventListener('input', () => input.classList.remove('invalid'), { once: true }); }
+            alert('Every item needs at least one choice. Check row #' + (idx + 1) + '.');
+            return;
+        }
+
+        const labels = document.getElementById('test-labels').value.split(',').map(l => l.trim()).filter(Boolean);
+        const usedAttIds = new Set(validRows.filter(r => r.attachment_id).map(r => r.attachment_id));
+        const attachmentsArray = Array.from(attachments.values())
+            .filter(a => usedAttIds.has(a.id) && !a.existing)
+            .map(a => ({
+                id: a.id, name: a.name, extension: a.extension,
+                modality: a.modality, file: a.file, file_size: a.file_size, mime: a.mime,
+            }));
+
+        const payload = {
+            name,
+            description: document.getElementById('test-description').value,
+            type: testType,
+            provider: document.getElementById('test-provider').value.trim(),
+            labels,
+            items: validRows.map(r => ({
+                server_id: r.server_id || null,
+                question: r.question.trim(),
+                context: r.context || '',
+                choices: r.choices ? r.choices.split(/[;\n]/).map(c => c.trim()).filter(Boolean) : [''],
+                answer: r.answer || '',
+                is_relevant: !!r.is_relevant,
+                attachment_id: r.attachment_id,
+            })),
+            attachments: attachmentsArray,
+        };
+
+        const btn = document.getElementById('create-btn');
+        btn.disabled = true;
+
+        const submitUrl = EDIT_MODE ? `/tests/${EDIT_TEST_ID}/edit/submit` : '/tests/create/submit';
+        const actionLabel = EDIT_MODE ? 'Saving' : 'Creating';
+        btn.innerHTML = `<span class="material-icons animate-spin" style="font-size:18px;">refresh</span> ${actionLabel}…`;
+
+        fetch(submitUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        })
+            .then(r => r.json())
+            .then(resp => {
+                if (resp.status === 'ok' && resp.test_id) {
+                    window.location.href = `/tests/${resp.test_id}`;
+                } else {
+                    throw new Error(resp.error || 'Failed to save test');
+                }
+            })
+            .catch(err => {
+                alert('Failed to save test: ' + err.message);
+                btn.disabled = false;
+                const btnLabel = EDIT_MODE ? 'Save Changes' : 'Submit';
+                btn.innerHTML = `<span class="material-icons" style="font-size:18px;">check</span> ${btnLabel}`;
+            });
+    }
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+
+    {% if edit_mode %}
+    {% if attachment_metas %}
+    const serverAttachments = {{ attachment_metas | tojson }};
+    for (const [id, meta] of Object.entries(serverAttachments)) {
+        attachments.set(id, {
+            id: meta.id,
+            name: meta.name,
+            extension: meta.extension,
+            modality: meta.modality,
+            file_size: meta.file_size,
+            mime: meta.mime,
+            file: null,
+            existing: true,
+        });
+    }
+    {% endif %}
+    {% for item in test_item_pbs %}
+    rows.push({
+        id: crypto.randomUUID(),
+        server_id: {{ item.id | tojson }},
+        question: {{ item.question | tojson }},
+        context: {{ item.context | tojson }},
+        choices: {{ (item.choices | list | join('; ')) | tojson }},
+        answer: {{ item.answer | tojson }},
+        is_relevant: {{ item.is_relevant | tojson }},
+        attachment_id: {{ (item.attachment_id or None) | tojson }},
+    });
+    {% endfor %}
+    if (rows.length === 0) {
+        for (let i = 0; i < 5; i++) rows.push(makeEmptyRow());
+    }
+    {% else %}
+    for (let i = 0; i < 5; i++) rows.push(makeEmptyRow());
+    {% endif %}
+    onTypeChange();
+    renderTable();
+</script>
+{% endblock %}

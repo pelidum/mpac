@@ -1,0 +1,299 @@
+[
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided text mention a cat?",
+        "answer": "yes",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "context": "The quick brown fox jumped over the lazy cat.",
+        "is_relevant": true
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided text mention a cat?",
+        "answer": "no",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "context": "The quick brown fox jumped over the lazy dog.",
+        "is_relevant": false
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided text mention a cat?",
+        "answer": "yes",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "context": "The quick brown dog jumped over the lazy cat.",
+        "is_relevant": true
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided text mention a dog?",
+        "answer": "no",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "context": "The quick brown fox jumped over the lazy cat.",
+        "is_relevant": false
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided text mention a dog?",
+        "answer": "yes",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "context": "The quick brown fox jumped over the lazy dog.",
+        "is_relevant": true
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided text mention a dog?",
+        "answer": "yes",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "context": "The quick brown dog jumped over the lazy cat.",
+        "is_relevant": true
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided text mention a fox?",
+        "answer": "yes",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "context": "The quick brown fox jumped over the lazy cat.",
+        "is_relevant": true
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided text mention a fox?",
+        "answer": "yes",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "context": "The quick brown fox jumped over the lazy dog.",
+        "is_relevant": true
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided text mention a fox?",
+        "answer": "no",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "context": "The quick brown dog jumped over the lazy cat.",
+        "is_relevant": false
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided picture show a fox?",
+        "answer": "no",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "is_relevant": false,
+        "attachment_path": "vision_case1.jpg"
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided picture show a dog?",
+        "answer": "no",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "is_relevant": false,
+        "attachment_path": "vision_case1.jpg"
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided picture show a cat?",
+        "answer": "yes",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "is_relevant": true,
+        "attachment_path": "vision_case1.jpg"
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided picture show a fox?",
+        "answer": "no",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "is_relevant": false,
+        "attachment_path": "vision_case2.jpg"
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided picture show a dog?",
+        "answer": "yes",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "is_relevant": true,
+        "attachment_path": "vision_case2.jpg"
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided picture show a cat?",
+        "answer": "no",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "is_relevant": false,
+        "attachment_path": "vision_case2.jpg"
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided picture show a fox?",
+        "answer": "yes",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "is_relevant": true,
+        "attachment_path": "vision_case3.jpg"
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided picture show a dog?",
+        "answer": "no",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "is_relevant": false,
+        "attachment_path": "vision_case3.jpg"
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided picture show a cat?",
+        "answer": "no",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "is_relevant": false,
+        "attachment_path": "vision_case3.jpg"
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided audio clip mention a fox?",
+        "answer": "yes",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "is_relevant": true,
+        "attachment_path": "hearing_case1.wav"
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided audio clip mention a dog?",
+        "answer": "yes",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "is_relevant": true,
+        "attachment_path": "hearing_case1.wav"
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided audio clip mention a cat?",
+        "answer": "no",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "is_relevant": false,
+        "attachment_path": "hearing_case1.wav"
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided audio clip mention a fox?",
+        "answer": "no",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "is_relevant": false,
+        "attachment_path": "hearing_case2.wav"
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided audio clip mention a dog?",
+        "answer": "yes",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "is_relevant": true,
+        "attachment_path": "hearing_case2.wav"
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided audio clip mention a cat?",
+        "answer": "yes",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "is_relevant": true,
+        "attachment_path": "hearing_case2.wav"
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided audio clip mention a fox?",
+        "answer": "yes",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "is_relevant": true,
+        "attachment_path": "hearing_case3.wav"
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided audio clip mention a dog?",
+        "answer": "no",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "is_relevant": false,
+        "attachment_path": "hearing_case3.wav"
+    },
+    {
+        "test_id": "debug_animals",
+        "question": "Does the provided audio clip mention a cat?",
+        "answer": "yes",
+        "choices": [
+            "yes",
+            "no"
+        ],
+        "is_relevant": true,
+        "attachment_path": "hearing_case3.wav"
+    }
+]

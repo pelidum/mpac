@@ -1,0 +1,15 @@
+common --enable_bzlmod
+build --incompatible_default_to_explicit_init_py
+build --per_file_copt=external/.*@-w
+
+
+################################################################################
+# Consider implementing when doing GitHub Actions / testing at scale           #
+# https://fzakaria.com/2024/02/27/hermetic-but-at-what-cost.html               #
+################################################################################
+# build --nobuild_runfile_links
+# build --nolegacy_external_runfiles
+# build --strip=never
+# test --nobuild_runfile_links
+# test --nolegacy_external_runfiles
+# test --sandbox_default_allow_network=true

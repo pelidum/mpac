@@ -1,0 +1,781 @@
+{% extends "base.html" %}
+{% block title %}Pelidum MPAC - Help{% endblock %}
+
+{% block styles %}
+<style>
+  .toc-link {
+    display: block;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    transition: background 0.15s, color 0.15s;
+    border-left: 2px solid transparent;
+  }
+
+  .toc-link:hover {
+    background: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+  }
+
+  .toc-link.active {
+    border-left-color: var(--color-accent-primary);
+    color: var(--color-accent-primary);
+    font-weight: 500;
+  }
+
+  .toc-sub {
+    padding-left: 1.5rem;
+    font-size: 0.8rem;
+  }
+
+  .toc-group {
+    display: flex;
+    flex-direction: column;
+    padding-top: 0.5rem;
+    margin-top: 0.5rem;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .toc-group:first-of-type {
+    padding-top: 0;
+    margin-top: 0;
+    border-top: none;
+  }
+
+  .step-number {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 9999px;
+    background: var(--color-accent-primary);
+    color: white;
+    font-weight: 700;
+    font-size: 0.875rem;
+    flex-shrink: 0;
+  }
+
+  .concept-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 0.5rem;
+    background: var(--color-accent-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .help-section {
+    scroll-margin-top: 7.5rem;
+  }
+
+  pre.code-block {
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    overflow-x: auto;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    font-family: 'Courier New', Courier, monospace;
+    color: var(--color-text-primary);
+  }
+
+  .api-method-row:hover {
+    background: var(--color-bg-secondary);
+  }
+
+  details>summary {
+    cursor: pointer;
+    list-style: none;
+  }
+
+  details>summary::-webkit-details-marker {
+    display: none;
+  }
+
+  details[open] .chevron {
+    transform: rotate(90deg);
+  }
+
+  .chevron {
+    transition: transform 0.2s;
+    display: inline-block;
+  }
+
+  .metric-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-[1280px] mx-auto">
+
+  <div class="mb-8">
+    <h1 class="content-title">Help & Onboarding</h1>
+  </div>
+
+  <div class="flex gap-8 items-start">
+
+    <!-- ── Sticky TOC ─────────────────────────────────────────── -->
+    <aside class="hidden lg:block w-56 flex-shrink-0 sticky top-[7rem] self-start">
+      <nav id="toc" class="card p-4" style="display:block;">
+        <p class="text-xs font-semibold uppercase tracking-wider text-muted mb-3">On this page</p>
+        <ul style="list-style:none; margin:0; padding:0;">
+          <li class="toc-group"><a href="#what-is-mpac" class="toc-link">What is <span
+                class="font-mpac text-accent">MPAC</span></a></li>
+          <li class="toc-group"><a href="#concepts" class="toc-link">Core Concepts</a></li>
+          <li class="toc-group">
+            <a href="#journeys" class="toc-link">User Journeys</a>
+            <ul style="list-style:none; margin:0; padding:0;">
+              <li><a href="#journey-run" class="toc-link toc-sub">Run an evaluation</a></li>
+              <li><a href="#journey-survey" class="toc-link toc-sub">Run a survey</a></li>
+              <li><a href="#journey-create" class="toc-link toc-sub">Build a test</a></li>
+              <li><a href="#journey-api" class="toc-link toc-sub">Use the API</a></li>
+              <li><a href="#journey-client" class="toc-link toc-sub">Client Integration</a></li>
+            </ul>
+          </li>
+          <li class="toc-group"><a href="#methodology" class="toc-link">Methodology</a></li>
+          {% if is_admin %}
+          <li class="toc-group"><a href="#admin-guide" class="toc-link">Admin Guide</a></li>
+          {% endif %}
+        </ul>
+      </nav>
+    </aside>
+
+    <!-- ── Main content ───────────────────────────────────────── -->
+    <div class="flex-1 min-w-0 space-y-10">
+
+      <!-- ═══════════════════════════════════════════════════════
+           1. WHAT IS MPAC
+      ════════════════════════════════════════════════════════════ -->
+      <section id="what-is-mpac" class="help-section">
+        <div class="card p-8">
+          <div class="flex items-center gap-3 mb-4">
+            <span class="material-icons text-accent text-2xl">verified_user</span>
+            <h2 class="text-xl font-bold">What is <span class="font-mpac text-accent">MPAC</span>?</h2>
+          </div>
+
+          <p class="mb-4 leading-relaxed text-muted">
+            <b>The problem: </b>platforms, vendors, and AI labs all make claims about how well their AI
+            performs at a given task.
+            The numbers that exist are often produced by <i>the same party being evaluated.</i> When it comes
+            to compliance with regulatory frameworks like the Digital Services Act, you can't afford to blindly
+            trust the claims of these platforms as they apply to your use of AI in critical business workflows.
+          </p>
+
+          <p class="mb-6 leading-relaxed">
+            <b>The solution: </b><span class="font-mpac text-accent">MPAC</span> (<span
+              class="font-mpac text-accent">M</span>ulti-<span class="font-mpac text-accent">P</span>rovider <span
+              class="font-mpac text-accent">A</span>gent <span class="font-mpac text-accent">C</span>onsensus) is a
+            testing harness for AI classification. It runs
+            evaluations across any combination of models and providers, giving every model identical inputs and
+            producing structured, time-stamped outputs with their responses, reasoning, and core metrics. <span
+              class="font-mpac text-accent">MPAC</span> provides that data at any point in time, on-demand. It's
+            easy for companies to claim competancy, <span class="font-mpac text-accent">MPAC</span> makes them prove it.
+          </p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-2">
+            <div class="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+              <span class="material-icons text-accent text-lg mb-2 block">hub</span>
+              <p class="font-medium text-sm mb-1">Bring your own models</p>
+              <p class="text-xs text-muted"><span class="font-mpac text-accent">MPAC</span> has support for multiple
+                different inference providers; you can add multiple backends by copying your API keys from Anthropic,
+                Google, DeepSeek, and more. You can also bring your own local, custom, or open source models through
+                vLLM, ollama, llama.cpp, and other OpenAI API-compatible backends (reach out to info@pelidum.com to
+                discuss on-prem deployment options).</p>
+            </div>
+            <div class="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+              <span class="material-icons text-accent text-lg mb-2 block">fact_check</span>
+              <p class="font-medium text-sm mb-1">Bring your own ground truth</p>
+              <p class="text-xs text-muted"><span class="font-mpac text-accent">MPAC</span>'s core philosophy is rooted
+                in ground truth produced by human experts. It <i>never</i> relies on LLM-as-judge, and instead uses
+                simple
+                consensus or applies inter-rater reliability principles when a correct answer is not known (multiple
+                answers from multiple models are weighted against historical F1 task performance to produce a single
+                high-quality consensus).
+              </p>
+            </div>
+            <div class="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+              <span class="material-icons text-accent text-lg mb-2 block">tune</span>
+              <p class="font-medium text-sm mb-1">Bring your own quality bar</p>
+              <p class="text-xs text-muted"><span class="font-mpac text-accent">MPAC</span> eschews the current "highest
+                number wins" philosophy in LLM evaluations, and focuses on several core metrics instead for a fuller
+                picture of performance (Precision, Recall, F1, Latency p50/p95, Output tok/s, Throughput, Cost). These
+                are
+                complex, non-deterministic systems that <i>cannot</i> and <i>should not</i> be boiled down to any single
+                number.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════
+           2. CORE CONCEPTS
+      ════════════════════════════════════════════════════════════ -->
+      <section id="concepts" class="help-section">
+        <h2 class="text-xl font-bold mb-4">Core Concepts</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+          <div class="card p-5 flex items-start gap-4">
+            <div class="concept-icon"><span class="material-icons text-white text-xl">assignment</span></div>
+            <div>
+              <p class="font-semibold mb-1">Test</p>
+              <p class="text-sm text-muted leading-relaxed">A named collection of items and a methodology.
+                <strong>Evaluation</strong> tests score each model response against a known correct answer
+                (precision/recall/F1). <strong>Survey</strong> tests collect open-ended model responses when
+                a correct answer is not known and score them using consensus and inter-rater reliability methods.
+              </p>
+            </div>
+          </div>
+
+          <div class="card p-5 flex items-start gap-4">
+            <div class="concept-icon"><span class="material-icons text-white text-xl">quiz</span></div>
+            <div>
+              <p class="font-semibold mb-1">Test Item</p>
+              <p class="text-sm text-muted leading-relaxed">A single prompt within a test: a piece of content to
+                classify, a question to answer, or a scenario to evaluate. Items can include text, images, audio, and
+                video. Evaluation items carry a canonical answer from a human expert or multi-rater process.</p>
+            </div>
+          </div>
+
+          <div class="card p-5 flex items-start gap-4">
+            <div class="concept-icon"><span class="material-icons text-white text-xl">play_circle</span></div>
+            <div>
+              <p class="font-semibold mb-1">Test Run</p>
+              <p class="text-sm text-muted leading-relaxed">An execution of a test across one or more models.
+                Every model gets the same prompt under the same conditions. Each run records every answer
+                alongside precision, recall, F1, refusal rate, per-answer latency (p50/p95), per-stream output
+                tokens/sec, aggregate throughput, token usage, and cost per model.</p>
+            </div>
+          </div>
+
+          <div class="card p-5 flex items-start gap-4">
+            <div class="concept-icon"><span class="material-icons text-white text-xl">memory</span></div>
+            <div>
+              <p class="font-semibold mb-1">Model</p>
+              <p class="text-sm text-muted leading-relaxed">A specific LLM identified by provider and model ID. <span
+                  class="font-mpac text-accent">MPAC</span> supports commercial APIs (OpenAI, Anthropic, Mistral),
+                open-source models (Llama, Qwen, DeepSeek), and private or on-prem deployments via vLLM, ollama, and
+                llama.cpp. See <a href="{{ url_for('models') }}" class="link">Models</a> for the full catalog.</p>
+            </div>
+          </div>
+
+          <div class="card p-5 flex items-start gap-4">
+            <div class="concept-icon"><span class="material-icons text-white text-xl">cloud</span></div>
+            <div>
+              <p class="font-semibold mb-1">Backend</p>
+              <p class="text-sm text-muted leading-relaxed">An inference endpoint that routes requests to models:
+                OpenAI, Anthropic, OpenRouter, vLLM, Ollama, Llama.cpp, and more are all available options. Admins
+                register backends; <span class="font-mpac text-accent">MPAC</span> handles routing, concurrency, and
+                rate limiting automatically. Mix and match local and remote models in the same run!</p>
+            </div>
+          </div>
+
+          <div class="card p-5 flex items-start gap-4">
+            <div class="concept-icon"><span class="material-icons text-white text-xl">area_chart</span></div>
+            <div>
+              <p class="font-semibold mb-1">Metrics</p>
+              <p class="text-sm text-muted leading-relaxed mb-2"></p>
+              <p class="text-sm text-muted leading-relaxed"><span class="font-mpac text-accent">MPAC</span> reports both
+                classic ML metrics and modern LLM performance stats:
+                <br><br>
+                <b>Precision: </b> Of all positive predictions, how many were correct? <br>
+                <b>Recall: </b> Of all actual positives, how many were found? <br>
+                <b>F1: </b> Harmonic mean of precision and recall. <br>
+                <b>Latency: </b> End-to-end run time, in seconds. <br>
+                <b>Throughput: </b> How many tokens are output per second. <br>
+                <br>
+                The <a href="{{ url_for('metrics') }}" class="link">Metrics</a> page
+                aggregates these across runs for cross-model comparison.
+              </p>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════
+           3. USER JOURNEYS
+      ════════════════════════════════════════════════════════════ -->
+      <section id="journeys" class="help-section">
+        <h2 class="text-xl font-bold mb-6">User Journeys</h2>
+
+        <!-- Journey: Run an evaluation -->
+        <div id="journey-run" class="card p-6 mb-4 help-section">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="material-icons text-accent">play_arrow</span>
+            <h3 class="font-semibold text-lg">Run an evaluation</h3>
+          </div>
+          <p class="text-sm text-muted mb-4">The fastest path to results. Use a pre-built test from the library against
+            any set of models. Note: requires you to <a href="#admin-guide" class="link">register a backend</a> first.
+          </p>
+          <ol class="space-y-3 text-sm">
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">1.</span><span>Go to <a
+                  href="{{ url_for('tests') }}" class="link">Tests</a> and browse the library. Tests are grouped by
+                provider/source (e.g. Gab Hate Corpus, MMLU, internal datasets).</span></li>
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">2.</span><span>Open a test to
+                review its items, harm area, and methodology before committing to a run.</span></li>
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">3.</span><span>Click <strong>Run
+                  Test</strong>. Select one or more models; you can mix providers freely (e.g. GPT-4o alongside Llama-3
+                and Qwen3.5).</span></li>
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">4.</span><span>Set a
+                <strong>sample size</strong> if you want a subset of the dataset. Useful for quick sanity checks before
+                a full run; defaults to 500 max for large datasets unless overridden.</span></li>
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">5.</span><span>Launch. All models
+                receive the same items, and results stream back in real-time.</span></li>
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">6.</span><span>Once complete,
+                inspect the run results for per-model precision/recall/F1/refusal rate, individual answer review, and
+                cost/latency breakdown.</span></li>
+          </ol>
+          <br>
+          <img src="static/images/gifs/mpac_run_test.gif">
+        </div>
+
+        <!-- Journey: Run a survey -->
+        <div id="journey-survey" class="card p-6 mb-4 help-section">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="material-icons text-accent">poll</span>
+            <h3 class="font-semibold text-lg">Run a survey</h3>
+          </div>
+          <p class="text-sm text-muted mb-4">When you don't know the answer in advance, but want to get an informed
+            consensus from multiple models for a given task (e.g. high-stakes classification), surveys are the way to
+            go.</p>
+          <ol class="space-y-3 text-sm mb-4">
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">1.</span><span>Go to <a
+                  href="{{ url_for('tests') }}" class="link">Tests</a> and find a survey, or create one under
+                <strong>New Test</strong> → <strong>Survey</strong>.</span></li>
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">2.</span><span>Open the survey to
+                review its items and methodology.</span></li>
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">3.</span><span>Click <strong>Run
+                  Survey</strong>. Select two or more models; consensus improves with model diversity.</span></li>
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">4.</span><span>Set a
+                <strong>sample size</strong> if you want a subset of the items.</span></li>
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">5.</span><span>Launch. Each model
+                answers every item independently; results stream back in real-time.</span></li>
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">6.</span><span>Once complete,
+                inspect the consensus results. Answers from multiple models are weighted against historical F1 task
+                performance to produce a high-quality consensus for each item.</span></li>
+          </ol>
+          <div class="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
+            <p class="text-xs text-muted"><span class="font-medium">Tip:</span> Surveys can also be used for more
+              abstract questions; see the "Trust and Safety Core Harm Area Survey" for a task that asks models what harm
+              verticals they're comfortable working on according to their training instructions / content guardrails.
+            </p>
+          </div>
+          <br>
+          <img src="static/images/gifs/mpac_run_test.gif">
+        </div>
+
+        <!-- Journey: Build a test -->
+        <div id="journey-create" class="card p-6 mb-4 help-section">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="material-icons text-accent">add_circle</span>
+            <h3 class="font-semibold text-lg">Build a test</h3>
+          </div>
+          <p class="text-sm text-muted mb-4">Bring your own golden set: expert-vetted items specific to your platform,
+            harm area, or use case.</p>
+          <ol class="space-y-3 text-sm mb-5">
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">1.</span><span>Go to <a
+                  href="{{ url_for('tests') }}" class="link">Tests</a> → <strong>New Test</strong>. Choose
+                <strong>Evaluation</strong> (scored against a canonical answer) or <strong>Survey</strong> (open-ended,
+                informed consensus response).</span></li>
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">2.</span><span>Set the name,
+                source/provider, and visibility: private (owner only), org-wide, or public.</span></li>
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">3.</span><span>Add items directly
+                in the table: type one at a time, paste from Google Sheets / Excel, or use
+                <strong>Import Files</strong> to create items from attachments. For very large datasets, consider using
+                the API.</span></li>
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">4.</span><span>Evaluation items
+                require a <code class="bg-[var(--color-bg-secondary)] px-1 rounded">canonical_answer</code>; this is
+                your ground truth, ideally from expert review with multi-rater agreement.</span></li>
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">5.</span><span>Attach files where
+                relevant; <span class="font-mpac text-accent">MPAC</span> supports text, image, audio, and video
+                modalities within the same test (see the Debug Animals Evaluation for an example of mixed
+                modalities). Drag files directly onto table rows, or use <strong>Import Files</strong> to create items
+                with attachments in one step.</span></li>
+          </ol>
+          <p class="text-xs text-muted font-medium mb-2">Evaluation item JSON format:</p>
+          <pre class="code-block">
+            {
+              "test_id": "&lt;test-id&gt;",
+              "question": "Does this content constitute hate speech?",
+              "choices": ["Yes", "No"],
+              "canonical_answer": "Yes",
+              "context": "Optional: source text or content shown to the model."
+            }
+          </pre>
+          <br>
+          <img src="static/images/gifs/mpac_create_test.gif">
+        </div>
+
+        <!-- Journey: Use the API/CLI -->
+        <div id="journey-api" class="card p-6 help-section">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="material-icons text-accent">terminal</span>
+            <h3 class="font-semibold text-lg">Use the API / CLI</h3>
+          </div>
+          <p class="text-sm text-muted mb-5"><span class="font-mpac text-accent">MPAC</span> exposes a high-performance
+            gRPC API. Your API key is in <a href="{{ url_for('settings') }}" class="link">Settings</a>. All calls
+            require an <code class="bg-[var(--color-bg-secondary)] px-1 rounded">x-api-key</code> metadata header.</p>
+
+          <div class="space-y-5">
+            <div>
+              <p class="text-sm font-medium mb-2">Discover all service methods</p>
+              <pre
+                class="code-block">grpcurl {your-instance}-api.mpac.pelidum.com:443 list pelidum.services.grpc.mpac.MPAC</pre>
+              <p class="text-xs text-muted mt-2">Uses gRPC server reflection.</p>
+            </div>
+
+            <div>
+              <p class="text-sm font-medium mb-2">Tests</p>
+              <pre class="code-block"># List tests
+grpcurl -H "x-api-key: YOUR_API_KEY" \
+  -d '{"limit": 25}' \
+  {your-instance}-api.mpac.pelidum.com:443 pelidum.services.grpc.mpac.MPAC/ListTests
+
+# Get a specific test
+grpcurl -H "x-api-key: YOUR_API_KEY" \
+  -d '{"id": "TEST_ID"}' \
+  {your-instance}-api.mpac.pelidum.com:443 pelidum.services.grpc.mpac.MPAC/GetTest
+
+# Create a test
+grpcurl -H "x-api-key: YOUR_API_KEY" \
+  -d '{"name": "Hate Speech Eval", "test_type": "EVALUATION"}' \
+  {your-instance}-api.mpac.pelidum.com:443 pelidum.services.grpc.mpac.MPAC/CreateTest
+
+# Delete a test (owner or admin only)
+grpcurl -H "x-api-key: YOUR_API_KEY" \
+  -d '{"id": "TEST_ID"}' \
+  {your-instance}-api.mpac.pelidum.com:443 pelidum.services.grpc.mpac.MPAC/DeleteTest</pre>
+            </div>
+
+            <div>
+              <p class="text-sm font-medium mb-2">Test Items</p>
+              <pre class="code-block"># List items in a test
+grpcurl -H "x-api-key: YOUR_API_KEY" \
+  -d '{"parent_id": "TEST_ID", "limit": 50}' \
+  {your-instance}-api.mpac.pelidum.com:443 pelidum.services.grpc.mpac.MPAC/ListTestItems
+
+# Add a single item
+grpcurl -H "x-api-key: YOUR_API_KEY" \
+  -d '{
+    "test_id": "TEST_ID",
+    "question": "Does this content constitute hate speech?",
+    "choices": ["Yes", "No"],
+    "canonical_answer": "Yes",
+    "context": "Optional source text shown to the model."
+  }' \
+  {your-instance}-api.mpac.pelidum.com:443 pelidum.services.grpc.mpac.MPAC/CreateTestItem
+
+# Get a single item
+grpcurl -H "x-api-key: YOUR_API_KEY" \
+  -d '{"id": "ITEM_ID"}' \
+  {your-instance}-api.mpac.pelidum.com:443 pelidum.services.grpc.mpac.MPAC/GetTestItem
+
+# Delete an item
+grpcurl -H "x-api-key: YOUR_API_KEY" \
+  -d '{"id": "ITEM_ID"}' \
+  {your-instance}-api.mpac.pelidum.com:443 pelidum.services.grpc.mpac.MPAC/DeleteTestItem</pre>
+            </div>
+
+            <div>
+              <p class="text-sm font-medium mb-2">Test Runs</p>
+              <pre class="code-block"># List runs
+grpcurl -H "x-api-key: YOUR_API_KEY" \
+  -d '{"limit": 25}' \
+  {your-instance}-api.mpac.pelidum.com:443 pelidum.services.grpc.mpac.MPAC/ListTestRuns
+
+# Get a run (includes per-model results)
+grpcurl -H "x-api-key: YOUR_API_KEY" \
+  -d '{"id": "RUN_ID"}' \
+  {your-instance}-api.mpac.pelidum.com:443 pelidum.services.grpc.mpac.MPAC/GetTestRun</pre>
+              <p class="text-xs text-muted mt-2">Completed runs can also be exported as JSON or CSV from the run detail
+                view in the UI.</p>
+            </div>
+
+            <div>
+              <p class="text-sm font-medium mb-2">Models and Backends</p>
+              <pre class="code-block"># List available models
+grpcurl -H "x-api-key: YOUR_API_KEY" \
+  -d '{"limit": 100}' \
+  {your-instance}-api.mpac.pelidum.com:443 pelidum.services.grpc.mpac.MPAC/ListModels
+
+# Get a model
+grpcurl -H "x-api-key: YOUR_API_KEY" \
+  -d '{"id": "MODEL_ID"}' \
+  {your-instance}-api.mpac.pelidum.com:443 pelidum.services.grpc.mpac.MPAC/GetModel
+
+# List backends
+grpcurl -H "x-api-key: YOUR_API_KEY" \
+  {your-instance}-api.mpac.pelidum.com:443 pelidum.services.grpc.mpac.MPAC/ListBackends</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Client integration quickstart -->
+        <div id="journey-client" class="card p-6 help-section">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="material-icons text-accent">integration_instructions</span>
+            <h3 class="font-semibold text-lg">Client Integration</h3>
+          </div>
+          <p class="text-xs text-muted mb-2">Uses server reflection; no .proto files needed.</p>
+          <p class="text-xs text-muted mb-4">Install: <code
+              class="bg-[var(--color-bg-secondary)] px-1 rounded">pip install grpcio grpcio-reflection protobuf</code>
+          </p>
+          <pre class="code-block">import grpc
+from grpc_reflection.v1alpha.proto_reflection_descriptor_database import (
+    ProtoReflectionDescriptorDatabase,
+)
+from google.protobuf.descriptor_pool import DescriptorPool
+from google.protobuf.message_factory import GetMessageClass
+
+HOST    = "{your-instance}-api.mpac.pelidum.com:443"
+API_KEY = "YOUR_API_KEY"
+
+channel = grpc.secure_channel(HOST, grpc.ssl_channel_credentials())
+
+# Pull full schema from the server; no local .proto files required
+db   = ProtoReflectionDescriptorDatabase(channel)
+pool = DescriptorPool(db)
+svc  = pool.FindServiceByName("pelidum.services.grpc.mpac.MPAC")
+
+# Print all available methods
+methods = sorted(m.name for m in svc.methods)
+[print(m) for m in methods]
+
+# List tests
+ListRequest = GetMessageClass(
+    pool.FindMessageTypeByName("pelidum.services.grpc.mpac.ListRequest")
+)
+Test = GetMessageClass(
+    pool.FindMessageTypeByName("pelidum.services.grpc.mpac.Test")
+)
+
+list_tests = channel.unary_stream(
+    "/pelidum.services.grpc.mpac.MPAC/ListTests",
+    request_serializer=lambda r: r.SerializeToString(),
+    response_deserializer=Test.FromString,
+)
+
+results = {}
+for test in list_tests(ListRequest(limit=25), metadata=[("x-api-key", API_KEY)]):
+    results[test.name] = test.item_count
+
+for name, count in sorted(results.items()):
+    print(f"{name}: {count} items")
+
+channel.close()</pre>
+          <p class="text-xs text-muted mt-3">
+            <code class="bg-[var(--color-bg-secondary)] px-1 rounded">ListTests</code> is server-streaming; the loop
+            yields one <code class="bg-[var(--color-bg-secondary)] px-1 rounded">Test</code> per result. Swap in any
+            method and message types to call other endpoints the same way.
+          </p>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════
+           4. METHODOLOGY
+      ════════════════════════════════════════════════════════════ -->
+      <section id="methodology" class="help-section">
+        <h2 class="text-xl font-bold mb-4">Methodology</h2>
+        <div class="card p-6">
+          <p class="text-sm text-muted mb-6 leading-relaxed"><span class="font-mpac text-accent">MPAC</span> applies the
+            same quality measurement process that human safety teams have used for decades, adapted for AI. When new
+            human moderators ramp up, they're given tests like this until they're aligned with more experienced
+            reviewers. <span class="font-mpac text-accent">MPAC</span> runs the same process, at scale, across all
+            models.</p>
+
+          <div class="space-y-5">
+            <div class="flex items-start gap-4">
+              <div class="step-number flex-shrink-0">1</div>
+              <div>
+                <p class="font-medium mb-1">Assemble a golden set</p>
+                <p class="text-sm text-muted">Expert-vetted items with multi-rater agreement. Each item has a canonical
+                  correct answer established by human review, not AI judgment. <span
+                    class="font-mpac text-accent">MPAC</span>'s built-in library draws from sources like the Gab Hate
+                  Corpus and academic datasets; you can bring your own.</p>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-4">
+              <div class="step-number flex-shrink-0">2</div>
+              <div>
+                <p class="font-medium mb-1">Zero-shot, pass@1</p>
+                <p class="text-sm text-muted">Each model receives the same instruction prompt and content item; no
+                  examples, no fine-tuning, no special treatment. One response per item (pass@1), matching live
+                  classifier conditions. This is the baseline; you can layer in prompting or fine-tuning later to
+                  measure improvement.</p>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-4">
+              <div class="step-number flex-shrink-0">3</div>
+              <div>
+                <p class="font-medium mb-1">Multi-model execution</p>
+                <p class="text-sm text-muted">All selected models run against the same items under comparable
+                  conditions. Local models via vLLM; remote models via their native APIs or OpenRouter. Results are
+                  never cross-contaminated between models.</p>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-4">
+              <div class="step-number flex-shrink-0">4</div>
+              <div>
+                <p class="font-medium mb-1">Standardized scoring</p>
+                <p class="text-sm text-muted">Model responses are extracted and compared to the canonical answer. <span
+                    class="font-mpac text-accent">MPAC</span> computes precision, recall, F1, refusal rate, per-answer
+                  latency (p50/p95), per-stream output tokens/sec, aggregate throughput, and cost per model, weighted by
+                  sample composition. The result is an apples-to-apples comparison across models, providers, and
+                  modalities.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-8 pt-6 border-t border-[var(--color-border)]">
+            <h3 class="font-semibold mb-3 flex items-center gap-2">
+              <span class="material-icons text-accent text-lg">verified</span>
+              Ground Truth &amp; Dataset Provenance
+            </h3>
+            <!-- TODO: provenance content — explain how canonical answers are
+                 determined for pre-built evaluation tests. Key points to cover:
+                 - Multiple human expert reviewers assess each item
+                 - Items are only marked as canonically true/positive when a
+                   majority of reviewers reached consensus
+                 - This follows inter-rater reliability principles
+                 - Source datasets (e.g. Gab Hate Corpus) and their review process
+                 - How users can evaluate and contest canonical answers -->
+            <p class="text-sm text-muted leading-relaxed"></p>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════
+           6. ADMIN GUIDE
+      ════════════════════════════════════════════════════════════ -->
+      {% if is_admin %}
+      <section id="admin-guide" class="help-section">
+        <h2 class="text-xl font-bold mb-6">Admin Guide</h2>
+
+        <div class="card p-6 mb-4">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="material-icons text-accent">cloud_upload</span>
+            <h3 class="font-semibold text-lg">Registering a Backend</h3>
+          </div>
+          <p class="text-sm text-muted mb-4">At least one backend must be registered before users can run tests.
+            Backends route inference requests to models and handle concurrency.</p>
+          <ol class="space-y-3 text-sm mb-5">
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">1.</span><span>Go to <a
+                  href="{{ url_for('admin') }}" class="link">Admin</a> → Backends → <strong>New Backend</strong>.</span>
+            </li>
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">2.</span><span>Select the backend
+                type: <strong>OpenAI</strong>, <strong>Anthropic</strong>, <strong>OpenRouter</strong>,
+                <strong>vLLM</strong>, <strong>Ollama</strong>, or <strong>Llama.cpp</strong>.</span></li>
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">3.</span><span>Enter the base URL
+                and API key. Set a concurrency limit; this controls how many simultaneous requests <span
+                  class="font-mpac text-accent">MPAC</span> sends to this backend.</span></li>
+            <li class="flex gap-3"><span class="font-bold text-accent min-w-[1.5rem]">4.</span><span>Enable the backend.
+                Models served by it become available for test runs immediately.</span></li>
+          </ol>
+          <div class="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] mb-4">
+            <p class="text-xs text-muted"><span class="font-medium">Local backends:</span> If you're running a local
+              model via vLLM, Ollama, or llama.cpp, the backend URL must be reachable from the <span
+                class="font-mpac text-accent">MPAC</span> server. For cloud-hosted <span
+                class="font-mpac text-accent">MPAC</span>, this typically requires port forwarding or a tunnel (e.g.
+              ngrok). For on-prem deployments, use the local network address directly.</p>
+          </div>
+          <p class="text-sm font-medium mb-2">Via grpcurl:</p>
+          <pre class="code-block">grpcurl \
+  -H "x-api-key: YOUR_ADMIN_KEY" \
+  -d '{
+    "backend_type": "BACKEND_OPENROUTER",
+    "base_url": "https://openrouter.ai/api/v1",
+    "api_key": "sk-or-...",
+    "enabled": true,
+    "concurrency_limit": 10
+  }' \
+  {your-instance}-api.mpac.pelidum.com:443 \
+  pelidum.services.grpc.mpac.MPAC/CreateBackend</pre>
+        </div>
+
+        <div class="card p-6 mb-4">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="material-icons text-accent">manage_accounts</span>
+            <h3 class="font-semibold text-lg">Managing Users</h3>
+          </div>
+          <ul class="space-y-2 text-sm text-muted">
+            <li class="flex gap-2"><span class="material-icons text-sm text-accent">arrow_right</span><span>Users are
+                provisioned on first Google OAuth login, or manually via <a href="{{ url_for('admin') }}"
+                  class="link">Admin</a> → Users → <strong>New User</strong> for password-based access.</span></li>
+            <li class="flex gap-2"><span class="material-icons text-sm text-accent">arrow_right</span><span>Promote a
+                user to <strong>Admin</strong> via the Admin panel. Admins can manage backends, all users, and see any
+                test regardless of visibility.</span></li>
+            <li class="flex gap-2"><span class="material-icons text-sm text-accent">arrow_right</span><span>API keys are
+                auto-generated per user. Admins can rotate keys from the user edit page.</span></li>
+          </ul>
+        </div>
+
+        <div class="card p-6">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="material-icons text-accent">speed</span>
+            <h3 class="font-semibold text-lg">Rate Limits &amp; Spend Caps</h3>
+          </div>
+          <p class="text-sm text-muted mb-4">Set per user in <a href="{{ url_for('admin') }}" class="link">Admin</a> →
+            Users → Edit. A value of <code class="bg-[var(--color-bg-secondary)] px-1 rounded">0</code> means no limit.
+          </p>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div class="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+              <p class="font-medium mb-1">Tokens / minute</p>
+              <p class="text-muted text-xs">Hard cap on token throughput. Requests exceeding this are throttled until
+                the next minute window.</p>
+            </div>
+            <div class="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+              <p class="font-medium mb-1">Daily spend cap</p>
+              <p class="text-muted text-xs">Maximum USD spend per calendar day. New runs are blocked once hit, until
+                midnight UTC.</p>
+            </div>
+            <div class="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+              <p class="font-medium mb-1">Monthly spend cap</p>
+              <p class="text-muted text-xs">Rolling 30-day spend limit for budget control across billing cycles.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+      {% endif %}
+
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const tocLinks = document.querySelectorAll('#toc .toc-link');
+  const sections = document.querySelectorAll('.help-section');
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        tocLinks.forEach(l => l.classList.remove('active'));
+        const active = document.querySelector(`#toc a[href="#${entry.target.id}"]`);
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-10% 0px -80% 0px' });
+  sections.forEach(s => observer.observe(s));
+
+</script>
+{% endblock %}

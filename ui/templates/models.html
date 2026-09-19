@@ -1,0 +1,358 @@
+{% extends "base.html" %}
+{% block title %}Pelidum MPAC - Models{% endblock %}
+{% block styles %}
+<style>
+  .provider-logo {
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
+    display: block;
+  }
+
+  .provider-icon-fallback {
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg,
+      rgba(var(--color-accent-primary-rgb), 0.1),
+      rgba(var(--color-accent-primary-rgb), 0.2));
+    border-radius: 12px;
+    border: 2px solid var(--color-border);
+  }
+
+  .provider-icon-fallback .material-icons {
+    font-size: 48px;
+    color: var(--color-accent-primary);
+  }
+
+  .cost-indicator {
+    font-weight: 600;
+    letter-spacing: 1px;
+  }
+
+  .model-card {
+    transition: all 0.2s ease;
+  }
+
+  .model-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+  <div>
+    <h1 class="content-title">Models</h1>
+    <p class="text-sm mt-2 muted max-w-3xl">
+      Browse all Large Language Models available in MPAC, organized by provider.
+    </p>
+  </div>
+</div>
+
+<div class="card p-6 mb-6">
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+    <div>
+      <label for="filterFamily" class="block text-sm font-medium mb-1 label-bold">
+        Model Family
+      </label>
+      <input type="text" id="filterFamily" class="input-field w-full" placeholder="Filter by family...">
+    </div>
+    <div>
+      <label for="filterProvider" class="block text-sm font-medium mb-1 label-bold">
+        Provider
+      </label>
+      <select id="filterProvider" class="select-field w-full">
+        <option value="">All Providers</option>
+      </select>
+    </div>
+    <div>
+      <label for="filterBackend" class="block text-sm font-medium mb-1 label-bold">
+        Backend
+      </label>
+      <select id="filterBackend" class="select-field w-full">
+        <option value="">All Backends</option>
+        {% for backend in backends %}
+        <option value="{{ backend.id }}">{{ backend.name or backend.id }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="filterModality" class="block text-sm font-medium mb-1 label-bold">
+        Modality
+      </label>
+      <select id="filterModality" class="select-field w-full">
+        <option value="">All Modalities</option>
+        <option value="TEXT">Text</option>
+        <option value="VISION">Vision</option>
+        <option value="AUDIO">Audio</option>
+      </select>
+    </div>
+    <div>
+      <label for="filterCost" class="block text-sm font-medium mb-1 label-bold">
+        Cost Tier
+      </label>
+      <select id="filterCost" class="select-field w-full">
+        <option value="">All Costs</option>
+        <option value="0">Free</option>
+        <option value="1">$</option>
+        <option value="2">$$</option>
+        <option value="3">$$$</option>
+        <option value="4">$$$$</option>
+        <option value="5">$$$$$</option>
+      </select>
+    </div>
+    <div class="flex items-end">
+      <button id="clearFilters" class="button-secondary w-full">
+        <span class="material-icons text-sm">clear</span>
+        Clear Filters
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="modelsContainer">
+  {% for group in provider_groups %}
+  <div class="provider-section mb-8"
+       data-provider="{{ group.provider }}"
+       data-backend-id="{{ group.backend_id }}">
+    <div class="card p-6">
+      <div class="flex flex-col lg:flex-row gap-6">
+        <!-- Provider Info Section -->
+        <div class="flex-shrink-0 flex flex-col items-center lg:items-start gap-3 lg:w-48">
+          {% if group.icon %}
+            <img src="{{ url_for('static', filename='images/providers/' + group.icon) }}"
+                 alt="{{ group.provider }}"
+                 class="provider-logo">
+          {% else %}
+            <div class="provider-icon-fallback">
+              <span class="material-icons">cloud</span>
+            </div>
+          {% endif %}
+          <h2 class="text-2xl font-bold text-[var(--color-text-primary)]">{{ group.provider }}</h2>
+          {% if group.backend_name %}
+          {% set bt = group.backend_type | lower %}
+          {% if bt == "llama_cpp" %}
+            {% set bi, bc = "memory",      "text-violet-600  bg-violet-50  border-violet-200  dark:bg-violet-950  dark:border-violet-800"  %}
+          {% elif bt == "ollama" %}
+            {% set bi, bc = "smart_toy",   "text-sky-600     bg-sky-50     border-sky-200     dark:bg-sky-950     dark:border-sky-800"     %}
+          {% elif bt == "vllm" %}
+            {% set bi, bc = "bolt",        "text-amber-600   bg-amber-50   border-amber-200   dark:bg-amber-950   dark:border-amber-800"   %}
+          {% elif bt == "openai" %}
+            {% set bi, bc = "auto_awesome","text-emerald-600 bg-emerald-50 border-emerald-200 dark:bg-emerald-950 dark:border-emerald-800" %}
+          {% elif bt == "openrouter" %}
+            {% set bi, bc = "hub",         "text-rose-600    bg-rose-50    border-rose-200    dark:bg-rose-950    dark:border-rose-800"    %}
+          {% elif bt == "debug_random" %}
+            {% set bi, bc = "bug_report",  "text-gray-500    bg-gray-50    border-gray-200    dark:bg-gray-900    dark:border-gray-700"    %}
+          {% else %}
+            {% set bi, bc = "dns",         "text-[var(--color-text-secondary)] bg-[var(--color-highlight-shade1)] border-[var(--color-border)]" %}
+          {% endif %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border {{ bc }}">
+            <span class="material-icons" style="font-size:12px">{{ bi }}</span>
+            {{ group.backend_name }}
+          </span>
+          {% endif %}
+          <p class="text-sm text-[var(--color-text-secondary)] provider-model-count">
+            {{ group.models|length }} models
+          </p>
+        </div>
+
+        <!-- Vertical Divider -->
+        <div class="hidden lg:block w-px bg-[var(--color-border)]"></div>
+        <div class="lg:hidden h-px bg-[var(--color-border)]"></div>
+
+        <!-- Models Grid -->
+        <div class="flex-1">
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {% for model in group.models %}
+            <div class="model-card border border-[var(--color-border)] rounded-lg p-4 bg-[var(--color-bg-primary)] hover:border-[var(--color-accent-secondary)]"
+                 data-family="{{ model.get('family', '') }}"
+                 data-modality="{{ model.get('capabilities', {}).get('modality', 'TEXT') }}"
+                 data-cost="{{ model.get('cost_tier', 0) }}"
+                 data-backend-id="{{ model.get('backend_id', '') }}">
+              <div class="flex justify-between items-start mb-3">
+                <h3 class="text-base font-semibold text-[var(--color-text-primary)] flex-1 pr-2">
+                  {{ model.get('name', model.get('id', 'Unknown')) }}
+                </h3>
+                <span class="cost-indicator text-[var(--color-accent-primary)] flex-shrink-0">
+                  {% if model.get('cost_tier', 0) == 0 %}
+                    FREE
+                  {% else %}
+                    {{ '$' * model.get('cost_tier', 1) }}
+                  {% endif %}
+                </span>
+              </div>
+
+              <div class="space-y-2 text-sm">
+                <div class="flex items-center gap-2 text-[var(--color-text-secondary)]">
+                  <span class="material-icons text-base">tag</span>
+                  <span>{{ model.get('family', 'Unknown') }}</span>
+                </div>
+
+                {% if model.get('parameters_label') %}
+                <div class="flex items-center gap-2 text-[var(--color-text-secondary)]">
+                  <span class="material-icons text-base">memory</span>
+                  <span>{{ model.get('parameters_label') }}</span>
+                </div>
+                {% endif %}
+
+                {% if model.get('capabilities', {}).get('context_window_length') %}
+                <div class="flex items-center gap-2 text-[var(--color-text-secondary)]">
+                  <span class="material-icons text-base">splitscreen</span>
+                  <span>{{ "{:,}".format(model.get('capabilities', {}).get('context_window_length', 0)|int) }} tokens</span>
+                </div>
+                {% endif %}
+
+                {% if model.get('capabilities', {}).get('modality') %}
+                <div class="flex items-center gap-2 text-[var(--color-text-secondary)]">
+                  <span class="material-icons text-base">
+                    {% if 'image' in model.get('capabilities', {}).get('modality', '').lower() or 'vision' in model.get('capabilities', {}).get('modality', '').lower() %}
+                      image
+                    {% elif 'audio' in model.get('capabilities', {}).get('modality', '').lower() %}
+                      audiotrack
+                    {% else %}
+                      text_fields
+                    {% endif %}
+                  </span>
+                  <span>{{ model.get('capabilities', {}).get('modality', 'TEXT') }}</span>
+                </div>
+                {% endif %}
+
+                {% if model.get('license') %}
+                <div class="flex items-center gap-2 text-[var(--color-text-secondary)]">
+                  <span class="material-icons text-base">description</span>
+                  <span>{{ model.get('license') }}</span>
+                </div>
+                {% endif %}
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-[var(--color-border)] flex justify-between items-center">
+                <div class="text-xs text-[var(--color-text-secondary)]">
+                  {% if model.get('pricing', {}).get('input_token_cost') %}
+                    In: ${{ "%.6f" | format(model.get('pricing', {}).get('input_token_cost', 0)) }}/1K
+                  {% endif %}
+                </div>
+                <a href="{{ url_for('model_detail', model_name=model.get('id')) }}"
+                   class="text-[var(--color-accent-secondary)] hover:underline text-sm font-medium flex items-center gap-1">
+                  Details
+                  <span class="material-icons text-sm">arrow_forward</span>
+                </a>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div id="noResults" class="card p-12 text-center hidden">
+  <span class="material-icons text-6xl text-[var(--color-text-secondary)] mb-4">search_off</span>
+  <h3 class="text-xl font-semibold text-[var(--color-text-primary)] mb-2">No models found</h3>
+  <p class="text-[var(--color-text-secondary)]">Try adjusting your filters</p>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Filter functionality
+  const filterFamily   = document.getElementById('filterFamily');
+  const filterProvider = document.getElementById('filterProvider');
+  const filterBackend  = document.getElementById('filterBackend');
+  const filterModality = document.getElementById('filterModality');
+  const filterCost     = document.getElementById('filterCost');
+  const clearFilters   = document.getElementById('clearFilters');
+  const providerSections = document.querySelectorAll('.provider-section');
+  const noResults = document.getElementById('noResults');
+
+  // Populate provider dropdown from the rendered sections (alphabetical).
+  (function populateProviders() {
+    const seen = new Set();
+    const names = [];
+    providerSections.forEach(s => {
+      const p = s.dataset.provider || '';
+      if (p && !seen.has(p)) { seen.add(p); names.push(p); }
+    });
+    names.sort((a, b) => a.localeCompare(b));
+    names.forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      filterProvider.appendChild(opt);
+    });
+  })();
+
+  function applyFilters() {
+    const familyFilter   = filterFamily.value.toLowerCase();
+    const providerFilter = filterProvider.value;
+    const backendFilter  = filterBackend.value;
+    const modalityFilter = filterModality.value;
+    const costFilter     = filterCost.value;
+    let totalVisible = 0;
+
+    providerSections.forEach(section => {
+      const sectionProvider  = section.dataset.provider || '';
+      const sectionBackendId = section.dataset.backendId || '';
+      const sectionProviderMatch = !providerFilter || sectionProvider === providerFilter;
+      const sectionBackendMatch  = !backendFilter  || sectionBackendId === backendFilter;
+
+      const modelCards = section.querySelectorAll('.model-card');
+      let visibleInProvider = 0;
+
+      modelCards.forEach(card => {
+        const family   = (card.dataset.family || '').toLowerCase();
+        const modality = card.dataset.modality || '';
+        const cost     = card.dataset.cost || '0';
+
+        const familyMatch   = !familyFilter   || family.includes(familyFilter);
+        const modalityMatch = !modalityFilter || modality === modalityFilter;
+        const costMatch     = !costFilter     || cost === costFilter;
+
+        if (sectionProviderMatch && sectionBackendMatch && familyMatch && modalityMatch && costMatch) {
+          card.style.display = 'block';
+          visibleInProvider++;
+          totalVisible++;
+        } else {
+          card.style.display = 'none';
+        }
+      });
+
+      if (!sectionProviderMatch || !sectionBackendMatch || visibleInProvider === 0) {
+        section.style.display = 'none';
+      } else {
+        section.style.display = '';
+        const countEl = section.querySelector('.provider-model-count');
+        if (countEl) {
+          const totalModels = modelCards.length;
+          countEl.textContent = visibleInProvider === totalModels
+            ? `${totalModels} models`
+            : `${visibleInProvider} of ${totalModels} models`;
+        }
+      }
+    });
+
+    noResults.style.display = totalVisible === 0 ? 'block' : 'none';
+  }
+
+  filterFamily.addEventListener('input', applyFilters);
+  filterProvider.addEventListener('change', applyFilters);
+  filterBackend.addEventListener('change', applyFilters);
+  filterModality.addEventListener('change', applyFilters);
+  filterCost.addEventListener('change', applyFilters);
+
+  clearFilters.addEventListener('click', () => {
+    filterFamily.value   = '';
+    filterProvider.value = '';
+    filterBackend.value  = '';
+    filterModality.value = '';
+    filterCost.value     = '';
+    applyFilters();
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,54 @@
+"""
+Bzlmod configuration for the MPAC (Multi-Provider Agent Consensus) monorepo.
+"""
+
+module(
+    name = "mpac",
+    version = "1.0",
+)
+
+# Deps
+bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
+bazel_dep(name = "aspect_rules_py", version = "1.10.0")
+bazel_dep(name = "hermetic_cc_toolchain", version = "4.1.0")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "protobuf", version = "31.1")
+bazel_dep(name = "rules_distroless", version = "0.8.0")
+bazel_dep(name = "rules_oci", version = "2.3.0")
+bazel_dep(name = "rules_pkg", version = "1.2.0")
+bazel_dep(name = "rules_proto_grpc_doc", version = "5.8.0")
+bazel_dep(name = "rules_proto_grpc_python", version = "5.8.0")
+bazel_dep(name = "rules_python", version = "1.9.0")
+
+# Python deps
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+pip.parse(
+    hub_name = "pypi",
+    python_version = "3.11",
+    requirements_lock = "//:requirements_lock.txt",
+)
+use_repo(pip, "pypi")
+
+# Docker base image
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "py3_11",
+    digest = "sha256:9358444059ed78e2975ada2c189f1c1a3144a5dab6f35bff8c981afb38946634",
+    image = "docker.io/library/python",
+    platforms = [
+        "linux/amd64",
+    ],
+)
+use_repo(oci, "py3_11")
+use_repo(
+    oci,
+    "py3_11_linux_amd64",
+)
+
+apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
+apt.install(
+    name = "weasyprint_syslibs",
+    manifest = "//:weasyprint_syslibs.yaml",
+    nolock = True,
+)
+use_repo(apt, "weasyprint_syslibs")

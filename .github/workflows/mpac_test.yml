@@ -1,0 +1,128 @@
+name: MPAC Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "server/**"
+      - "ui/**"
+  push:
+    branches:
+      - main
+    paths:
+      - "server/**"
+      - "ui/**"
+
+jobs:
+  unit-tests:
+    name: MPAC Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-unit
+          repository-cache: true
+
+      - name: Run MPAC unit tests
+        run: |
+          bazel test \
+            //server/objects/... \
+            //server:proto_compatibility_test \
+            //ui:test_auth \
+            //ui:test_admin \
+            //ui:test_runs \
+            //ui:test_settings \
+            --test_output=errors \
+            --keep_going
+
+  integration-tests:
+    name: MPAC Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mpac
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      MPAC_TEST_USER: ci-admin@example.com
+      MPAC_TEST_API_KEY: sk_ci_test_key_for_integration_tests
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-integration
+          repository-cache: true
+
+      - name: Build MPAC server
+        run: bazel build //server:server
+
+      - name: Start MPAC server in background
+        run: |
+          ./bazel-bin/server/server \
+            --db_host=localhost \
+            --db_user=postgres \
+            --db_password=postgres \
+            --admin_onboarding_id="${MPAC_TEST_USER}" \
+            --admin_onboarding_api_key="${MPAC_TEST_API_KEY}" \
+            --port=50051 \
+            &
+          echo "MPAC_SERVER_PID=$!" >> $GITHUB_ENV
+
+      - name: Wait for server to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if grpc_health_probe -addr=localhost:50051 2>/dev/null; then
+              echo "Server is ready."
+              exit 0
+            fi
+            # Fall back to checking the port directly if grpc_health_probe unavailable
+            if python3 -c "
+          import socket, sys
+          s = socket.socket()
+          s.settimeout(1)
+          sys.exit(0 if s.connect_ex(('localhost', 50051)) == 0 else 1)
+          "; then
+              echo "Server port is open."
+              exit 0
+            fi
+            echo "Waiting for server... ($i/30)"
+            sleep 2
+          done
+          echo "Server did not become ready in time."
+          exit 1
+
+      - name: Run MPAC integration tests
+        run: |
+          bazel test //server:server_test \
+            --test_arg="--test_api_key=${MPAC_TEST_API_KEY}" \
+            --test_arg="--test_user=${MPAC_TEST_USER}" \
+            --test_output=all \
+            --keep_going
+
+      - name: Stop MPAC server
+        if: always()
+        run: |
+          if [ -n "$MPAC_SERVER_PID" ]; then
+            kill "$MPAC_SERVER_PID" || true
+          fi

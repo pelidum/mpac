@@ -1,0 +1,1536 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>MPAC Run Report - {{ result_pb.id[:12] }}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400..900&display=swap" rel="stylesheet">
+  <style>
+    /* ── Page layout ───────────────────────────────────────── */
+    @page {
+      size: A4 portrait;
+      margin: 20mm 15mm 25mm 15mm;
+
+      @bottom-center {
+        content: "Page " counter(page) " of " counter(pages);
+        font-family: "Inter", sans-serif;
+        font-size: 8pt;
+        color: #555;
+      }
+    }
+
+    @page :first {
+      margin: 0;
+
+      @bottom-center {
+        content: none;
+      }
+    }
+
+    /* ── Base ──────────────────────────────────────────────── */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      font-size: 10pt;
+    }
+
+    body {
+      font-family: "Inter", sans-serif;
+      color: #11233e;
+      background: #fff;
+      line-height: 1.5;
+    }
+
+    /* ── Section page breaks ───────────────────────────────── */
+    .page-break {
+      page-break-before: always;
+    }
+
+    /* ── Cover page ────────────────────────────────────────── */
+    .cover {
+      width: 210mm;
+      height: 297mm;
+      background: #11233e;
+      color: #edeff2;
+      position: relative;
+      page-break-after: always;
+      padding: 55mm 25mm 0 25mm;
+    }
+
+    .cover-top {
+      text-align: center;
+    }
+
+    .cover-logo {
+      width: 100px;
+      height: auto;
+      margin-bottom: 24px;
+    }
+
+    .cover-brand {
+      font-family: "Poppins", sans-serif;
+      font-size: 28pt;
+      font-weight: 700;
+      letter-spacing: 1px;
+      margin-bottom: 2px;
+    }
+
+    .cover-mpac {
+      font-family: "Orbitron", sans-serif;
+      font-size: 18pt;
+      font-weight: 600;
+      color: #cca139;
+      letter-spacing: 3px;
+      margin-bottom: 6px;
+    }
+
+    .cover-subtitle {
+      font-family: "Inter", sans-serif;
+      font-size: 13pt;
+      font-weight: 400;
+      color: #c3cddc;
+      margin-bottom: 28px;
+    }
+
+    .cover-rule {
+      width: 80px;
+      height: 3px;
+      background: #cca139;
+      border: none;
+      margin: 0 auto 32px auto;
+    }
+
+    .cover-meta {
+      position: absolute;
+      left: 25mm;
+      bottom: 25mm;
+      text-align: left;
+      font-size: 9.5pt;
+      line-height: 2;
+      color: #c3cddc;
+    }
+
+    .cover-meta strong {
+      color: #edeff2;
+      font-weight: 600;
+    }
+
+    .cover-status-success {
+      color: #4ade80;
+    }
+
+    .cover-status-error {
+      color: #f87171;
+    }
+
+    .cover-status-cancelled {
+      color: #facc15;
+    }
+
+    .cover-status-progress {
+      color: #60a5fa;
+    }
+
+    .cover-status-unknown {
+      color: #9ca3af;
+    }
+
+    /* ── Section headings ──────────────────────────────────── */
+    h2 {
+      font-size: 14pt;
+      font-weight: 700;
+      color: #aa914f;
+      margin: 0 0 10px 0;
+      padding-bottom: 6px;
+      border-bottom: 1.5px solid #c3cddc;
+    }
+
+    h3 {
+      font-size: 11pt;
+      font-weight: 600;
+      color: #11233e;
+      margin: 14px 0 8px 0;
+    }
+
+    /* ── Section description ───────────────────────────────── */
+    .section-desc {
+      font-size: 8.5pt;
+      color: #555;
+      line-height: 1.6;
+      margin-bottom: 12px;
+    }
+
+    /* ── Cards ─────────────────────────────────────────────── */
+    .card {
+      border: 1px solid #c3cddc;
+      border-radius: 6px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      page-break-inside: avoid;
+      background: #fff;
+    }
+
+    /* ── Executive summary ─────────────────────────────────── */
+    .section-desc+.winner-banner,
+    .section-desc+.summary-grid {
+      margin-top: 8px;
+    }
+
+    .summary-grid {
+      display: flex;
+      flex-wrap: wrap;
+      margin: 0 -12px 10px 0;
+    }
+
+    .summary-stat {
+      flex: 1 1 120px;
+      border: 1px solid #c3cddc;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin: 0 12px 14px 0;
+      text-align: center;
+    }
+
+    .summary-stat-label {
+      font-size: 8pt;
+      text-transform: uppercase;
+      color: #555;
+      font-weight: 500;
+      margin-bottom: 2px;
+    }
+
+    .summary-stat-value {
+      font-size: 14pt;
+      font-weight: 700;
+      color: #11233e;
+    }
+
+    /* ── Winner banner ─────────────────────────────────────── */
+    .winner-banner {
+      background: #fdf8ed;
+      border: 1px solid #cca139;
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+      page-break-inside: avoid;
+    }
+
+    .winner-banner-title {
+      font-size: 10pt;
+      font-weight: 700;
+      color: #aa914f;
+      margin-bottom: 4px;
+    }
+
+    .winner-banner-model {
+      font-size: 13pt;
+      font-weight: 700;
+      color: #11233e;
+    }
+
+    .winner-banner-score {
+      font-size: 10pt;
+      color: #555;
+    }
+
+    /* ── Ranked models table ───────────────────────────────── */
+    .rank-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+      font-size: 9pt;
+    }
+
+    .rank-table th {
+      background: #eceef3;
+      color: #11233e;
+      font-weight: 600;
+      text-align: left;
+      padding: 6px 10px;
+      border-bottom: 1.5px solid #c3cddc;
+    }
+
+    .rank-table td {
+      padding: 5px 10px;
+      border-bottom: 1px solid #e8eaef;
+    }
+
+    .rank-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .rank-gold {
+      color: #b8860b;
+      font-weight: 700;
+    }
+
+    .rank-silver {
+      color: #6b7280;
+      font-weight: 600;
+    }
+
+    .rank-bronze {
+      color: #b45309;
+      font-weight: 600;
+    }
+
+    /* ── Charts ────────────────────────────────────────────── */
+    .chart-container {
+      page-break-inside: avoid;
+      margin-bottom: 14px;
+    }
+
+    .chart-legend {
+      font-size: 8pt;
+      margin-top: 6px;
+      color: #555;
+    }
+
+    .chart-legend-item {
+      margin-bottom: 4px;
+    }
+
+    .chart-legend-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .chart-legend-swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      margin-right: 4px;
+      display: inline-block;
+    }
+
+    /* ── Confusion matrix ──────────────────────────────────── */
+    .cm-wrapper {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin: -8px;
+      page-break-inside: avoid;
+    }
+
+    .cm-block {
+      margin: 8px;
+      page-break-inside: avoid;
+    }
+
+    .cm-title {
+      font-size: 9pt;
+      font-weight: 600;
+      text-align: center;
+      margin-bottom: 4px;
+      color: #11233e;
+    }
+
+    .cm-table {
+      border-collapse: collapse;
+      font-size: 9pt;
+    }
+
+    .cm-table th,
+    .cm-table td {
+      border: 1px solid #c3cddc;
+      padding: 6px 14px;
+      text-align: center;
+      min-width: 55px;
+    }
+
+    .cm-table th {
+      background: #eceef3;
+      font-weight: 600;
+      font-size: 8pt;
+      color: #555;
+    }
+
+    .model-card {
+      border: 1px solid #c3cddc;
+      border-radius: 6px;
+      overflow: hidden;
+      page-break-inside: avoid;
+      margin-bottom: 12px;
+    }
+
+    .model-card-header {
+      background: #f6f6f6;
+      padding: 10px 16px;
+      border-bottom: 1px solid #c3cddc;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .model-card-rank {
+      display: inline-block;
+      width: 30px;
+      height: 30px;
+      line-height: 30px;
+      border-radius: 6px;
+      background: #fff;
+      border: 1px solid #c3cddc;
+      font-weight: 700;
+      font-size: 12pt;
+      text-align: center;
+      color: #aa914f;
+      flex-shrink: 0;
+    }
+
+    .model-card-name {
+      font-size: 11pt;
+      font-weight: 700;
+      color: #11233e;
+    }
+
+    .model-card-backend {
+      font-size: 8pt;
+      color: #555;
+    }
+
+    .model-card-body {
+      padding: 10px 16px;
+      font-size: 9pt;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0;
+    }
+
+    .model-card-col {
+      flex: 1 1 50%;
+    }
+
+    .model-card-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      border-bottom: 1px solid #f0f1f4;
+      margin-right: 16px;
+    }
+
+    .model-card-row:last-child {
+      border-bottom: none;
+    }
+
+    .model-card-label {
+      color: #555;
+    }
+
+    .model-card-value {
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Model legend strip ─────────────────────────────────── */
+    .model-legend {
+      margin-bottom: 10px;
+    }
+
+    .model-legend-item {
+      display: inline-block;
+      font-size: 7.5pt;
+      color: #555;
+      margin-right: 12px;
+      margin-bottom: 4px;
+    }
+
+    .model-legend-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      font-size: 7pt;
+      font-weight: 700;
+      background: #eceef3;
+      color: #3F5E7A;
+      border: 1px solid #c3cddc;
+      margin-right: 3px;
+      vertical-align: middle;
+    }
+
+    /* ── Answers spreadsheet (PDF) ─────────────────────────── */
+    .answers-ss-pdf {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 7.5pt;
+      table-layout: fixed;
+    }
+
+    .answers-ss-pdf thead {
+      display: table-header-group;
+    }
+
+    .answers-ss-pdf th {
+      background: #eceef3;
+      color: #11233e;
+      font-weight: 600;
+      text-align: left;
+      padding: 4px 5px;
+      border: 1px solid #c3cddc;
+      font-size: 7pt;
+      text-transform: uppercase;
+      vertical-align: bottom;
+    }
+
+    .answers-ss-pdf td {
+      padding: 3px 5px;
+      border: 1px solid #e8eaef;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .answers-ss-pdf tr:nth-child(even) td {
+      background: #fafbfc;
+    }
+
+    .answers-ss-pdf .col-num {
+      text-align: center;
+      color: #999;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .answers-ss-pdf .col-att-img {
+      max-height: 36px;
+      max-width: 48px;
+      object-fit: cover;
+      border-radius: 2px;
+    }
+
+    .answers-ss-pdf .col-expected {
+      background: #fdf8ed;
+      font-weight: 600;
+    }
+
+    .answers-ss-pdf tr:nth-child(even) .col-expected {
+      background: #faf5e4;
+    }
+
+    .answers-ss-pdf .col-model-hdr {
+      text-align: center;
+      padding: 3px 2px;
+    }
+
+    .answers-ss-pdf .col-model-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      font-size: 7pt;
+      font-weight: 700;
+      background: #fff;
+      color: #3F5E7A;
+      border: 1px solid #c3cddc;
+    }
+
+    .answers-ss-pdf .ans-ok {
+      background: #dcfce7 !important;
+    }
+
+    .answers-ss-pdf .ans-bad {
+      background: #fee2e2 !important;
+    }
+
+    /* ── Error analysis ────────────────────────────────────── */
+    .error-model-header {
+      font-size: 11pt;
+      font-weight: 700;
+      color: #11233e;
+      margin: 18px 0 4px 0;
+      padding-bottom: 4px;
+      border-bottom: 2px solid #cca139;
+    }
+
+    .error-model-header:first-of-type {
+      margin-top: 0;
+    }
+
+    .error-cat-label {
+      font-size: 9pt;
+      font-weight: 600;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      margin: 12px 0 6px 0;
+    }
+
+    .error-item {
+      border: 1px solid #e8eaef;
+      border-radius: 4px;
+      padding: 8px 10px;
+      margin-bottom: 8px;
+      font-size: 8pt;
+    }
+
+    .error-item-q {
+      font-weight: 600;
+      color: #11233e;
+      margin-bottom: 3px;
+      font-size: 8.5pt;
+    }
+
+    .error-item-meta {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 5px;
+      font-size: 7.5pt;
+    }
+
+    .error-item-meta span {
+      color: #555;
+    }
+
+    .error-item-meta strong {
+      color: #11233e;
+    }
+
+    .error-item-expected {
+      background: #fdf8ed;
+      border-left: 3px solid #cca139;
+      padding: 3px 8px;
+      margin-bottom: 5px;
+      font-size: 7.5pt;
+    }
+
+    .error-item-answer {
+      background: #fee2e2;
+      border-left: 3px solid #ef4444;
+      padding: 3px 8px;
+      margin-bottom: 5px;
+      font-size: 7.5pt;
+      font-weight: 600;
+    }
+
+    .error-item-reasoning {
+      color: #444;
+      font-size: 7.5pt;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .error-item-raw {
+      background: #f8f9fa;
+      border: 1px solid #e8eaef;
+      border-radius: 3px;
+      padding: 4px 8px;
+      font-family: "Courier New", monospace;
+      font-size: 7pt;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #333;
+      margin-top: 4px;
+    }
+
+    .error-item-label {
+      font-size: 6.5pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      color: #999;
+      margin-bottom: 2px;
+    }
+
+    /* ── Metric definitions table ──────────────────────────── */
+    .def-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 8.5pt;
+      margin-bottom: 12px;
+    }
+
+    .def-table th {
+      text-align: left;
+      padding: 4px 8px;
+      background: #eceef3;
+      font-weight: 600;
+      border-bottom: 1px solid #c3cddc;
+      width: 110px;
+    }
+
+    .def-table td {
+      padding: 4px 8px;
+      border-bottom: 1px solid #f0f1f4;
+      color: #555;
+    }
+
+    /* ── Timeline ──────────────────────────────────────────── */
+    .timeline-container {
+      page-break-inside: avoid;
+      margin-bottom: 14px;
+    }
+
+    /* ── Methodology steps ─────────────────────────────────── */
+    .methodology-steps {
+      margin-bottom: 4px;
+    }
+
+    .methodology-step {
+      display: table;
+      width: 100%;
+      margin-bottom: 14px;
+      page-break-inside: avoid;
+    }
+
+    .step-number-cell {
+      display: table-cell;
+      width: 30px;
+      vertical-align: top;
+    }
+
+    .step-number {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #11233e;
+      color: #cca139;
+      font-weight: 700;
+      font-size: 10pt;
+      text-align: center;
+      line-height: 22px;
+    }
+
+    .step-content {
+      display: table-cell;
+      vertical-align: top;
+      padding-left: 12px;
+    }
+
+    .step-title {
+      font-weight: 600;
+      font-size: 10pt;
+      color: #11233e;
+      margin-bottom: 2px;
+    }
+
+    .step-desc {
+      font-size: 8.5pt;
+      color: #555;
+      line-height: 1.55;
+    }
+
+    /* ── Core concept cards ────────────────────────────────── */
+    .concept-grid {
+      display: flex;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .concept-card {
+      flex: 1 1 46%;
+      border: 1px solid #c3cddc;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      page-break-inside: avoid;
+    }
+
+    .concept-card:nth-child(odd) {
+      margin-right: 10px;
+    }
+
+    .concept-title {
+      font-weight: 600;
+      font-size: 9.5pt;
+      color: #11233e;
+      margin-bottom: 3px;
+    }
+
+    .concept-desc {
+      font-size: 8.5pt;
+      color: #555;
+      line-height: 1.55;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ════════════════════════════════════════════════════════
+     COVER PAGE
+     ════════════════════════════════════════════════════════ -->
+  <div class="cover">
+    <div class="cover-top">
+      <img src="images/logo/logo_light.png" class="cover-logo" alt="Pelidum">
+      <div class="cover-brand">Pelidum</div>
+      <div class="cover-mpac">MPAC</div>
+      <div class="cover-subtitle">Run Report</div>
+      <hr class="cover-rule">
+    </div>
+    <div class="cover-meta">
+      <strong>Date:</strong> {{ result_pb.created_at_utc.ToJsonString() }}<br>
+      <strong>Run ID:</strong> {{ result_pb.id }}<br>
+      <strong>Test:</strong> {{ test_pb.name if test_pb else result_pb.test_id }}<br>
+      {% if test_pb %}
+      <strong>Test Type:</strong>
+      {% if test_pb.type == 1 %}EVALUATION{% elif test_pb.type == 2 %}SURVEY{% else %}UNSPECIFIED{% endif %}<br>
+      {% endif %}
+      <strong>Owner:</strong> {{ result_pb.owner }}<br>
+      <strong>Status:</strong>
+      {% if result_pb.status == 1 %}<span class="cover-status-success">SUCCESS</span>
+      {% elif result_pb.status == 2 %}<span class="cover-status-error">ERROR</span>
+      {% elif result_pb.status == 3 %}<span class="cover-status-progress">IN PROGRESS</span>
+      {% elif result_pb.status == 4 %}<span class="cover-status-cancelled">CANCELLED</span>
+      {% else %}<span class="cover-status-unknown">UNKNOWN</span>{% endif %}<br>
+      <strong>Created:</strong> {{ result_pb.created_at_utc.ToJsonString() }}<br>
+      <strong>Completed:</strong> {{ result_pb.completed_at_utc.ToJsonString() }}<br>
+      <strong>Models:</strong> {{ models_ranked | length }}<br>
+      <strong>Sample Size:</strong> {{ result_pb.sample_size }}
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════
+     METHODOLOGY
+     ════════════════════════════════════════════════════════ -->
+  <h2>Methodology</h2>
+  <p class="section-desc">
+    MPAC applies the same quality measurement process that human safety teams have used for decades, adapted for AI.
+    When new human moderators ramp up, they're given tests like this until they're aligned with more experienced
+    reviewers. MPAC runs the same process, at scale, across all models.
+  </p>
+  <div class="methodology-steps">
+    <div class="methodology-step">
+      <div class="step-number-cell">
+        <div class="step-number">1</div>
+      </div>
+      <div class="step-content">
+        <div class="step-title">Assemble a golden set</div>
+        <div class="step-desc">Expert-vetted items with multi-rater agreement. Each item has a canonical correct answer
+          established by human review, not AI judgment. MPAC's built-in library draws from sources like the Gab Hate
+          Corpus and academic datasets; you can bring your own.</div>
+      </div>
+    </div>
+    <div class="methodology-step">
+      <div class="step-number-cell">
+        <div class="step-number">2</div>
+      </div>
+      <div class="step-content">
+        <div class="step-title">Zero-shot, pass@1</div>
+        <div class="step-desc">Each model receives the same instruction prompt and content item; no examples, no
+          fine-tuning, no special treatment. One response per item (pass@1), matching live classifier conditions. This
+          is the baseline; you can layer in prompting or fine-tuning later to measure improvement.</div>
+      </div>
+    </div>
+    <div class="methodology-step">
+      <div class="step-number-cell">
+        <div class="step-number">3</div>
+      </div>
+      <div class="step-content">
+        <div class="step-title">Multi-model execution</div>
+        <div class="step-desc">All selected models run against the same items under comparable conditions. Local models
+          via vLLM; remote models via their native APIs or OpenRouter. Results are never cross-contaminated between
+          models.</div>
+      </div>
+    </div>
+    <div class="methodology-step">
+      <div class="step-number-cell">
+        <div class="step-number">4</div>
+      </div>
+      <div class="step-content">
+        <div class="step-title">Standardized scoring</div>
+        <div class="step-desc">Model responses are extracted and compared to the canonical answer. MPAC computes
+          precision, recall, F1, refusal rate, per-answer latency (p50/p95), per-stream output tokens/sec, aggregate
+          throughput, and cost per model, weighted by sample composition. The result is an apples-to-apples comparison
+          across models, providers, and modalities.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════
+     CORE CONCEPTS
+     ════════════════════════════════════════════════════════ -->
+  <div class="page-break"></div>
+  <h2>Core Concepts</h2>
+  <p class="section-desc">Key terms used throughout this report.</p>
+  <div class="concept-grid">
+    <div class="concept-card">
+      <div class="concept-title">Test</div>
+      <div class="concept-desc">A named collection of items and a methodology. Evaluation tests score each model
+        response against a known correct answer (precision/recall/F1). Survey tests collect open-ended model responses
+        when a correct answer is not known and score them using consensus and inter-rater reliability methods.</div>
+    </div>
+    <div class="concept-card">
+      <div class="concept-title">Test Item</div>
+      <div class="concept-desc">A single prompt within a test: a piece of content to classify, a question to answer, or
+        a scenario to evaluate. Items can include text, images, audio, and video. Evaluation items carry a canonical
+        answer from a human expert or multi-rater process.</div>
+    </div>
+    <div class="concept-card">
+      <div class="concept-title">Test Run</div>
+      <div class="concept-desc">An execution of a test across one or more models. Every model gets the same prompt under
+        the same conditions. Each run records every answer alongside precision, recall, F1, refusal rate, per-answer
+        latency (p50/p95), per-stream output tokens/sec, aggregate throughput, token usage, and cost per model.</div>
+    </div>
+    <div class="concept-card">
+      <div class="concept-title">Model</div>
+      <div class="concept-desc">A specific LLM identified by provider and model ID. MPAC supports commercial APIs
+        (OpenAI, Anthropic, Mistral), open-source models (Llama, Qwen, DeepSeek), and private or on-prem deployments via
+        vLLM, ollama, and llama.cpp.</div>
+    </div>
+    <div class="concept-card">
+      <div class="concept-title">Backend</div>
+      <div class="concept-desc">An inference endpoint that routes requests to models: OpenAI, Anthropic, OpenRouter,
+        vLLM, Ollama, Llama.cpp, and more are all available options. Admins register backends; MPAC handles routing,
+        concurrency, and rate limiting automatically. Mix and match local and remote models in the same run!</div>
+    </div>
+    <div class="concept-card">
+      <div class="concept-title">Metrics</div>
+      <div class="concept-desc">MPAC reports both classic ML metrics and modern LLM performance stats.</div>
+    </div>
+  </div>
+
+  <h3>Metric Definitions</h3>
+  <table class="def-table">
+    <tr>
+      <th>Precision</th>
+      <td>Of all positive predictions, how many were correct?</td>
+    </tr>
+    <tr>
+      <th>Recall</th>
+      <td>Of all actual positives, how many were found?</td>
+    </tr>
+    <tr>
+      <th>F1</th>
+      <td>Harmonic mean of precision and recall. If you're going to read one quality metric, choose this one.</td>
+    </tr>
+    <tr>
+      <th>Output tok/s</th>
+      <td>Median per-answer output tokens/sec. Approximates per-stream generation speed.</td>
+    </tr>
+    <tr>
+      <th>Latency p50</th>
+      <td>Median end-to-end time per answer (seconds). Lower is better.</td>
+    </tr>
+    <tr>
+      <th>Latency p95</th>
+      <td>95th-percentile per-answer latency. The tail you'll see ~1 in 20 requests.</td>
+    </tr>
+    <tr>
+      <th>Throughput</th>
+      <td>Aggregate output tokens per second across the whole run at this concurrency.</td>
+    </tr>
+    <tr>
+      <th>Errors/Refusals</th>
+      <td>Rate of errors or refused answers. Lower is better.</td>
+    </tr>
+  </table>
+
+  <!-- ════════════════════════════════════════════════════════
+     EXECUTIVE SUMMARY
+     ════════════════════════════════════════════════════════ -->
+  <div class="page-break"></div>
+  <h2>Executive Summary</h2>
+  <p class="section-desc">
+    MPAC (Multi-Provider Agent Consensus) is a testing harness for AI classification. It runs evaluations across
+    any combination of models and providers, giving every model identical inputs and producing structured,
+    time-stamped outputs with their responses, reasoning, and core metrics.
+    {% if test_pb and test_pb.type == 1 %}
+    This was an <strong>Evaluation</strong> run: each model response is scored against a known correct answer
+    to produce precision, recall, and F1.
+    {% elif test_pb and test_pb.type == 2 %}
+    This was a <strong>Survey</strong> run: open-ended model responses are collected and scored using consensus
+    and inter-rater reliability methods when a correct answer is not known.
+    {% endif %}
+  </p>
+
+  {% if ranked_models and ranked_models|length > 0 %}
+  {% if test_pb and test_pb.type == 1 and ranked_models|length > 1 %}
+  <div class="winner-banner">
+    <div class="winner-banner-title">Best Performing Model</div>
+    <div class="winner-banner-model">{{ ranked_models[0].get("responder_id") }}</div>
+    <div class="winner-banner-score">
+      F1: {{ "{:.2%}".format(ranked_models[0].get("f1", 0)) }}
+      &bull; Precision: {{ "{:.2%}".format(ranked_models[0].get("precision", 0)) }}
+      &bull; Recall: {{ "{:.2%}".format(ranked_models[0].get("recall", 0)) }}
+    </div>
+  </div>
+  {% endif %}
+  {% endif %}
+
+  <div class="summary-grid">
+    <div class="summary-stat">
+      <div class="summary-stat-label">Models</div>
+      <div class="summary-stat-value">{{ models_ranked | length }}</div>
+    </div>
+    <div class="summary-stat">
+      <div class="summary-stat-label">Sample Size</div>
+      <div class="summary-stat-value">{{ result_pb.sample_size }}</div>
+    </div>
+    <div class="summary-stat">
+      <div class="summary-stat-label">Total Cost</div>
+      <div class="summary-stat-value">${{ "{:,.4f}".format(result_pb.total_cost_usd) }}</div>
+    </div>
+    <div class="summary-stat">
+      <div class="summary-stat-label">Total Tokens</div>
+      <div class="summary-stat-value">{{ "{:,}".format(result_pb.total_tokens) }}</div>
+    </div>
+  </div>
+
+  {% if ranked_models %}
+  <table class="rank-table">
+    <thead>
+      <tr>
+        <th style="width:40px">#</th>
+        <th>Model</th>
+        {% if test_pb and test_pb.type == 1 %}
+        <th style="width:70px">Precision</th>
+        <th style="width:70px">Recall</th>
+        <th style="width:70px">F1</th>
+        {% endif %}
+        <th style="width:70px">Tok/s</th>
+        <th style="width:80px">Latency p50</th>
+        <th style="width:70px">Errors</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in ranked_models %}
+      <tr>
+        <td>
+          {% if loop.index == 1 %}<span class="rank-gold">{{ loop.index }}</span>
+          {% elif loop.index == 2 %}<span class="rank-silver">{{ loop.index }}</span>
+          {% elif loop.index == 3 %}<span class="rank-bronze">{{ loop.index }}</span>
+          {% else %}{{ loop.index }}{% endif %}
+        </td>
+        <td style="font-weight:600">{{ m.get("responder_id") }}</td>
+        {% if test_pb and test_pb.type == 1 %}
+        <td>{{ "{:.1%}".format(m.get("precision", 0)) }}</td>
+        <td>{{ "{:.1%}".format(m.get("recall", 0)) }}</td>
+        <td style="font-weight:700">{{ "{:.1%}".format(m.get("f1", 0)) }}</td>
+        {% endif %}
+        <td>{{ "{:.1f}".format(m.get("output_tps_p50", 0) | float) }}</td>
+        <td>{{ "{:.2f}s".format(m.get("median_task_duration", 0) | float) }}</td>
+        <td>{{ "{:.1%}".format(m.get("refusal_error_rate", 0)) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <!-- ════════════════════════════════════════════════════════
+     QUALITY LEADERBOARD CHART
+     ════════════════════════════════════════════════════════ -->
+  {% if metrics_dict|length > 1 and test_pb and test_pb.type == 1 %}
+  <div class="page-break"></div>
+  <h2>Quality Leaderboard</h2>
+  <p class="section-desc">
+    Higher Precision, Recall, and F1 are better. The dashed thresholds mark Low (&gt;0.70), OK (&gt;0.80), and High
+    (&gt;0.95) quality bands. Lower Errors/Refusals is better.
+  </p>
+  <div class="chart-container">
+    {% set chart_w = 460 %}
+    {% set bar_h = 14 %}
+    {% set bar_gap = 3 %}
+    {% set group_gap = 22 %}
+    {% set label_w = 130 %}
+    {% set top_pad = 44 %}
+    {% set bottom_pad = 20 %}
+    {% set metrics_keys = [("precision", "#CCA139"), ("recall", "#3F5E7A"), ("f1", "#5E7FA3"), ("refusal_error_rate",
+    "#9B7A55")] %}
+    {% set total_h = ranked_models|length * (4 * (bar_h + bar_gap) + group_gap) + top_pad + bottom_pad %}
+    {% set axis_y = total_h - bottom_pad %}
+
+    <svg width="{{ chart_w + label_w + 50 }}" height="{{ total_h }}" xmlns="http://www.w3.org/2000/svg"
+      style="font-family:Inter,sans-serif">
+      <text x="{{ (chart_w + label_w + 50) // 2 }}" y="16" text-anchor="middle" font-size="11" font-weight="700"
+        fill="#11233e">Top Models by F1 Score</text>
+
+      {% for tick in [0, 0.25, 0.5, 0.75, 1.0] %}
+      <line x1="{{ label_w + (tick * chart_w)|round|int }}" y1="36" x2="{{ label_w + (tick * chart_w)|round|int }}"
+        y2="{{ axis_y }}" stroke="#e5e7eb" stroke-width="0.75" />
+      <text x="{{ label_w + (tick * chart_w)|round|int }}" y="{{ axis_y + 12 }}" text-anchor="middle" font-size="7"
+        fill="#888">{{ "{:.0%}".format(tick) }}</text>
+      {% endfor %}
+      <line x1="{{ label_w }}" y1="{{ axis_y }}" x2="{{ label_w + chart_w }}" y2="{{ axis_y }}" stroke="#c3cddc"
+        stroke-width="0.75" />
+
+      {% set thresholds = [(0.70, "Low Quality"), (0.80, "OK Quality"), (0.95, "High Quality")] %}
+      {% for thresh, lbl in thresholds %}
+      <line x1="{{ label_w + (thresh * chart_w)|round|int }}" y1="36" x2="{{ label_w + (thresh * chart_w)|round|int }}"
+        y2="{{ axis_y }}" stroke="#FF5722" stroke-dasharray="5,4" stroke-width="1.2" opacity="0.65" />
+      {% endfor %}
+      {% for thresh, lbl in thresholds %}
+      <text x="{{ chart_w + label_w + 46 }}" y="{{ 24 + loop.index0 * 9 }}" text-anchor="end" font-size="6.5"
+        font-weight="700" fill="#FF5722">{{ lbl }} (&gt;{{ (thresh * 100)|round|int }}%)</text>
+      {% endfor %}
+
+      {% for m in ranked_models %}
+      {% set y_base = loop.index0 * (4 * (bar_h + bar_gap) + group_gap) + top_pad + 4 %}
+      <text x="{{ label_w - 6 }}" y="{{ y_base + 28 }}" text-anchor="end" font-size="8" fill="#555" font-weight="600">{{
+        m.get("responder_id")[:20] }}</text>
+      {% for mk, mc in metrics_keys %}
+      {% set val = m.get(mk, 0) %}
+      {% set bw = (val * chart_w)|round|int %}
+      {% set by = y_base + loop.index0 * (bar_h + bar_gap) %}
+      <rect x="{{ label_w }}" y="{{ by }}" width="{{ bw }}" height="{{ bar_h }}" fill="{{ mc }}" rx="2" />
+      <text x="{{ label_w + bw + 4 }}" y="{{ by + 10 }}" font-size="7" fill="#555">{{ "{:.1%}".format(val) }}</text>
+      {% endfor %}
+      {% endfor %}
+    </svg>
+    <div class="chart-legend">
+      <div class="chart-legend-item"><span class="chart-legend-swatch" style="background:#CCA139"></span> Precision
+      </div>
+      <div class="chart-legend-item"><span class="chart-legend-swatch" style="background:#3F5E7A"></span> Recall</div>
+      <div class="chart-legend-item"><span class="chart-legend-swatch" style="background:#5E7FA3"></span> F1</div>
+      <div class="chart-legend-item"><span class="chart-legend-swatch" style="background:#9B7A55"></span>
+        Errors/Refusals</div>
+      <div class="chart-legend-item"><span style="color:#FF5722;font-size:10px">- -</span> Quality thresholds</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ════════════════════════════════════════════════════════
+     EXECUTION TIMELINE
+     ════════════════════════════════════════════════════════ -->
+  {% if metrics_dict|length > 1 %}
+  <div class="page-break"></div>
+  <h2>Execution Timeline</h2>
+  <p class="section-desc">
+    Each bar spans the wall-clock time that model's portion of the run took, from start to completion.
+  </p>
+  <div class="timeline-container">
+    {% set tl_w = 300 %}
+    {% set tl_label_w = 110 %}
+    {% set tl_info_w = 200 %}
+    {% set tl_bar_h = 22 %}
+    {% set tl_gap = 8 %}
+    {% set tl_top_pad = 24 %}
+    {% set tl_bottom_pad = 16 %}
+    {% set tl_total_h = ranked_models|length * (tl_bar_h + tl_gap) + tl_top_pad + tl_bottom_pad %}
+    {% set tl_axis_y = tl_total_h - tl_bottom_pad %}
+    {% set tl_colors = ["#CCA139", "#3F5E7A", "#5E7FA3", "#9B7A55", "#7F8F7A", "#8A84A6", "#8F939A", "#BFA45A"] %}
+
+    <svg width="{{ tl_w + tl_label_w + tl_info_w + 10 }}" height="{{ tl_total_h }}" xmlns="http://www.w3.org/2000/svg"
+      style="font-family:Inter,sans-serif">
+      {% for tick in [0, 0.25, 0.5, 0.75, 1.0] %}
+      <line x1="{{ tl_label_w + (tick * tl_w)|round|int }}" y1="{{ tl_top_pad - 6 }}"
+        x2="{{ tl_label_w + (tick * tl_w)|round|int }}" y2="{{ tl_axis_y }}" stroke="#e5e7eb" stroke-width="0.75" />
+      <text x="{{ tl_label_w + (tick * tl_w)|round|int }}" y="{{ tl_axis_y + 12 }}" text-anchor="middle" font-size="7"
+        fill="#888">+{{ (tick * timeline_total_span_seconds)|round(1) }}s</text>
+      {% endfor %}
+      <line x1="{{ tl_label_w }}" y1="{{ tl_axis_y }}" x2="{{ tl_label_w + tl_w }}" y2="{{ tl_axis_y }}"
+        stroke="#c3cddc" stroke-width="0.75" />
+      <line x1="{{ tl_label_w + tl_w + 8 }}" y1="{{ tl_top_pad - 6 }}" x2="{{ tl_label_w + tl_w + 8 }}"
+        y2="{{ tl_axis_y }}" stroke="#e8eaef" stroke-width="0.75" />
+
+      {% for m in ranked_models %}
+      {% set by = loop.index0 * (tl_bar_h + tl_gap) + tl_top_pad %}
+      {% set bx = (m.get("timeline_start_pct", 0) * tl_w)|round|int %}
+      {% set bw = (m.get("timeline_duration_pct", 0) * tl_w)|round|int %}
+      {% set bw = bw if bw > 2 else 2 %}
+      {% set color = tl_colors[loop.index0 % tl_colors|length] %}
+      <text x="{{ tl_label_w - 6 }}" y="{{ by + 15 }}" text-anchor="end" font-size="8" fill="#555" font-weight="600">{{
+        m.get("responder_id")[:20] }}</text>
+      <rect x="{{ tl_label_w + bx }}" y="{{ by }}" width="{{ bw }}" height="{{ tl_bar_h }}" fill="{{ color }}" rx="3"
+        opacity="0.85" />
+      <text x="{{ tl_label_w + tl_w + 16 }}" y="{{ by + 14 }}" font-size="7" fill="#555">Latency p50: {{
+        "{:.2f}s".format(m.get("median_task_duration", 0)|float) }} &middot; Throughput: {{
+        "{:.1f}".format((m.get("tokens_per_minute", 0)|int) / 60) }} tok/s</text>
+      {% endfor %}
+    </svg>
+  </div>
+  {% endif %}
+
+  <!-- ════════════════════════════════════════════════════════
+     PERFORMANCE BY MODALITY
+     ════════════════════════════════════════════════════════ -->
+  {% if metrics_dict|length > 0 and has_modality_scores %}
+  {% set all_modalities = [] %}
+  {% for model_id, m in metrics_dict.items() %}
+    {% for mod_key in m.get("modality_scores", {}).keys() %}
+      {% if mod_key not in all_modalities %}
+        {% if all_modalities.append(mod_key) %}{% endif %}
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
+  <div class="page-break"></div>
+  <h2>Performance by Modality</h2>
+  <p class="section-desc">
+    Accuracy per input modality. Green (&ge;80%) indicates strong performance,
+    amber (&ge;50%) is acceptable, red (&lt;50%) needs attention.
+  </p>
+  <table class="answers-ss-pdf" style="margin-top:8px">
+    <thead>
+      <tr>
+        <th style="text-align:left;width:40%">Model</th>
+        {% for mod in all_modalities %}
+        <th style="text-align:center">{{ mod }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for model_id, m in metrics_dict.items() %}
+      {% if m.get("modality_scores") %}
+      <tr>
+        <td style="font-weight:600;font-size:8pt">{{ model_id }}</td>
+        {% for mod in all_modalities %}
+        {% set score = m.get("modality_scores", {}).get(mod) %}
+        {% if score is not none %}
+        {% set pct = (score|float * 100)|round(1) %}
+        <td style="text-align:center;font-weight:600;font-size:8.5pt;color:{% if pct >= 80 %}#16a34a{% elif pct >= 50 %}#d97706{% else %}#dc2626{% endif %}">{{ pct }}%</td>
+        {% else %}
+        <td style="text-align:center;color:#999;font-size:8pt">&mdash;</td>
+        {% endif %}
+        {% endfor %}
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <!-- ════════════════════════════════════════════════════════
+     CONFUSION MATRIX
+     ════════════════════════════════════════════════════════ -->
+  {% if test_pb and test_pb.type == 1 and confusion_data %}
+  <div class="page-break"></div>
+  <h2>Confusion Matrix</h2>
+  <p class="section-desc">
+    The top-left (TP) and bottom-right (TN) cells are correct predictions; higher is better.
+    The top-right (FN) and bottom-left (FP) cells are mistakes; lower is better.
+    Counts cover every item in the run.
+  </p>
+  <div class="cm-wrapper">
+    {% for model_id, cm in confusion_data.items() %}
+    {% set cm_max = [cm.tp, cm.tn, cm.fp, cm.fn]|max if [cm.tp, cm.tn, cm.fp, cm.fn]|max > 0 else 1 %}
+    <div class="cm-block">
+      <div class="cm-title">{{ model_id }}</div>
+      <table class="cm-table">
+        <tr>
+          <th></th>
+          <th>Pred +</th>
+          <th>Pred &minus;</th>
+        </tr>
+        <tr>
+          <th>Actual +</th>
+          {% set tp_i = (cm.tp / cm_max) %}
+          {% set tp_r = (240 + tp_i * (22 - 240))|round|int %}
+          {% set tp_g = (253 + tp_i * (101 - 253))|round|int %}
+          {% set tp_b = (244 + tp_i * (72 - 244))|round|int %}
+          <td
+            style="background:rgb({{ tp_r }},{{ tp_g }},{{ tp_b }});{% if tp_i > 0.55 %}color:#fff{% else %}color:#14532d{% endif %}">
+            {{ cm.tp }}<br><span style="font-size:7pt">TP</span>
+          </td>
+          {% set fn_i = (cm.fn / cm_max) %}
+          {% set fn_r = (254 + fn_i * (153 - 254))|round|int %}
+          {% set fn_g = (242 + fn_i * (27 - 242))|round|int %}
+          {% set fn_b = (242 + fn_i * (27 - 242))|round|int %}
+          <td
+            style="background:rgb({{ fn_r }},{{ fn_g }},{{ fn_b }});{% if fn_i > 0.55 %}color:#fff{% else %}color:#7f1d1d{% endif %}">
+            {{ cm.fn }}<br><span style="font-size:7pt">FN</span>
+          </td>
+        </tr>
+        <tr>
+          <th>Actual &minus;</th>
+          {% set fp_i = (cm.fp / cm_max) %}
+          {% set fp_r = (254 + fp_i * (153 - 254))|round|int %}
+          {% set fp_g = (242 + fp_i * (27 - 242))|round|int %}
+          {% set fp_b = (242 + fp_i * (27 - 242))|round|int %}
+          <td
+            style="background:rgb({{ fp_r }},{{ fp_g }},{{ fp_b }});{% if fp_i > 0.55 %}color:#fff{% else %}color:#7f1d1d{% endif %}">
+            {{ cm.fp }}<br><span style="font-size:7pt">FP</span>
+          </td>
+          {% set tn_i = (cm.tn / cm_max) %}
+          {% set tn_r = (240 + tn_i * (22 - 240))|round|int %}
+          {% set tn_g = (253 + tn_i * (101 - 253))|round|int %}
+          {% set tn_b = (244 + tn_i * (72 - 244))|round|int %}
+          <td
+            style="background:rgb({{ tn_r }},{{ tn_g }},{{ tn_b }});{% if tn_i > 0.55 %}color:#fff{% else %}color:#14532d{% endif %}">
+            {{ cm.tn }}<br><span style="font-size:7pt">TN</span>
+          </td>
+        </tr>
+      </table>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- ════════════════════════════════════════════════════════
+     MODEL CARDS
+     ════════════════════════════════════════════════════════ -->
+  {% if metrics_dict %}
+  <div class="page-break"></div>
+  <h2>Models</h2>
+  <p class="section-desc">
+    {% if test_pb and test_pb.type == 1 %}
+    Precision measures how often a positive prediction is correct. Recall measures how many actual positives were found.
+    F1 is the harmonic mean of both. Higher is always better for all three.
+    {% else %}
+    Output tok/s estimates per-stream generation speed. Latency p50/p95 is the per-answer time-to-completion (lower is
+    better).
+    Throughput is the aggregate tokens-per-second across the whole run at this concurrency.
+    {% endif %}
+    &#11088; marks the best value across models.
+  </p>
+
+  {% for model_pb in models_ranked %}
+  {% if model_pb.id in metrics_dict.keys() %}
+  {% set m = metrics_dict[model_pb.id] %}
+  <div class="model-card">
+    <div class="model-card-header">
+      <div class="model-card-rank">{{ loop.index }}</div>
+      <div>
+        <div class="model-card-name">{{ model_pb.id }}</div>
+        {% set binfo = backends_by_id.get(model_pb.backend_id, {}) %}
+        {% if binfo %}<div class="model-card-backend">{{ binfo.get("name", "") }}</div>{% endif %}
+      </div>
+    </div>
+    <div class="model-card-body">
+      <div class="model-card-col">
+        {% if test_pb and test_pb.type == 1 %}
+        <div class="model-card-row">
+          <span class="model-card-label">Precision</span>
+          <span class="model-card-value">{{ "{:.2%}".format(m["precision"]) }}{% if m["precision"] ==
+            category_winners.get("precision") %} &#11088;{% endif %}</span>
+        </div>
+        <div class="model-card-row">
+          <span class="model-card-label">Recall</span>
+          <span class="model-card-value">{{ "{:.2%}".format(m["recall"]) }}{% if m["recall"] ==
+            category_winners.get("recall") %} &#11088;{% endif %}</span>
+        </div>
+        <div class="model-card-row">
+          <span class="model-card-label">F1</span>
+          <span class="model-card-value">{{ "{:.2%}".format(m["f1"]) }}{% if m["f1"] == category_winners.get("f1") %}
+            &#11088;{% endif %}</span>
+        </div>
+        {% endif %}
+        <div class="model-card-row">
+          <span class="model-card-label">Output tok/s</span>
+          <span class="model-card-value">{{ "{:.1f}".format(m.get("output_tps_p50", 0)|float) }}{% if
+            (m.get("output_tps_p50", 0)|float) == (category_winners.get("output_tps") or 0) and
+            (category_winners.get("output_tps") or 0) > 0 %} &#11088;{% endif %}</span>
+        </div>
+        <div class="model-card-row">
+          <span class="model-card-label">Latency p50</span>
+          <span class="model-card-value">{{ "{:.2f}s".format(m["median_task_duration"]|float) }}{% if
+            (m["median_task_duration"]|float) == category_winners.get("latency_p50") %} &#11088;{% endif %}</span>
+        </div>
+      </div>
+      <div class="model-card-col">
+        <div class="model-card-row">
+          <span class="model-card-label">Latency p95</span>
+          <span class="model-card-value">{{ "{:.2f}s".format(m.get("task_duration_p95", 0)|float) }}</span>
+        </div>
+        <div class="model-card-row">
+          <span class="model-card-label">Throughput</span>
+          <span class="model-card-value">{{ "{:,.1f}".format((m["tokens_per_minute"] | int) / 60) }} tok/s{% if
+            m["tokens_per_minute"]|int == category_winners.get("throughput") %} &#11088;{% endif %}</span>
+        </div>
+        <div class="model-card-row">
+          <span class="model-card-label">Tokens</span>
+          <span class="model-card-value">{{ "{:,}".format(m.get("total_tokens", 0)|int) }}</span>
+        </div>
+        <div class="model-card-row">
+          <span class="model-card-label">Cost</span>
+          {% set cost = m.get("total_cost_usd", 0)|float %}
+          <span class="model-card-value">
+            {%- if cost == 0 -%}FREE
+            {%- elif cost < 0.001 -%}${{ "%.6f" |format(cost) }} {%- else -%}${{ "%.4f" |format(cost) }} {%- endif -%}
+              {% if cost==category_winners.get("cost_min") and cost> 0 %} &#11088;{% endif %}
+          </span>
+        </div>
+        <div class="model-card-row">
+          <span class="model-card-label">Errors / Refusals</span>
+          <span class="model-card-value">{{ "{:.2%}".format(m["refusal_error_rate"]) }}{% if m["refusal_error_rate"] ==
+            category_winners.get("refusals") %} &#11088;{% endif %}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {% endfor %}
+  {% endif %}
+
+  <!-- ════════════════════════════════════════════════════════
+     ANSWERS
+     ════════════════════════════════════════════════════════ -->
+  {% if answers %}
+  {% set is_eval = test_pb and test_pb.type == 1 %}
+  {% set n_models = models_ranked|length %}
+  {% set has_att = has_attachments %}
+
+  {% set w_num = 6 %}
+  {% set w_att = 7 if has_att else 0 %}
+  {% set w_ans = 12 %}
+  {% set w_ref = w_num + w_att + w_ans %}
+  {% set w_remaining = 100 - w_ref %}
+  {% set w_q_base = 28 if n_models <= 2 else 22 if n_models <= 4 else 16 %}
+  {% set w_ctx_base = 18 if n_models <= 2 else 14 if n_models <= 4 else 10 %}
+  {% set w_model_total = w_remaining - w_q_base - w_ctx_base %}
+  {% set w_model = (w_model_total / n_models)|round(1) if n_models > 0 else 0 %}
+
+  <div class="page-break"></div>
+  <h2>Answers</h2>
+  <p class="section-desc">
+    Every model receives the same prompt under identical conditions.
+    {% if is_eval %}
+    Green cells indicate correct classifications; red cells indicate errors.
+    {% else %}
+    The consensus answer is determined by weighting model responses against historical F1 task performance.
+    {% endif %}
+    {{ answers|length }} total items.
+  </p>
+
+  <div class="model-legend">
+    {% for model_pb in models_ranked %}
+    <span class="model-legend-item">
+      <span class="model-legend-num">{{ loop.index }}</span>{{ model_pb.id }}
+    </span>
+    {% endfor %}
+  </div>
+
+  <table class="answers-ss-pdf">
+    <colgroup>
+      <col style="width:{{ w_num }}%">
+      {% if has_att %}<col style="width:{{ w_att }}%">{% endif %}
+      <col style="width:{{ w_q_base }}%">
+      <col style="width:{{ w_ctx_base }}%">
+      <col style="width:{{ w_ans }}%">
+      {% for _ in models_ranked %}
+      <col style="width:{{ w_model }}%">
+      {% endfor %}
+    </colgroup>
+    <thead>
+      <tr>
+        <th>#</th>
+        {% if has_att %}<th style="text-align:center">Att.</th>{% endif %}
+        <th>Question</th>
+        <th>Context</th>
+        <th>{% if is_eval %}Expected{% else %}Consensus{% endif %}</th>
+        {% for model_pb in models_ranked %}
+        <th class="col-model-hdr"><span class="col-model-num">{{ loop.index }}</span></th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for item_id, item_dict in answers.items() %}
+      {% set item_pb_local = item_dict.get("item_pb") %}
+      <tr>
+        <td class="col-num">{{ loop.index }}</td>
+        {% if has_att %}
+        <td style="text-align:center;padding:2px">
+          {% if item_pb_local.attachment_id and attachment_data_uris.get(item_pb_local.attachment_id) %}
+          <img class="col-att-img" src="{{ attachment_data_uris[item_pb_local.attachment_id] }}">
+          {% elif item_pb_local.attachment_id %}
+          <span style="color:#999;font-size:6.5pt">&#128206;</span>
+          {% else %}
+          <span style="color:#ccc">-</span>
+          {% endif %}
+        </td>
+        {% endif %}
+        <td>{{ item_pb_local.question|truncate(200) }}</td>
+        <td>{% if item_pb_local.context %}{{ item_pb_local.context|truncate(150) }}{% else %}<span style="color:#999;font-style:italic">-</span>{% endif %}</td>
+        <td class="col-expected">{% if is_eval %}{{ item_pb_local.answer }}{% else %}{{ item_dict.get("top_answer", "-") }}{% endif %}</td>
+        {% for model_pb in models_ranked %}
+        {% set resp = item_dict.get("responses", {}).get(model_pb.id, {}) %}
+        {% if is_eval %}
+        <td class="{{ 'ans-ok' if resp.get('is_correct') else 'ans-bad' }}">{{ resp.get("answer", "-") }}</td>
+        {% else %}
+        <td>{{ resp.get("answer", "-") }}</td>
+        {% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <!-- ════════════════════════════════════════════════════════
+     ERROR ANALYSIS (eval runs only — FP/FN reasoning per model)
+     ════════════════════════════════════════════════════════ -->
+  {% if answers and is_eval %}
+  {% set max_errors_per_cat = 25 %}
+  <div class="page-break"></div>
+  <h2>Error Analysis</h2>
+  <p class="section-desc">
+    Up to {{ max_errors_per_cat }} False Positive and False Negative examples per model, showing the model's
+    parsed answer, reasoning, and raw response to help diagnose classification errors.
+  </p>
+
+  {% for model_pb in models_ranked %}
+  {% set model_id = model_pb.id %}
+  {% set ns = namespace(fp_total=0, fn_total=0, fp_items=[], fn_items=[]) %}
+  {% for item_id, item_dict in answers.items() %}
+    {% set resp = item_dict.get("responses", {}).get(model_id, {}) %}
+    {% set cat = resp.get("category", "") %}
+    {% if cat == "fp" %}
+      {% set ns.fp_total = ns.fp_total + 1 %}
+      {% if ns.fp_items|length < max_errors_per_cat %}
+      {% set _ = ns.fp_items.append({"item_id": item_id, "item_dict": item_dict, "resp": resp}) %}
+      {% endif %}
+    {% elif cat == "fn" %}
+      {% set ns.fn_total = ns.fn_total + 1 %}
+      {% if ns.fn_items|length < max_errors_per_cat %}
+      {% set _ = ns.fn_items.append({"item_id": item_id, "item_dict": item_dict, "resp": resp}) %}
+      {% endif %}
+    {% endif %}
+  {% endfor %}
+
+  {% if ns.fn_total or ns.fp_total %}
+  <div class="error-model-header">{{ model_id }}</div>
+
+  {% if ns.fn_items %}
+  <div class="error-cat-label">False Negatives — showing {{ ns.fn_items|length }} of {{ ns.fn_total }}</div>
+  {% for ex in ns.fn_items %}
+  {% set item_pb_local = ex.item_dict.get("item_pb") %}
+  <div class="error-item">
+    <div class="error-item-q">{{ item_pb_local.question|truncate(300) }}</div>
+    {% if item_pb_local.context %}
+    <div class="error-item-meta"><span>Context:</span> <strong>{{ item_pb_local.context|truncate(200) }}</strong></div>
+    {% endif %}
+    <div class="error-item-expected"><span class="error-item-label">Expected</span><br>{{ item_pb_local.answer }}</div>
+    <div class="error-item-answer"><span class="error-item-label">Model answered</span><br>{{ ex.resp.get("answer", "-") }}</div>
+    {% if ex.resp.get("reasoning") %}
+    <div class="error-item-label">Reasoning</div>
+    <div class="error-item-reasoning">{{ ex.resp.get("reasoning")|truncate(2000) }}</div>
+    {% endif %}
+    {% if ex.resp.get("raw_response") %}
+    <div class="error-item-label">Raw response</div>
+    <div class="error-item-raw">{{ ex.resp.get("raw_response")|truncate(2000) }}</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if ns.fp_items %}
+  <div class="error-cat-label">False Positives — showing {{ ns.fp_items|length }} of {{ ns.fp_total }}</div>
+  {% for ex in ns.fp_items %}
+  {% set item_pb_local = ex.item_dict.get("item_pb") %}
+  <div class="error-item">
+    <div class="error-item-q">{{ item_pb_local.question|truncate(300) }}</div>
+    {% if item_pb_local.context %}
+    <div class="error-item-meta"><span>Context:</span> <strong>{{ item_pb_local.context|truncate(200) }}</strong></div>
+    {% endif %}
+    <div class="error-item-expected"><span class="error-item-label">Expected</span><br>{{ item_pb_local.answer }}</div>
+    <div class="error-item-answer"><span class="error-item-label">Model answered</span><br>{{ ex.resp.get("answer", "-") }}</div>
+    {% if ex.resp.get("reasoning") %}
+    <div class="error-item-label">Reasoning</div>
+    <div class="error-item-reasoning">{{ ex.resp.get("reasoning")|truncate(2000) }}</div>
+    {% endif %}
+    {% if ex.resp.get("raw_response") %}
+    <div class="error-item-label">Raw response</div>
+    <div class="error-item-raw">{{ ex.resp.get("raw_response")|truncate(2000) }}</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% endif %}
+  {% endfor %}
+  {% endif %}
+
+</body>
+
+</html>

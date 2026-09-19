@@ -1,0 +1,586 @@
+{% extends "base.html" %}
+{% block title %}Pelidum MPAC - Benchmarks{% endblock %}
+
+{% block styles %}
+<style>
+  .benchmark-card {
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  }
+  .benchmark-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.13);
+    border-color: var(--color-accent-secondary) !important;
+  }
+  @keyframes cardIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .card-animate { animation: cardIn 0.18s ease forwards; }
+
+  .filter-sticky {
+    position: sticky;
+    top: 66px;
+    z-index: 50;
+  }
+
+  .page-btn {
+    min-width: 2rem;
+    height: 2rem;
+    padding: 0 0.5rem;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    background: var(--color-bg-secondary);
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .page-btn:hover:not(:disabled):not(.page-btn-active) {
+    background-color: rgba(var(--color-accent-primary-rgb), 0.1);
+    border-color: var(--color-accent-secondary);
+    color: var(--color-accent-secondary);
+  }
+  .page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .page-btn-active {
+    background-color: var(--color-accent-secondary) !important;
+    color: var(--color-text-on-accent) !important;
+    border-color: var(--color-accent-secondary) !important;
+    cursor: default;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── Server-side aggregates ─────────────────────────────── #}
+{% set success_count    = benchmarks | selectattr('status', 'equalto', 1) | list | length %}
+{% set error_count      = benchmarks | selectattr('status', 'equalto', 2) | list | length %}
+{% set inprogress_count = benchmarks | selectattr('status', 'equalto', 3) | list | length %}
+{% set cancelled_count  = benchmarks | selectattr('status', 'equalto', 4) | list | length %}
+
+<div class="max-w-[1280px] mx-auto">
+
+  {# ── Page header ───────────────────────────────────────── #}
+  <div class="flex justify-between items-center mb-5">
+    <div>
+      <h1 class="content-title">Benchmarks</h1>
+      <p class="mt-1 text-sm muted">Head-to-head model competitions on evaluation tests</p>
+    </div>
+    <a href="{{ url_for('benchmark_create') }}" class="button-primary">
+      <span class="material-icons text-[20px]">emoji_events</span>
+      New Benchmark
+    </a>
+  </div>
+
+  {# ── Summary stats ─────────────────────────────────────── #}
+  <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 mb-5">
+    <div class="card p-4 flex items-center gap-3 !mb-0">
+      <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-[var(--color-accent-secondary)]/10 flex-shrink-0">
+        <span class="material-icons text-[20px] text-[var(--color-accent-secondary)]">emoji_events</span>
+      </div>
+      <div>
+        <p id="stat-total" class="text-xl font-bold" data-full="{{ benchmarks | length }}">{{ benchmarks | length }}</p>
+        <p class="text-xs muted"><span id="stat-total-label">Total</span></p>
+      </div>
+    </div>
+    <div class="card p-4 flex items-center gap-3 !mb-0">
+      <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-green-500/10 flex-shrink-0">
+        <span class="material-icons text-[20px] text-green-500">check_circle</span>
+      </div>
+      <div>
+        <p id="stat-success" class="text-xl font-bold" data-full="{{ success_count }}">{{ success_count }}</p>
+        <p class="text-xs muted">Completed</p>
+      </div>
+    </div>
+    <div class="card p-4 flex items-center gap-3 !mb-0">
+      <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-500/10 flex-shrink-0">
+        <span class="material-icons text-[20px] text-blue-500">pending</span>
+      </div>
+      <div>
+        <p id="stat-inprogress" class="text-xl font-bold" data-full="{{ inprogress_count }}">{{ inprogress_count }}</p>
+        <p class="text-xs muted">In Progress</p>
+      </div>
+    </div>
+    <div class="card p-4 flex items-center gap-3 !mb-0">
+      <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-yellow-500/10 flex-shrink-0">
+        <span class="material-icons text-[20px] text-yellow-500">cancel</span>
+      </div>
+      <div>
+        <p id="stat-cancelled" class="text-xl font-bold" data-full="{{ cancelled_count }}">{{ cancelled_count }}</p>
+        <p class="text-xs muted">Cancelled</p>
+      </div>
+    </div>
+    <div class="card p-4 flex items-center gap-3 !mb-0">
+      <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-red-500/10 flex-shrink-0">
+        <span class="material-icons text-[20px] text-red-500">error</span>
+      </div>
+      <div>
+        <p id="stat-error" class="text-xl font-bold" data-full="{{ error_count }}">{{ error_count }}</p>
+        <p class="text-xs muted">Errors</p>
+      </div>
+    </div>
+  </div>
+
+  {# ── Filters (sticky) ──────────────────────────────────── #}
+  <div class="card p-4 filter-sticky !mb-0" style="margin-bottom: 20px;">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
+      <div class="lg:col-span-2">
+        <label for="filterSearch" class="block text-xs font-semibold mb-1 label-bold">Search</label>
+        <div class="relative">
+          <span class="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-[var(--color-text-secondary)] pointer-events-none select-none">search</span>
+          <input type="text" id="filterSearch" class="input-field w-full pl-9 text-sm" placeholder="Test name or owner…">
+        </div>
+      </div>
+      <div>
+        <label for="filterStatus" class="block text-xs font-semibold mb-1 label-bold">Status</label>
+        <select id="filterStatus" class="select-field w-full text-sm">
+          <option value="">All Statuses</option>
+          <option value="SUCCESS">Completed</option>
+          <option value="IN_PROGRESS">In Progress</option>
+          <option value="ERROR">Error</option>
+          <option value="CANCELLED">Cancelled</option>
+        </select>
+      </div>
+      <div class="flex gap-2">
+        <div class="flex-1">
+          <label for="filterOwner" class="block text-xs font-semibold mb-1 label-bold">Owner</label>
+          <select id="filterOwner" class="select-field w-full text-sm">
+            <option value="">All Owners</option>
+            {% for owner in benchmarks | map(attribute='owner') | unique | sort %}
+            {% if owner %}
+            <option value="{{ owner | lower }}">{{ owner }}</option>
+            {% endif %}
+            {% endfor %}
+          </select>
+        </div>
+        <div class="flex items-end">
+          <button id="clearFilters" class="button-secondary !px-3 flex-shrink-0" style="height:38px;" title="Clear filters">
+            <span class="material-icons text-[18px]">clear</span>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="mt-3 pt-3 border-t border-[var(--color-border)] flex justify-end">
+      <div class="flex items-center gap-2">
+        <label for="sortBy" class="text-xs font-semibold label-bold whitespace-nowrap">Sort:</label>
+        <select id="sortBy" class="select-field text-sm !py-1" style="width:auto;">
+          <option value="date-desc">Newest First</option>
+          <option value="date-asc">Oldest First</option>
+          <option value="test-asc">Test Name A → Z</option>
+          <option value="test-desc">Test Name Z → A</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  {# ── Results bar ───────────────────────────────────────── #}
+  <div class="flex justify-between items-center mb-3 px-0.5">
+    <p id="resultsInfo" class="text-sm muted"></p>
+  </div>
+
+  {# ── Cards grid ────────────────────────────────────────── #}
+  <div id="benchmarksGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    {% for bm in benchmarks %}
+    {% set test_pb = tests_map.get(bm.test_id) %}
+
+    {# Status metadata #}
+    {% if bm.status == 1 %}
+      {% set status_key   = 'SUCCESS' %}
+      {% set status_label = 'Completed' %}
+      {% set status_icon  = 'check_circle' %}
+      {% set status_color = 'bg-green-600' %}
+    {% elif bm.status == 2 %}
+      {% set status_key   = 'ERROR' %}
+      {% set status_label = 'Error' %}
+      {% set status_icon  = 'error' %}
+      {% set status_color = 'bg-red-600' %}
+    {% elif bm.status == 3 %}
+      {% set status_key   = 'IN_PROGRESS' %}
+      {% set status_label = 'In Progress' %}
+      {% set status_icon  = 'refresh' %}
+      {% set status_color = 'bg-blue-600' %}
+    {% elif bm.status == 4 %}
+      {% set status_key   = 'CANCELLED' %}
+      {% set status_label = 'Cancelled' %}
+      {% set status_icon  = 'cancel' %}
+      {% set status_color = 'bg-yellow-600' %}
+    {% else %}
+      {% set status_key   = 'UNKNOWN' %}
+      {% set status_label = 'Unknown' %}
+      {% set status_icon  = 'help' %}
+      {% set status_color = 'bg-gray-500' %}
+    {% endif %}
+
+    {% set completed_dt = bm.completed_at_utc.ToDatetime() %}
+
+    {# Winner comes from bm.winner (set at tournament completion) #}
+    {% set winner_id = bm.winner %}
+
+    <div class="benchmark-card card flex flex-col !p-4 !mb-0 border border-[var(--color-border)]"
+         data-testname="{{ (test_pb.name if test_pb else bm.test_id) | lower }}"
+         data-owner="{{ bm.owner | lower }}"
+         data-status="{{ status_key }}"
+         data-created="{{ bm.created_at_utc.ToDatetime().strftime('%Y-%m-%dT%H:%M:%S') }}">
+
+      {# Header: test name + status pill #}
+      <div class="flex justify-between items-start gap-2 mb-3">
+        <h3 class="text-sm font-semibold text-[var(--color-text-primary)] leading-snug flex-1 line-clamp-2">
+          {{ test_pb.name if test_pb else bm.test_id }}
+        </h3>
+        {% if bm.status == 3 %}
+        <a href="{{ url_for('benchmark_status', benchmark_id=bm.id) }}"
+           class="inline-flex items-center rounded-full {{ status_color }} px-2.5 py-0.5 text-xs font-medium text-white shadow-sm hover:opacity-90 flex-shrink-0">
+          <span class="material-icons text-[13px] mr-1 animate-spin">{{ status_icon }}</span>
+          {{ status_label }}
+        </a>
+        {% else %}
+        <span class="inline-flex items-center rounded-full {{ status_color }} px-2.5 py-0.5 text-xs font-medium text-white shadow-sm flex-shrink-0">
+          <span class="material-icons text-[13px] mr-1">{{ status_icon }}</span>
+          {{ status_label }}
+        </span>
+        {% endif %}
+      </div>
+
+      {# Winner badge #}
+      {% if bm.status == 1 and winner_id %}
+      <div class="flex items-center gap-2 mb-3 px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+        <span class="material-icons text-amber-500 text-[16px]">emoji_events</span>
+        <span class="text-xs font-semibold text-amber-700 dark:text-amber-300 truncate">{{ winner_id }}</span>
+      </div>
+      {% endif %}
+
+      {# Meta rows #}
+      <div class="flex-1 space-y-1.5 text-xs muted">
+        <div class="flex items-center gap-1.5">
+          <span class="material-icons text-[13px]">person</span>
+          <span class="truncate">{{ bm.owner }}</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-1.5">
+            <span class="material-icons text-[13px]">schedule</span>
+            <span>{{ bm.created_at_utc.ToDatetime().strftime('%Y-%m-%d %H:%M') }}</span>
+          </div>
+          {% if completed_dt.year > 1970 %}
+          <div class="flex items-center gap-1.5">
+            <span class="material-icons text-[13px]">flag</span>
+            <span>{{ completed_dt.strftime('%Y-%m-%d %H:%M') }}</span>
+          </div>
+          {% endif %}
+        </div>
+        <div class="flex items-center gap-4">
+          <div class="flex items-center gap-1.5">
+            <span class="material-icons text-[13px]">memory</span>
+            <span>{{ bm.model_count }} model{{ 's' if bm.model_count != 1 else '' }}</span>
+          </div>
+        </div>
+      </div>
+
+      {# Footer #}
+      <div class="mt-3 pt-3 border-t border-[var(--color-border)] flex justify-end">
+        <a href="{{ url_for('benchmark_details', benchmark_id=bm.id) }}"
+           class="text-[var(--color-accent-secondary)] hover:underline text-xs font-semibold flex items-center gap-1 group">
+          View Details
+          <span class="material-icons text-[14px] transition-transform group-hover:translate-x-0.5">arrow_forward</span>
+        </a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ── Empty state ───────────────────────────────────────── #}
+  <div id="noResults" class="card p-12 text-center hidden">
+    <span class="material-icons text-5xl muted block mb-3">search_off</span>
+    <h3 class="text-lg font-semibold mb-1">No benchmarks found</h3>
+    <p class="text-sm muted">Try adjusting your search or filters, or run a new benchmark</p>
+  </div>
+
+  {# ── Pagination ────────────────────────────────────────── #}
+  <div id="paginationBar" class="flex justify-center items-center gap-1.5 mt-6 mb-4 hidden">
+    <button id="prevPage" class="page-btn" aria-label="Previous page">
+      <span class="material-icons text-[18px]">chevron_left</span>
+    </button>
+    <div id="pageNumbers" class="flex gap-1"></div>
+    <button id="nextPage" class="page-btn" aria-label="Next page">
+      <span class="material-icons text-[18px]">chevron_right</span>
+    </button>
+  </div>
+
+  {# ── Load-all banner ───────────────────────────────────── #}
+  {% if is_truncated %}
+  <div class="flex justify-center mt-4 mb-8">
+    <div class="text-center">
+      <p class="text-sm muted mb-3">Showing {{ total_shown }} most recent benchmarks. There may be more.</p>
+      <a href="{{ url_for('benchmarks', show_all='true') }}" class="button-secondary">
+        <span class="material-icons text-[20px]">expand_more</span>
+        Load All Benchmarks
+      </a>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  let currentPage = 1;
+  const pageSize = 50;
+  let filteredCards = [];
+
+  const filterSearch = document.getElementById('filterSearch');
+  const filterStatus = document.getElementById('filterStatus');
+  const filterOwner  = document.getElementById('filterOwner');
+  const sortBy       = document.getElementById('sortBy');
+  const clearBtn     = document.getElementById('clearFilters');
+  const grid         = document.getElementById('benchmarksGrid');
+  const noResults    = document.getElementById('noResults');
+  const resultsInfo  = document.getElementById('resultsInfo');
+  const paginationBar = document.getElementById('paginationBar');
+  const pageNumbers  = document.getElementById('pageNumbers');
+  const prevBtn      = document.getElementById('prevPage');
+  const nextBtn      = document.getElementById('nextPage');
+
+  const allCards = Array.from(document.querySelectorAll('.benchmark-card'));
+
+  const statTotal      = document.getElementById('stat-total');
+  const statSuccess    = document.getElementById('stat-success');
+  const statInProgress = document.getElementById('stat-inprogress');
+  const statCancelled  = document.getElementById('stat-cancelled');
+  const statError      = document.getElementById('stat-error');
+  const statTotalLabel = document.getElementById('stat-total-label');
+
+  // ── URL param plumbing ─────────────────────────────────
+  // Filters + sort survive as query-string params so any view is shareable.
+  const PARAM_KEYS = { search: 'q', status: 'status', owner: 'owner', sort: 'sort', page: 'page' };
+  const DEFAULT_SORT = 'date-desc';
+
+  function readParamsIntoUI() {
+    const p = new URLSearchParams(window.location.search);
+    if (p.has(PARAM_KEYS.search)) filterSearch.value = p.get(PARAM_KEYS.search);
+    if (p.has(PARAM_KEYS.status)) filterStatus.value = p.get(PARAM_KEYS.status);
+    if (p.has(PARAM_KEYS.owner))  filterOwner.value  = p.get(PARAM_KEYS.owner);
+    if (p.has(PARAM_KEYS.sort))   sortBy.value       = p.get(PARAM_KEYS.sort);
+    const pg = parseInt(p.get(PARAM_KEYS.page) || '1', 10);
+    if (pg > 0) currentPage = pg;
+  }
+
+  function writeParamsFromUI() {
+    const p = new URLSearchParams();
+    if (filterSearch.value.trim())  p.set(PARAM_KEYS.search, filterSearch.value.trim());
+    if (filterStatus.value)         p.set(PARAM_KEYS.status, filterStatus.value);
+    if (filterOwner.value)          p.set(PARAM_KEYS.owner,  filterOwner.value);
+    if (sortBy.value !== DEFAULT_SORT) p.set(PARAM_KEYS.sort, sortBy.value);
+    if (currentPage > 1)            p.set(PARAM_KEYS.page,   String(currentPage));
+    const qs = p.toString();
+    const next = window.location.pathname + (qs ? '?' + qs : '');
+    if (next !== window.location.pathname + window.location.search) {
+      history.replaceState(null, '', next);
+    }
+  }
+
+  // ── Filter-aware stat card counts ──────────────────────
+  function updateStats(filtered) {
+    const anyFilter =
+      filterSearch.value.trim() !== '' ||
+      filterStatus.value !== '' ||
+      filterOwner.value !== '';
+
+    const byStatus = (s) => filtered.filter(c => c.dataset.status === s).length;
+    statTotal.textContent      = filtered.length.toLocaleString();
+    statSuccess.textContent    = byStatus('SUCCESS').toLocaleString();
+    statInProgress.textContent = byStatus('IN_PROGRESS').toLocaleString();
+    statCancelled.textContent  = byStatus('CANCELLED').toLocaleString();
+    statError.textContent      = byStatus('ERROR').toLocaleString();
+    statTotalLabel.textContent = anyFilter ? `Matching (of ${statTotal.dataset.full})` : 'Total';
+  }
+
+  // ── Drop dropdown options that have no matches under other filters ──
+  // `option[hidden]` isn't reliably honoured in native selects across
+  // browsers, so we rebuild instead. The currently selected value is kept
+  // (labelled "no matches") so users see why the grid is empty rather than
+  // a silently-cleared filter.
+  const STATUS_OPTIONS = Array.from(filterStatus.options).map(o => ({ value: o.value, label: o.textContent }));
+  const OWNER_OPTIONS  = Array.from(filterOwner.options) .map(o => ({ value: o.value, label: o.textContent }));
+
+  function rebuildSelect(selectEl, options, valid, current) {
+    selectEl.innerHTML = '';
+    options.forEach(({ value, label }) => {
+      const isAll = value === '';
+      const isValid = valid.has(value);
+      const isSelected = value === current;
+      if (!isAll && !isValid && !isSelected) return;
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = (!isAll && !isValid && isSelected) ? `${label} (no matches)` : label;
+      if (isSelected) opt.selected = true;
+      selectEl.appendChild(opt);
+    });
+  }
+
+  function refreshDropdowns() {
+    const search = filterSearch.value.toLowerCase().trim();
+    const status = filterStatus.value;
+    const owner  = filterOwner.value;
+
+    const matchesExcept = (skip) => (c) => {
+      if (skip !== 'search' && search && !((c.dataset.testname || '').includes(search) || (c.dataset.owner || '').includes(search))) return false;
+      if (skip !== 'status' && status && c.dataset.status !== status) return false;
+      if (skip !== 'owner'  && owner  && c.dataset.owner  !== owner)  return false;
+      return true;
+    };
+
+    const validStatus = new Set(allCards.filter(matchesExcept('status')).map(c => c.dataset.status || ''));
+    const validOwner  = new Set(allCards.filter(matchesExcept('owner')) .map(c => c.dataset.owner  || ''));
+
+    rebuildSelect(filterStatus, STATUS_OPTIONS, validStatus, status);
+    rebuildSelect(filterOwner,  OWNER_OPTIONS,  validOwner,  owner);
+  }
+
+  function getFilteredSorted() {
+    const search = filterSearch.value.toLowerCase().trim();
+    const status = filterStatus.value;
+    const owner  = filterOwner.value;
+    const sort   = sortBy.value;
+
+    let cards = allCards.filter(c => {
+      const searchHit = !search ||
+        (c.dataset.testname || '').includes(search) ||
+        (c.dataset.owner    || '').includes(search);
+      const statusHit = !status || c.dataset.status === status;
+      const ownerHit  = !owner  || c.dataset.owner  === owner;
+      return searchHit && statusHit && ownerHit;
+    });
+
+    cards.sort((a, b) => {
+      switch (sort) {
+        case 'date-desc':  return (b.dataset.created  || '').localeCompare(a.dataset.created  || '');
+        case 'date-asc':   return (a.dataset.created  || '').localeCompare(b.dataset.created  || '');
+        case 'test-asc':   return (a.dataset.testname || '').localeCompare(b.dataset.testname || '');
+        case 'test-desc':  return (b.dataset.testname || '').localeCompare(a.dataset.testname || '');
+        default:           return 0;
+      }
+    });
+
+    return cards;
+  }
+
+  function renderPage() {
+    refreshDropdowns();
+    filteredCards = getFilteredSorted();
+    updateStats(filteredCards);
+    writeParamsFromUI();
+    const total      = filteredCards.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+    if (currentPage > totalPages) currentPage = totalPages;
+
+    const start     = (currentPage - 1) * pageSize;
+    const end       = Math.min(start + pageSize, total);
+    const pageCards = filteredCards.slice(start, end);
+
+    allCards.forEach(c => c.classList.add('hidden'));
+
+    pageCards.forEach((card, i) => {
+      card.classList.remove('hidden');
+      card.classList.remove('card-animate');
+      void card.offsetWidth;
+      card.classList.add('card-animate');
+      card.style.animationDelay = (i * 20) + 'ms';
+      grid.appendChild(card);
+    });
+
+    if (total === 0) {
+      noResults.classList.remove('hidden');
+      grid.style.display = 'none';
+      paginationBar.classList.add('hidden');
+      resultsInfo.textContent = '';
+    } else {
+      noResults.classList.add('hidden');
+      grid.style.display = '';
+      resultsInfo.textContent =
+        `Showing ${start + 1}-${end} of ${total} benchmark${total !== 1 ? 's' : ''}`;
+
+      if (totalPages <= 1) {
+        paginationBar.classList.add('hidden');
+      } else {
+        paginationBar.classList.remove('hidden');
+        renderPageNumbers(totalPages);
+        prevBtn.disabled = currentPage === 1;
+        nextBtn.disabled = currentPage === totalPages;
+      }
+    }
+  }
+
+  function renderPageNumbers(totalPages) {
+    pageNumbers.innerHTML = '';
+    buildPageRange(currentPage, totalPages).forEach(p => {
+      if (p === '…') {
+        const el = document.createElement('span');
+        el.textContent = '…';
+        el.className = 'px-1 text-sm muted self-center';
+        pageNumbers.appendChild(el);
+        return;
+      }
+      const btn = document.createElement('button');
+      btn.textContent = p;
+      btn.className = 'page-btn' + (p === currentPage ? ' page-btn-active' : '');
+      btn.setAttribute('aria-label', `Page ${p}`);
+      if (p !== currentPage) {
+        btn.addEventListener('click', () => { currentPage = p; renderPage(); scrollToGrid(); });
+      }
+      pageNumbers.appendChild(btn);
+    });
+  }
+
+  function buildPageRange(cur, total) {
+    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+    const pages = [1];
+    if (cur > 3) pages.push('…');
+    for (let i = Math.max(2, cur - 1); i <= Math.min(total - 1, cur + 1); i++) pages.push(i);
+    if (cur < total - 2) pages.push('…');
+    pages.push(total);
+    return pages;
+  }
+
+  function scrollToGrid() {
+    grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function debounce(fn, ms) {
+    let t;
+    return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  }
+
+  filterSearch.addEventListener('input',  debounce(() => { currentPage = 1; renderPage(); }, 200));
+  filterStatus.addEventListener('change', () => { currentPage = 1; renderPage(); });
+  filterOwner .addEventListener('change', () => { currentPage = 1; renderPage(); });
+  sortBy      .addEventListener('change', () => { renderPage(); });
+
+  prevBtn.addEventListener('click', () => {
+    if (currentPage > 1) { currentPage--; renderPage(); scrollToGrid(); }
+  });
+  nextBtn.addEventListener('click', () => {
+    if (currentPage < Math.ceil(filteredCards.length / pageSize)) { currentPage++; renderPage(); scrollToGrid(); }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    filterSearch.value = '';
+    filterStatus.value = '';
+    filterOwner.value  = '';
+    sortBy.value       = 'date-desc';
+    currentPage        = 1;
+    renderPage();
+  });
+
+  readParamsIntoUI();
+  renderPage();
+})();
+</script>
+{% endblock %}

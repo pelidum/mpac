@@ -1,0 +1,637 @@
+{% extends "base.html" %}
+{% block title %}Pelidum MPAC - Test Run Status{% endblock %}
+
+{% block content %}
+<script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+
+<div class="max-w-[1440px] mx-auto">
+    <div class="rounded-xl overflow-hidden border border-[var(--color-border)] shadow-sm">
+        <div class="grid grid-cols-1 lg:grid-cols-2">
+
+            <!-- LEFT: Model cards -->
+            <div class="flex flex-col border-b lg:border-b-0 lg:border-r border-[var(--color-border)] bg-[var(--color-bg-secondary)]"
+                 style="max-height: calc(100vh - 240px);">
+                <div class="px-6 pt-6 pb-4 shrink-0 border-b border-[var(--color-border)]">
+                    <h3 class="text-xl font-semibold text-accent flex items-center gap-2">
+                        <span class="material-icons">memory</span>
+                        Models
+                        <span class="text-sm font-normal text-[var(--color-text-secondary)]">({{ models | length }})</span>
+                    </h3>
+                </div>
+                <div class="overflow-y-auto flex-1 p-6">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {% for model_pb in models %}
+                        <div data-model-id="{{ model_pb.id }}"
+                            class="bg-[var(--color-bg-primary)] p-4 rounded-lg border border-[var(--color-border)] shadow-sm hover:shadow-md transition-shadow flex items-center ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
+                            <div class="w-1/5 flex-shrink-0 flex justify-center">
+                                <div class="h-12 w-12 rounded bg-[var(--color-bg-secondary)] text-[var(--color-accent-secondary)] flex items-center justify-center font-bold ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
+                                    {{ loop.index }}
+                                </div>
+                            </div>
+                            <div class="w-4/5 pl-2 flex flex-col gap-2">
+                                <div>
+                                    <div class="inline-flex items-center rounded-md bg-gray-800 py-0.5 px-2.5 border border-transparent text-xs text-white transition-all shadow-sm font-medium">
+                                        <svg class="animate-spin -ml-0.5 mr-1.5 h-3 w-3 text-white"
+                                            xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor"
+                                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                                            </path>
+                                        </svg>
+                                        Initializing...
+                                    </div>
+                                </div>
+                                <p class="text-sm font-medium text-[var(--color-text-secondary)] truncate">
+                                    {{ model_pb.id }}
+                                </p>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT: Run status -->
+            <div id="run_status_container"
+                 class="flex flex-col bg-[var(--color-bg-secondary)]"
+                 style="max-height: calc(100vh - 240px);">
+
+                <!-- Header -->
+                <div class="px-6 pt-6 pb-4 shrink-0 border-b border-[var(--color-border)] flex items-center justify-between">
+                    <h3 class="text-xl font-semibold text-accent flex items-center gap-2">
+                        <span class="material-icons">rocket_launch</span>
+                        Run Status
+                    </h3>
+                    <span class="text-sm text-[var(--color-text-secondary)]">
+                        Elapsed: <span id="job-timer" class="font-mono font-semibold text-[var(--color-text-primary)]">0:00</span>
+                    </span>
+                </div>
+
+                <!-- Metadata + guide -->
+                <div class="px-6 py-4 shrink-0 border-b border-[var(--color-border)] flex gap-6">
+                    <div class="flex flex-col gap-1 text-sm text-[var(--color-text-secondary)] min-w-[140px] shrink-0">
+                        <p><span class="font-semibold">Test:</span> {{ test_pb.name }}</p>
+                        <p><span class="font-semibold">Type:</span>
+                            {% if test_pb.type == 1 %}Evaluation
+                            {% elif test_pb.type == 2 %}Survey
+                            {% else %}—{% endif %}
+                        </p>
+                        <p><span class="font-semibold">Sample Size:</span> {{ sample_size }}</p>
+                    </div>
+                    {% if test_pb.type == 1 %}
+                    <dl class="flex-1 space-y-1.5 text-xs overflow-y-auto">
+                        <h4 class="text-xs font-semibold text-[var(--color-accent-secondary)] mb-1.5">Metrics Guide</h4>
+                        <div>
+                            <dt class="font-semibold text-[var(--color-text-primary)]">Precision</dt>
+                            <dd class="text-[var(--color-text-secondary)] leading-relaxed">Of all positive predictions, how many were correct?</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold text-[var(--color-text-primary)]">Recall</dt>
+                            <dd class="text-[var(--color-text-secondary)] leading-relaxed">Of all actual positives, how many were found?</dd>
+                        </div>
+                        <div>
+                            <dt class="font-semibold text-[var(--color-text-primary)]">F1 Score</dt>
+                            <dd class="text-[var(--color-text-secondary)] leading-relaxed">Harmonic mean of precision and recall.</dd>
+                        </div>
+                    </dl>
+                    {% endif %}
+                </div>
+
+                <!-- Chart — scrolls when many models exceed available space -->
+                {% if test_pb.type == 1 %}
+                <div id="chart-scroll-wrapper" class="flex-1 min-h-[200px] overflow-y-auto px-4">
+                    <div id="barchart_material" class="w-full" style="min-height: 200px;"></div>
+                </div>
+                {% else %}
+                <div class="flex-1 min-h-0"></div>
+                {% endif %}
+
+                <!-- Action buttons — always pinned to bottom -->
+                <div id="run_result_container" class="px-6 py-4 shrink-0 flex justify-end items-center gap-3 border-t border-[var(--color-border)]"></div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<script type="text/javascript">
+    const RUN_ID_FROM_SERVER = {{ run_id | tojson }};
+    const IS_POLLING_MODE = {{ is_polling_mode | tojson }};
+    const CREATED_AT_MS = {{ created_at_ms }};
+    test_json = {{ test_dict | tojson }};
+    let eventSource = null;
+    let currentRunId = RUN_ID_FROM_SERVER;
+    let timerInterval = null;
+    let pollInterval = null;
+    const completedMetrics = {};
+
+    function startTimer() {
+        function tick() {
+            const elapsed = Math.floor((Date.now() - CREATED_AT_MS) / 1000);
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            const el = document.getElementById('job-timer');
+            if (el) el.textContent = minutes + ':' + String(seconds).padStart(2, '0');
+        }
+        tick();
+        timerInterval = setInterval(tick, 1000);
+    }
+
+    function stopTimer() {
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
+    }
+
+    function cancelRun() {
+        const cancelBtn = document.getElementById('cancel-run-btn');
+        if (!cancelBtn) return;
+
+        if (!confirm('Are you sure you want to cancel this run?')) return;
+
+        cancelBtn.disabled = true;
+        cancelBtn.innerHTML = '<span class="material-icons text-[16px] animate-spin">refresh</span> Cancelling...';
+
+        const url = currentRunId ? `/runs/${currentRunId}/cancel` : '/runs/cancel';
+        fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+            .then(r => r.json())
+            .then(resp => {
+                if (resp.success) {
+                    cancelBtn.innerHTML = '<span class="material-icons text-[16px]">check</span> Cancelled';
+                } else {
+                    throw new Error(resp.error || 'Failed to cancel run');
+                }
+            })
+            .catch(err => {
+                alert('Failed to cancel run: ' + err.message);
+                cancelBtn.disabled = false;
+                cancelBtn.innerHTML = '<span class="material-icons text-[16px]">cancel</span> Cancel Run';
+            });
+    }
+
+    function hideCancelButton() {
+        const cancelBtn = document.getElementById('cancel-run-btn');
+        if (cancelBtn) cancelBtn.remove();
+    }
+
+    function startPolling() {
+        if (!currentRunId) return;
+        // Only show the "connection lost" notice when falling back from SSE;
+        // in primary polling mode the UI is already in the expected state.
+        if (!IS_POLLING_MODE) {
+            const container = document.querySelector('#run_result_container');
+            if (container && !document.getElementById('poll-notice')) {
+                const msg = document.createElement('div');
+                msg.id = 'poll-notice';
+                msg.className = "text-sm text-yellow-600 dark:text-yellow-400 flex items-center gap-2";
+                msg.innerHTML = '<span class="material-icons text-[16px] animate-spin">refresh</span> Connection lost. Checking status...';
+                container.appendChild(msg);
+            }
+        }
+        if (!pollInterval) {
+            pollInterval = setInterval(pollStatus, 3000);
+        }
+    }
+
+    // Update model cards from a metrics array (completed models get chips + green badge;
+    // the first model without metrics gets a "Running..." spinner badge).
+    // Safe to call repeatedly — already-rendered cards are skipped.
+    function updateModelCards(metrics) {
+        const allCards = Array.from(document.querySelectorAll('[data-model-id]'));
+        let foundRunning = false;
+
+        allCards.forEach(card => {
+            const modelId = card.dataset.modelId;
+            const badge = card.querySelector('.inline-flex');
+            if (!badge) return;
+
+            const modelMetrics = (metrics || []).find(m => m.responder_id === modelId);
+
+            if (modelMetrics) {
+                completedMetrics[modelId] = modelMetrics;
+                // Already rendered as complete — skip.
+                if (card.querySelector('.dynamic-subtitle')) return;
+
+                const textContainer = card.querySelector('.flex-col');
+                const chipRow = document.createElement('div');
+                chipRow.className = "flex flex-wrap gap-2 mt-1 dynamic-subtitle";
+                if (test_json["type"] == "EVALUATION") {
+                    chipRow.innerHTML = `
+                    <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
+                        P: ${modelMetrics.precision.toFixed(2)}
+                    </span>
+                    <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/20">
+                        R: ${modelMetrics.recall.toFixed(2)}
+                    </span>
+                    <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
+                        F1: ${modelMetrics.f1.toFixed(2)}
+                    </span>
+                    <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
+                        Throughput: ${(modelMetrics.tokens_per_minute / 60).toFixed(1)} tok/s
+                    </span>
+                    <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
+                        Latency p50: ${modelMetrics.median_task_duration.toFixed(2)}s
+                    </span>`;
+                } else {
+                    chipRow.innerHTML = `
+                    <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
+                        Throughput: ${(modelMetrics.tokens_per_minute / 60).toFixed(1)} tok/s
+                    </span>
+                    <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
+                        Latency p50: ${modelMetrics.median_task_duration.toFixed(2)}s
+                    </span>`;
+                }
+                textContainer.appendChild(chipRow);
+
+                badge.classList.remove('bg-gray-800', 'bg-indigo-600');
+                badge.classList.add('bg-green-600');
+                badge.innerHTML = `
+                    <svg class="-ml-0.5 mr-1.5 h-3 w-3 text-white"
+                        xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Completed
+                `;
+                if (test_json["type"] == "EVALUATION") drawChart();
+
+            } else if (!foundRunning) {
+                // First model without metrics is the one currently running.
+                foundRunning = true;
+                if (!badge.classList.contains('bg-green-600') && !badge.classList.contains('bg-indigo-600')) {
+                    badge.classList.remove('bg-gray-800');
+                    badge.classList.add('bg-indigo-600');
+                    badge.innerHTML = `
+                        <svg class="animate-spin -ml-0.5 mr-1.5 h-3 w-3 text-white"
+                            xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor"
+                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                            </path>
+                        </svg>
+                        Running...
+                    `;
+                }
+            }
+        });
+    }
+
+    function updateProgressBadges(answerCounts, sampleSize) {
+        if (!answerCounts || !sampleSize) return;
+        const circumference = 62.83;
+        Object.entries(answerCounts).forEach(([modelId, count]) => {
+            const card = document.querySelector(`[data-model-id="${modelId}"]`);
+            if (!card) return;
+            const badge = card.querySelector('.inline-flex');
+            if (!badge || badge.classList.contains('bg-green-600')) return;
+            const pct = Math.min(100, Math.round((count / sampleSize) * 100));
+            const offset = circumference - (pct / 100) * circumference;
+            badge.classList.remove('bg-gray-800');
+            badge.classList.add('bg-indigo-600');
+            badge.innerHTML = `
+                <svg class="-ml-0.5 mr-1.5 h-3 w-3 -rotate-90 transform transition-all duration-300 ease-in-out"
+                    xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <circle class="opacity-100" cx="12" cy="12" r="10"
+                        stroke="currentColor" stroke-width="4" stroke-linecap="round"
+                        stroke-dasharray="${circumference}" stroke-dashoffset="${offset}">
+                    </circle>
+                </svg>
+                ${count}/${sampleSize} (${pct}%)
+            `;
+        });
+    }
+
+    function pollStatus() {
+        fetch(`/runs/status/${currentRunId}/poll`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'SUCCESS') {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+                    stopTimer();
+                    hideCancelButton();
+                    document.getElementById('poll-notice')?.remove();
+                    window.location.href = `/runs/${currentRunId}`;
+                } else if (data.status === 'CANCELLED') {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+                    stopTimer();
+                    hideCancelButton();
+                    document.getElementById('poll-notice')?.remove();
+                    window.location.href = "{{ url_for('run_config') }}";
+                } else if (data.status === 'ERROR') {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+                    stopTimer();
+                    hideCancelButton();
+                    document.getElementById('poll-notice')?.remove();
+                    const container = document.querySelector('#run_result_container');
+                    if (container) {
+                        const errorMsg = document.createElement('div');
+                        errorMsg.className = "text-sm text-red-600 dark:text-red-400";
+                        errorMsg.textContent = 'Run failed. Please check the results page.';
+                        container.appendChild(errorMsg);
+                    }
+                } else {
+                    // IN_PROGRESS: update model cards with metrics (completed) and
+                    // per-model answer counts (in-flight progress).
+                    updateModelCards(data.metrics);
+                    updateProgressBadges(data.answer_counts, data.sample_size);
+                }
+            })
+            .catch(() => { /* network error, keep trying */ });
+    }
+
+    {% if not is_polling_mode %}
+    function connectEventSource() {
+        if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+        }
+
+        const streamUrl = "{{ url_for('run_status_stream') }}";
+        eventSource = new EventSource(streamUrl);
+
+        eventSource.onmessage = function (event) {
+            const data = JSON.parse(event.data);
+
+            if (data.run_id && !currentRunId) {
+                currentRunId = data.run_id;
+                history.replaceState({}, '', '/runs/status/' + currentRunId);
+            }
+
+            if (data.code === 'SUCCESS') {
+                stopTimer();
+                hideCancelButton();
+                const runResultContainer = document.querySelector('#run_result_container');
+                const detailButton = document.createElement('a');
+                detailButton.className = "button-secondary text-sm py-1.5 px-3 self-end flex items-center gap-1.5";
+                detailButton.innerHTML = '<span class="material-icons-outlined text-[16px]">visibility</span><span>View Results</span>';
+                detailButton.href = `/runs/${data.run_id}`;
+                runResultContainer.appendChild(detailButton);
+                eventSource.close();
+
+            } else if (data.code === 'CANCELLED') {
+                stopTimer();
+                hideCancelButton();
+                eventSource.close();
+                window.location.href = "{{ url_for('run_config') }}";
+
+            } else if (data.code === 'IN_PROGRESS') {
+                const currentResponder = data.current_responder_id;
+                const currentResponderCard = document.querySelector(`[data-model-id="${currentResponder}"]`);
+                if (!currentResponderCard) return;
+                const currentResponderBadge = currentResponderCard.querySelector('.inline-flex');
+                if (!currentResponderBadge) return;
+
+                const currentRound = parseInt(data.current_round, 10);
+                const totalRounds = parseInt(data.total_rounds, 10);
+
+                if (!isNaN(currentRound) && !isNaN(totalRounds) && currentRound < totalRounds) {
+                    const currentResponderProgress = Math.round((currentRound / totalRounds) * 100);
+                    const circumference = 62.83;
+                    const offset = circumference - (currentResponderProgress / 100) * circumference;
+                    currentResponderBadge.classList.remove('bg-gray-800');
+                    currentResponderBadge.classList.add('bg-indigo-600');
+                    currentResponderBadge.innerHTML = `
+                        <svg class="-ml-0.5 mr-1.5 h-3 w-3 -rotate-90 transform transition-all duration-300 ease-in-out"
+                            xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <circle class="opacity-100" cx="12" cy="12" r="10"
+                                stroke="currentColor" stroke-width="4" stroke-linecap="round"
+                                stroke-dasharray="${circumference}" stroke-dashoffset="${offset}">
+                            </circle>
+                        </svg>
+                        Running (${currentResponderProgress}%)...
+                    `;
+                } else if (!isNaN(currentRound) && !isNaN(totalRounds) &&
+                           currentRound >= totalRounds && data.metrics && data.metrics.length > 0) {
+                    const currentResponderMetrics = data.metrics.find(x => x.responder_id === currentResponder);
+                    if (!currentResponderMetrics) return;
+                    completedMetrics[currentResponder] = currentResponderMetrics;
+                    const textContainer = currentResponderCard.querySelector('.flex-col');
+                    if (textContainer.querySelector('.dynamic-subtitle')) return;
+                    const chipRow = document.createElement('div');
+                    chipRow.className = "flex flex-wrap gap-2 mt-1 dynamic-subtitle";
+                    if (test_json["type"] == "EVALUATION") {
+                        chipRow.innerHTML = `
+                        <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
+                            P: ${currentResponderMetrics.precision.toFixed(2)}
+                        </span>
+                        <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/20">
+                            R: ${currentResponderMetrics.recall.toFixed(2)}
+                        </span>
+                        <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
+                            F1: ${currentResponderMetrics.f1.toFixed(2)}
+                        </span>
+                        <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
+                            Throughput: ${(currentResponderMetrics.tokens_per_minute / 60).toFixed(1)} tok/s
+                        </span>
+                        <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
+                            Latency p50: ${currentResponderMetrics.median_task_duration.toFixed(2)}s
+                        </span>`;
+                    } else {
+                        chipRow.innerHTML = `
+                        <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
+                            Throughput: ${(currentResponderMetrics.tokens_per_minute / 60).toFixed(1)} tok/s
+                        </span>
+                        <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
+                            Latency p50: ${currentResponderMetrics.median_task_duration.toFixed(2)}s
+                        </span>`;
+                    }
+                    textContainer.appendChild(chipRow);
+                    currentResponderBadge.classList.remove('bg-gray-300');
+                    currentResponderBadge.classList.add('bg-green-600');
+                    currentResponderBadge.innerHTML = `
+                        <svg class="-ml-0.5 mr-1.5 h-3 w-3 text-white"
+                            xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Completed
+                    `;
+                    if (test_json["type"] == "EVALUATION") drawChart();
+                }
+
+            } else if (data.code === 'HEARTBEAT' || data.code === 'INFO') {
+                return;
+
+            } else {
+                stopTimer();
+                hideCancelButton();
+                const currentResponder = data.current_responder_id;
+                const currentResponderCard = document.querySelector(`[data-model-id="${currentResponder}"]`);
+                if (!currentResponderCard) return;
+                const currentResponderBadge = currentResponderCard.querySelector('.inline-flex');
+                if (!currentResponderBadge) return;
+                currentResponderBadge.classList.remove('bg-gray-300', 'bg-indigo-600');
+                currentResponderBadge.classList.add('bg-red-600');
+                currentResponderBadge.innerHTML = `
+                    <svg class="-ml-0.5 mr-1.5 h-3 w-3 text-white"
+                        xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Failed
+                `;
+                eventSource.close();
+            }
+        };
+
+        eventSource.onerror = function () {
+            eventSource.close();
+            eventSource = null;
+            if (currentRunId) {
+                startPolling();
+            } else {
+                stopTimer();
+                hideCancelButton();
+                const runResultContainer = document.querySelector('#run_result_container');
+                if (runResultContainer) {
+                    const errorMsg = document.createElement('div');
+                    errorMsg.className = "text-sm text-yellow-600 dark:text-yellow-400 flex items-center gap-2";
+                    errorMsg.innerHTML = 'Connection lost early. Your run may still be processing. <a href="/runs" class="underline font-semibold">Check Recent Runs</a>.';
+                    runResultContainer.appendChild(errorMsg);
+                }
+            }
+        };
+    }
+    {% endif %}
+
+    document.addEventListener("DOMContentLoaded", function () {
+        const runResultContainer = document.querySelector('#run_result_container');
+        const cancelBtn = document.createElement('button');
+        cancelBtn.id = 'cancel-run-btn';
+        cancelBtn.onclick = cancelRun;
+        cancelBtn.className = "button-secondary text-sm py-1.5 px-3 flex items-center gap-1.5 text-red-600 border-red-600 hover:bg-red-50 dark:hover:bg-red-900/20";
+        cancelBtn.innerHTML = '<span class="material-icons text-[16px]">cancel</span> Cancel Run';
+        runResultContainer.appendChild(cancelBtn);
+
+        startTimer();
+
+        if (IS_POLLING_MODE) {
+            startPolling();
+        } else {
+            connectEventSource();
+        }
+    });
+
+    function getThemeColor(variableName) {
+        return getComputedStyle(document.documentElement).getPropertyValue(variableName).trim();
+    }
+
+    const primaryBg = getThemeColor('--color-bg-primary');
+    const secondaryBg = getThemeColor('--color-bg-secondary');
+    const swatchColor = getThemeColor('--color-accent-secondary');
+    const textColor = getThemeColor('--color-text-secondary');
+
+    if (test_json["type"] == "EVALUATION") {
+        google.charts.load('current', { 'packages': ['corechart'] });
+        google.charts.setOnLoadCallback(drawChart);
+    }
+
+    function fmtPct(v) { return (v * 100).toFixed(1) + '%'; }
+
+    function drawChart() {
+        if (Object.keys(completedMetrics).length === 0) return;
+        const containerEl = document.getElementById('barchart_material');
+        containerEl.style.position = 'relative';
+        const textColor = getThemeColor('--color-text-secondary');
+        const primaryBg = getThemeColor('--color-bg-primary');
+        const markerColor = '#FF5722';
+        const modelCards = document.querySelectorAll('[data-model-id]');
+        const modelCount = modelCards.length;
+        const chartHeight = Math.max(250, modelCount * 50 + 80);
+        containerEl.style.height = chartHeight + 'px';
+        var modelDataTable = [
+            ['Model',
+             'Precision', {role: 'annotation'},
+             'Recall',    {role: 'annotation'},
+             'F1',        {role: 'annotation'},
+             'Refusals / Errors', {role: 'annotation'}]
+        ];
+        Object.entries(completedMetrics).forEach(([modelId, m]) => {
+            const p = m.precision || 0;
+            const r = m.recall || 0;
+            const f1 = m.f1 || 0;
+            const ref = m.refusal_error_rate || 0;
+            modelDataTable.push([modelId, p, fmtPct(p), r, fmtPct(r), f1, fmtPct(f1), ref, fmtPct(ref)]);
+        });
+        var data = google.visualization.arrayToDataTable(modelDataTable);
+        data.sort([{ column: 5, desc: true }]);
+        var options = {
+            title: 'Top Models by F1 Score',
+            backgroundColor: primaryBg,
+            colors: chartColors,
+            legend: { position: 'none' },
+            chartArea: { width: '75%', height: '80%', top: 40, left: 100 },
+            annotations: { textStyle: { fontSize: 11, color: textColor, auraColor: 'none' } },
+            fontSize: 11,
+            titleTextStyle: { color: textColor },
+            hAxis: {
+                format: 'percent',
+                viewWindow: { min: 0, max: 1 },
+                textStyle: { color: textColor },
+                baselineColor: textColor,
+                gridlines: { color: '#444' }
+            },
+            vAxis: {
+                title: 'Model',
+                textStyle: { color: textColor },
+            },
+            animation: { duration: 500, easing: 'out', startup: true }
+        };
+        var chart = new google.visualization.BarChart(containerEl);
+        const markers = [
+            { value: 0.7, label: 'Low Quality' },
+            { value: 0.8, label: 'OK Quality' },
+            { value: 0.95, label: 'High Quality' }
+        ];
+        google.visualization.events.addListener(chart, 'ready', function () {
+            const existingMarkers = containerEl.querySelectorAll('.chart-marker');
+            existingMarkers.forEach(m => m.remove());
+            const cli = chart.getChartLayoutInterface();
+            const chartArea = cli.getChartAreaBoundingBox();
+            markers.forEach(marker => {
+                const xPos = cli.getXLocation(marker.value);
+                if (xPos < chartArea.left || xPos > chartArea.left + chartArea.width) return;
+                const line = document.createElement('div');
+                line.className = 'chart-marker';
+                line.style.position = 'absolute';
+                line.style.left = xPos + 'px';
+                line.style.top = chartArea.top + 'px';
+                line.style.height = chartArea.height + 'px';
+                line.style.width = '1px';
+                line.style.borderLeft = '2px dashed ' + markerColor;
+                line.style.zIndex = '10';
+
+                const label = document.createElement('div');
+                label.className = 'chart-marker';
+                label.textContent = marker.label;
+                label.style.position = 'absolute';
+                label.style.left = xPos + 'px';
+                label.style.top = (chartArea.top - 20) + 'px';
+                label.style.color = markerColor;
+                label.style.fontSize = '10px';
+                label.style.fontWeight = 'bold';
+                label.style.transform = 'translateX(-50%)';
+                label.style.whiteSpace = 'nowrap';
+
+                containerEl.appendChild(line);
+                containerEl.appendChild(label);
+            });
+        });
+        chart.draw(data, options);
+    }
+
+    if (test_json["type"] == "EVALUATION") {
+        const observer = new MutationObserver(function (mutations) {
+            mutations.forEach(function (mutation) {
+                if (mutation.type === "attributes") setTimeout(drawChart, 250);
+            });
+        });
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] });
+        window.addEventListener('resize', drawChart);
+    }
+</script>
+
+{% endblock %}

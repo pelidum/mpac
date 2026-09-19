@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+
+{% block title %}Pelidum MPAC - {{ model.id }}{% endblock %}
+
+{% block styles %}
+<style>
+  .provider-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+  }
+
+  .provider-badge-icon {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+  }
+
+  .provider-badge-icon-fallback {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .provider-badge-icon-fallback .material-icons {
+    font-size: 20px;
+    color: var(--color-accent-primary);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+  <div class="flex justify-between items-center mb-6">
+    <div>
+      <h1 class="content-title break-all">{{ model.id }}</h1>
+      <div class="mt-2 flex items-center gap-3">
+        <span class="provider-badge">
+          {% if provider_icon %}
+            <img src="{{ url_for('static', filename='images/providers/' + provider_icon) }}"
+                 alt="{{ model.provider }}"
+                 class="provider-badge-icon">
+          {% else %}
+            <div class="provider-badge-icon-fallback">
+              <span class="material-icons">cloud</span>
+            </div>
+          {% endif %}
+          <span class="font-semibold">{{ model.provider }}</span>
+        </span>
+        {% if model.name %}
+        <span class="text-muted">
+          <span class="font-semibold">Name:</span> {{ model.name }}
+        </span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex items-center space-x-2">
+      <button type="button" onclick="history.back()" class="button-secondary">
+        <span class="material-icons text-[20px]">arrow_back</span>
+        Back to List
+      </button>
+    </div>
+  </div>
+
+  <div class="card p-6 mb-6">
+    <h3
+      class="flex items-center gap-2.5 text-xl font-semibold pb-3 mb-4 border-b border-[var(--color-border)] text-accent">
+      <span class="material-icons">info</span>
+      General Information
+    </h3>
+    <div class="space-y-6">
+      <div>
+        <span class="block text-sm font-medium text-muted mb-0.5">Description</span>
+        <div
+          class="font-medium text-base break-words bg-[var(--color-highlight-shade1)] px-4 py-3 rounded-lg border border-[var(--color-border)]">
+          <div>{{ model_description | safe }}</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <div class="flex items-start gap-3">
+          <span class="material-icons text-accent mt-px text-[20px]">thermostat</span>
+          <div>
+            <span class="block text-sm font-medium text-muted mb-0.5">Default Temperature</span>
+            <p class="font-medium text-base break-words">{{ model.temperature | default('N/A', true) }}</p>
+          </div>
+        </div>
+        <div class="flex items-start gap-3">
+          <span class="material-icons text-accent mt-px text-[20px]">gavel</span>
+          <div>
+            <span class="block text-sm font-medium text-muted mb-0.5">License</span>
+            <p class="font-medium text-base break-words">{{ model.license | default('N/A', true) }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card p-6 mb-6">
+    <h3
+      class="flex items-center gap-2.5 text-xl font-semibold pb-3 mb-4 border-b border-[var(--color-border)] text-accent">
+      <span class="material-icons">architecture</span>
+      Architecture
+    </h3>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+      <div class="flex items-start gap-3">
+        <span class="material-icons text-accent mt-px text-[20px]">apartment</span>
+        <div>
+          <span class="block text-sm font-medium text-muted mb-0.5">Family</span>
+          <p class="font-medium text-base break-words">{{ model.family | default('N/A', true) }}</p>
+        </div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="material-icons text-accent mt-px text-[20px]">memory</span>
+        <div>
+          <span class="block text-sm font-medium text-muted mb-0.5">Parameters</span>
+          <p class="font-medium text-base break-words">{{ model.parameters_label | default('N/A', true) }}</p>
+        </div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="material-icons text-accent mt-px text-[20px]">settings_ethernet</span>
+        <div>
+          <span class="block text-sm font-medium text-muted mb-0.5">Format</span>
+          <p class="font-medium text-base break-words">{{ model.format | default('N/A', true) }}</p>
+        </div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="material-icons text-accent mt-px text-[20px]">psychology</span>
+        <div>
+          <span class="block text-sm font-medium text-muted mb-0.5">Quantization</span>
+          <p class="font-medium text-base break-words">{{ model.quantization | default('N/A', true) }}</p>
+        </div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="material-icons text-accent mt-px text-[20px]">tune</span>
+        <div>
+          <span class="block text-sm font-medium text-muted mb-0.5">Fine-Tune</span>
+          <p class="font-medium text-base break-words">{{ model.fine_tune | default('N/A', true) }}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+    <div class="card p-6">
+      <h3
+        class="flex items-center gap-2.5 text-xl font-semibold pb-3 mb-4 border-b border-[var(--color-border)] text-accent">
+        <span class="material-icons">star</span>
+        Capabilities
+      </h3>
+      <div class="space-y-5">
+        <div class="flex items-start gap-3">
+          <span class="material-icons text-accent mt-px text-[20px]">smart_toy</span>
+          <div>
+            <span class="block text-sm font-medium text-muted mb-0.5">Modality</span>
+            <p class="font-medium text-base break-words">{{ model.get("capabilities", {}).get("modality", "N/A") }}</p>
+          </div>
+        </div>
+        <div class="flex items-start gap-3">
+          <span class="material-icons text-accent mt-px text-[20px]">swap_horiz</span>
+          <div>
+            <span class="block text-sm font-medium text-muted mb-0.5">Context Window</span>
+            <p class="font-medium text-base break-words">{{ "{:,}".format(model.get("capabilities",
+              {}).get("context_window_length", 0) |
+              int) }}</p>
+          </div>
+        </div>
+        <div class="flex items-start gap-3">
+          <span class="material-icons text-accent mt-px text-[20px]">translate</span>
+          <div>
+            <span class="block text-sm font-medium text-muted mb-0.5">Tokenizer</span>
+            <p class="font-medium text-base break-words">{{ model.get("capabilities", {}).get("tokenizer", "N/A") }}</p>
+          </div>
+        </div>
+        <div class="flex items-start gap-3">
+          <span class="material-icons text-accent mt-px text-[20px]">school</span>
+          <div>
+            <span class="block text-sm font-medium text-muted mb-0.5">Instruct Type</span>
+            <p class="font-medium text-base break-words">{{ model.get("capabilities", {}).get("instruct", "N/A") }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card p-6">
+      <h3
+        class="flex items-center gap-2.5 text-xl font-semibold pb-3 mb-4 border-b border-[var(--color-border)] text-accent">
+        <span class="material-icons">paid</span>
+        Pricing (per 1k tokens)
+      </h3>
+      <div class="space-y-5">
+        <div class="flex items-start gap-3">
+          <span class="material-icons text-accent mt-px text-[20px]">input</span>
+          <div>
+            <span class="block text-sm font-medium text-muted mb-0.5">Input Token Cost</span>
+            <p class="font-medium text-base break-words">${{ "%.5f" | format(model.get("pricing",
+              {}).get("input_token_cost", 0) | float) }}
+            </p>
+          </div>
+        </div>
+        <div class="flex items-start gap-3">
+          <span class="material-icons text-accent mt-px text-[20px]">output</span>
+          <div>
+            <span class="block text-sm font-medium text-muted mb-0.5">Output Token Cost</span>
+            <p class="font-medium text-base break-words">${{ "%.5f" | format(model.get("pricing",
+              {}).get("output_token_cost", 0) | float) }}
+            </p>
+          </div>
+        </div>
+        <div class="flex items-start gap-3">
+          <span class="material-icons text-accent mt-px text-[20px]">image</span>
+          <div>
+            <span class="block text-sm font-medium text-muted mb-0.5">Image Token Cost</span>
+            <p class="font-medium text-base break-words">${{ "%.5f" | format(model.get("pricing",
+              {}).get("image_token_cost", 0) | float) }}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script></script>
+{% endblock %}

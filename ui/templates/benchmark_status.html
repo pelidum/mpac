@@ -1,0 +1,724 @@
+{% extends "base.html" %}
+
+{% block title %}Pelidum MPAC - Benchmark Live{% endblock %}
+
+{% block content %}
+<style>
+    #bracket-viewport {
+        width: 100%;
+        height: 72vh;
+        cursor: grab;
+        background-color: var(--color-bg-primary);
+        overflow: hidden;
+        position: relative;
+        /* anchors #controls */
+        border-radius: 8px;
+        border: 1px solid var(--color-border);
+    }
+
+    #bracket-viewport.grabbing {
+        cursor: grabbing;
+    }
+
+    #controls {
+        position: absolute;
+        bottom: 0.75rem;
+        right: 0.75rem;
+        z-index: 10;
+        display: flex;
+        gap: 0.4rem;
+        background: rgba(0, 0, 0, 0.45);
+        padding: 0.4rem;
+        border-radius: 0.5rem;
+    }
+
+    .ctrl-btn {
+        width: 2rem;
+        height: 2rem;
+        color: var(--color-banner-logo);
+        font-weight: 600;
+        font-size: 1rem;
+        border-radius: 50%;
+        background: var(--color-banner);
+        border: none;
+        cursor: pointer;
+        display: grid;
+        place-content: center;
+        transition: background 0.15s;
+    }
+
+    .ctrl-btn:hover {
+        background: color-mix(in srgb, var(--color-banner) 75%, white 25%);
+    }
+
+    .ctrl-btn.wide {
+        width: auto;
+        border-radius: 0.4rem;
+        padding: 0 0.75rem;
+        font-size: 0.75rem;
+    }
+
+    #tournament {
+        display: flex;
+        flex-direction: column-reverse;
+        align-items: center;
+        transform-origin: 0 0;
+        transition: transform 0.15s ease-out;
+        user-select: none;
+        padding: 2.5rem;
+    }
+
+    .round {
+        display: flex;
+        justify-content: center;
+        align-items: flex-end;
+        width: 100%;
+        gap: 1.5rem;
+        margin-bottom: 2.5rem;
+        position: relative;
+    }
+
+    .round-label {
+        position: absolute;
+        left: 0;
+        top: -1.4rem;
+        font-size: 0.65rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--color-text-secondary);
+        opacity: 0.6;
+    }
+
+    .matchup {
+        width: 260px;
+        min-width: 260px;
+        background: var(--color-bg-secondary);
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.12);
+        border: 1px solid var(--color-border);
+        overflow: hidden;
+        transition: border-color 0.3s, box-shadow 0.3s;
+    }
+
+    .matchup.active {
+        border-color: var(--color-accent-secondary);
+        animation: matchup-pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes matchup-pulse {
+
+        0%,
+        100% {
+            box-shadow: 0 0 0 1px var(--color-accent-secondary), 0 0 8px rgba(var(--color-accent-primary-rgb), 0.12);
+        }
+
+        50% {
+            box-shadow: 0 0 0 2px var(--color-accent-secondary), 0 0 22px rgba(var(--color-accent-primary-rgb), 0.28);
+        }
+    }
+
+    .running-indicator {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.4rem;
+        padding: 0.28rem 0.85rem;
+        border-bottom: 1px solid var(--color-border);
+        font-size: 0.62rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--color-accent-secondary);
+        background: rgba(var(--color-accent-primary-rgb), 0.06);
+    }
+
+    .running-indicator svg {
+        animation: spin 1s linear infinite;
+        flex-shrink: 0;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .team {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.6rem 0.85rem;
+        transition: background 0.3s, opacity 0.3s;
+    }
+
+    .team-top {
+        border-bottom: 1px solid var(--color-border);
+    }
+
+    .team-info {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        flex: 1;
+    }
+
+    .participant-name {
+        font-weight: 600;
+        font-size: 0.8rem;
+        color: var(--color-text-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .kpi-stats {
+        font-size: 0.7rem;
+        color: var(--color-text-secondary);
+        margin-top: 0.15rem;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .team.winner {
+        background: rgba(var(--color-accent-primary-rgb), 0.08);
+    }
+
+    .team.winner .participant-name {
+        color: var(--color-accent-secondary);
+        font-weight: 700;
+    }
+
+    .team.loser {
+        opacity: 0.45;
+    }
+
+    .team.tbd .participant-name {
+        font-style: italic;
+        color: var(--color-text-secondary);
+        opacity: 0.6;
+    }
+
+    .champion-peak {
+        margin-bottom: 1.5rem;
+        padding: 1rem 2rem;
+        background: var(--color-accent-secondary);
+        border-radius: 8px;
+        text-align: center;
+        opacity: 0;
+        transform: translateY(16px) scale(0.95);
+        transition: opacity 0.5s ease, transform 0.5s ease;
+    }
+
+    .champion-peak.visible {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+
+    .champion-peak .champ-name {
+        display: block;
+        font-size: 1.4rem;
+        font-weight: 800;
+        color: var(--color-text-on-accent);
+    }
+
+    .champion-peak .champ-f1 {
+        font-size: 0.85rem;
+        font-weight: 600;
+        font-family: ui-monospace, monospace;
+        color: var(--color-text-on-accent);
+        opacity: 0.8;
+    }
+</style>
+
+<div class="max-w-[1440px] mx-auto">
+
+    <div class="content-header">
+        <div>
+            <h1 class="content-title flex items-center gap-3">
+                Benchmark Status
+            </h1>
+            <p class="muted mt-1">
+                {{ test_pb.name if test_pb else benchmark_pb.test_id }}
+                &middot; <span id="round-status">Initializing…</span>
+            </p>
+        </div>
+        <div class="flex items-center gap-3">
+            <span class="font-mono font-semibold text-sm" id="job-timer">0:00</span>
+            <span id="status-badge"
+                class="inline-flex items-center rounded-full bg-[var(--color-accent-secondary)] px-3 py-1 text-xs font-semibold text-[var(--color-text-on-accent)]">
+                <svg class="animate-spin -ml-0.5 mr-1.5 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none"
+                    viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                    </path>
+                </svg>
+                Live
+            </span>
+        </div>
+    </div>
+
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <div id="bracket-viewport">
+            <div id="tournament"></div>
+            <div id="controls">
+                <button class="ctrl-btn" id="zoom-out">-</button>
+                <button class="ctrl-btn" id="zoom-in">+</button>
+                <button class="ctrl-btn wide" id="reset-zoom">Fit</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex justify-between items-center">
+        <button id="cancel-btn" onclick="cancelBenchmark()" class="button-secondary text-sm"
+            style="color: #ef4444; border-color: #ef4444;">
+            <span class="material-icons text-[16px]">cancel</span>
+            Cancel Benchmark
+        </button>
+        <div id="run_result_container" class="flex items-center gap-3"></div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const BENCHMARK_ID = {{ benchmark_id | tojson
+    }};
+    const CREATED_AT_MS = {{ created_at_ms }};
+    let pollInterval = null, timerInterval = null;
+    let bracketInitialized = false;
+
+    const appState = { totalRounds: 0 };
+    const $tournament = document.getElementById('tournament');
+    const $viewport = document.getElementById('bracket-viewport');
+
+    // ── Timer ────────────────────────────────────────────
+    function startTimer() {
+        function tick() {
+            const s = Math.floor((Date.now() - CREATED_AT_MS) / 1000);
+            document.getElementById('job-timer').textContent =
+                Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+        }
+        tick();
+        timerInterval = setInterval(tick, 1000);
+    }
+    function stopTimer() { clearInterval(timerInterval); }
+
+    // ── Cancel ───────────────────────────────────────────
+    window.cancelBenchmark = async function () {
+        if (!confirm('Cancel this benchmark?')) return;
+        const btn = document.getElementById('cancel-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="material-icons text-[16px] animate-spin">refresh</span> Cancelling…';
+        try {
+            const resp = await fetch(`/benchmarks/${BENCHMARK_ID}/cancel`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }
+            });
+            const result = await resp.json();
+            if (result.success) {
+                window.location.href = '/benchmarks/create';
+            } else {
+                throw new Error(result.error || 'Cancel failed');
+            }
+        } catch (err) {
+            alert('Failed to cancel: ' + err.message);
+            btn.disabled = false;
+            btn.innerHTML = '<span class="material-icons text-[16px]">cancel</span> Cancel Benchmark';
+        }
+    };
+
+    function esc(s) {
+        const el = document.createElement('span');
+        el.textContent = s;
+        return el.innerHTML;
+    }
+
+    // ── Round label ───────────────────────────────────────
+    function roundLabel(roundNum) {
+        const fromEnd = appState.totalRounds - roundNum;
+        if (fromEnd === 0) return 'Final';
+        if (fromEnd === 1) return 'Semifinals';
+        if (fromEnd === 2) return 'Quarterfinals';
+        if (roundNum === 1) return 'First Round';
+        return `Round ${roundNum}`;
+    }
+
+    // ── Build bracket DOM from model count ───────────────
+    // Uses floor(n/2) matchups per round — same structure the server uses.
+    // All slots start TBD; match_history fills them in as matches complete.
+    function initBracket(n) {
+        if (n < 2) return;
+        $tournament.innerHTML = '';
+
+        // Calculate totalRounds before building so roundLabel() works
+        let tempCount = n, rc = 0;
+        while (tempCount > 1) { tempCount = Math.ceil(tempCount / 2); rc++; }
+        appState.totalRounds = rc;
+
+        let competitorCount = n, roundNum = 1;
+        while (competitorCount > 1) {
+            const matchCount = Math.floor(competitorCount / 2);
+            if (matchCount > 0) buildRound(matchCount, roundNum);
+            competitorCount = Math.ceil(competitorCount / 2);
+            roundNum++;
+        }
+
+        const peak = document.createElement('div');
+        peak.className = 'champion-peak';
+        peak.id = 'champion-peak';
+        peak.innerHTML = `
+            <span class="material-icons" style="font-size:2.5rem;color:var(--color-text-on-accent);opacity:0.3;">emoji_events</span>
+            <span class="champ-name" style="opacity:0.3;">?</span>`;
+        $tournament.appendChild(peak);
+
+
+        bracketInitialized = true;
+        setTimeout(() => PanZoom.fit(), 120);
+    }
+
+    function buildRound(matchCount, roundNum) {
+        const roundEl = document.createElement('div');
+        roundEl.className = 'round';
+        roundEl.dataset.roundId = roundNum;
+
+        const label = document.createElement('div');
+        label.className = 'round-label';
+        label.textContent = roundLabel(roundNum);
+        roundEl.appendChild(label);
+
+        for (let i = 0; i < matchCount; i++) {
+            roundEl.appendChild(makeMatchup(roundNum, i));
+        }
+        $tournament.appendChild(roundEl);
+    }
+
+    function makeMatchup(roundNum, matchupIdx) {
+        const el = document.createElement('div');
+        el.className = 'matchup';
+        el.dataset.roundId = roundNum;
+        el.dataset.matchupId = matchupIdx;
+        el.innerHTML = `
+            <div class="team team-top tbd">
+                <div class="team-info">
+                    <span class="participant-name">TBD</span>
+                    <span class="kpi-stats"></span>
+                </div>
+            </div>
+            <div class="team team-bottom tbd">
+                <div class="team-info">
+                    <span class="participant-name">TBD</span>
+                    <span class="kpi-stats"></span>
+                </div>
+            </div>`;
+        return el;
+    }
+
+    // ── Advance winner to the next round ─────────────────
+    function advanceWinner(winnerName, roundNum, matchIndex) {
+        const nextRoundNum = roundNum + 1;
+        if (nextRoundNum > appState.totalRounds) return;
+        const nextMatchupId = Math.floor(matchIndex / 2);
+        const nextSlot = matchIndex % 2 === 0 ? 'team-top' : 'team-bottom';
+        const nextMatchupEl = $tournament.querySelector(
+            `.matchup[data-round-id='${nextRoundNum}'][data-matchup-id='${nextMatchupId}']`
+        );
+        if (!nextMatchupEl) return;
+        const nextTeamEl = nextMatchupEl.querySelector('.' + nextSlot);
+        const nextNameEl = nextTeamEl && nextTeamEl.querySelector('.participant-name');
+        if (nextNameEl && nextNameEl.textContent === 'TBD') {
+            nextNameEl.textContent = winnerName;
+            nextTeamEl.classList.remove('tbd');
+        }
+    }
+
+    // ── Update a single participant slot ─────────────────
+    // responseData: { responder, f1, precision, recall } or null (BYE)
+    function updateParticipant(matchupEl, teamSelector, responseData, winnerName) {
+        const teamEl = matchupEl.querySelector(teamSelector);
+        if (!teamEl) return;
+        const nameEl = teamEl.querySelector('.participant-name');
+        const kpiEl = teamEl.querySelector('.kpi-stats');
+
+        if (!responseData) {
+            // No second participant → BYE slot
+            if (nameEl.textContent === 'TBD') {
+                nameEl.textContent = 'BYE';
+                teamEl.classList.remove('tbd');
+                teamEl.classList.add('loser');
+            }
+            return;
+        }
+
+        const name = responseData.responder;
+        const isWinner = name === winnerName;
+
+        teamEl.classList.remove('tbd');
+        if (isWinner) {
+            nameEl.textContent = '🏆 ' + name;
+            teamEl.classList.add('winner');
+        } else if (winnerName) {
+            nameEl.textContent = name;
+            teamEl.classList.add('loser');
+        } else {
+            nameEl.textContent = name;
+        }
+
+        if (typeof responseData.f1 === 'number') {
+            if (responseData.f1 >= 0 && responseData.precision >= 0 && responseData.recall >= 0) {
+                const p = (responseData.precision * 100).toFixed(0);
+                const r = (responseData.recall * 100).toFixed(0);
+                const f1 = (responseData.f1 * 100).toFixed(0);
+                kpiEl.textContent = `P: ${p}%  R: ${r}%  F1: ${f1}%`;
+            } else {
+                kpiEl.textContent = 'Error';
+                kpiEl.style.color = '#ef4444';
+            }
+        }
+    }
+
+    // ── Apply full match_history to bracket ───────────────
+    function updateBracket(matchHistory) {
+        if (!bracketInitialized || !matchHistory) return;
+
+        matchHistory.forEach(match => {
+            const roundId = match.round;
+            const matchIdx = (match.id || 1) - 1;  // server is 1-indexed
+            const responses = match.responses || [];
+            const winner = match.winner || '';
+
+            const matchupEl = $tournament.querySelector(
+                `.matchup[data-round-id='${roundId}'][data-matchup-id='${matchIdx}']`
+            );
+
+            // BYE matches (id > visible slot count) have no DOM element —
+            // they advance the winner directly into the next round.
+            if (!matchupEl) {
+                if (winner) advanceWinner(winner, roundId, matchIdx);
+                return;
+            }
+
+            updateParticipant(matchupEl, '.team-top', responses[0] || null, winner);
+            updateParticipant(matchupEl, '.team-bottom', responses[1] || null, winner);
+
+            if (winner && !matchupEl.dataset.winner) {
+                matchupEl.dataset.winner = winner;
+                matchupEl.classList.remove('active');
+                const ind = matchupEl.querySelector('.running-indicator');
+                if (ind) ind.remove();
+                advanceWinner(winner, roundId, matchIdx);
+            } else if (!matchupEl.dataset.winner) {
+                // Match is in progress
+                matchupEl.classList.add('active');
+            }
+        });
+    }
+
+    // ── Mark the matchup currently being evaluated ────────
+    function markActiveMatchup(currentRound, matchHistory, isFinished) {
+        // Strip spinner from any previously-active matchup that has since completed
+        document.querySelectorAll('.matchup.active').forEach(el => {
+            if (el.dataset.winner) {
+                el.classList.remove('active');
+                const ind = el.querySelector('.running-indicator');
+                if (ind) ind.remove();
+            }
+        });
+
+        if (isFinished) return;
+
+        // Determine the true active round: if no matches yet, it's round 1.
+        // If all slots in currentRound have winners, advance to next round.
+        let activeRound = Number(currentRound) || 1;
+        let completedThisRound = (matchHistory || []).filter(m => Number(m.round) === activeRound).length;
+        const slotsInRound = $tournament.querySelectorAll(`.matchup[data-round-id='${activeRound}']`).length;
+        if (completedThisRound >= slotsInRound && slotsInRound > 0) {
+            activeRound++;
+            completedThisRound = (matchHistory || []).filter(m => Number(m.round) === activeRound).length;
+        }
+
+        const activeIdx = completedThisRound;
+        const activeEl = $tournament.querySelector(
+            `.matchup[data-round-id='${activeRound}'][data-matchup-id='${activeIdx}']`
+        );
+        if (!activeEl || activeEl.dataset.winner) return;
+
+        activeEl.classList.add('active');
+        if (!activeEl.querySelector('.running-indicator')) {
+            const ind = document.createElement('div');
+            ind.className = 'running-indicator';
+            ind.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+            </svg> Evaluating…`;
+            activeEl.insertBefore(ind, activeEl.firstChild);
+        }
+    }
+
+    // ── Champion reveal ───────────────────────────────────
+    function showChampion(winnerName, matchHistory) {
+        const peak = document.getElementById('champion-peak');
+        if (!peak || peak.classList.contains('visible')) return;
+        // Find winner's best F1 from match_history
+        let bestF1 = 0;
+        (matchHistory || []).forEach(m => {
+            (m.responses || []).forEach(r => {
+                if (r.responder === winnerName && r.f1 > bestF1) bestF1 = r.f1;
+            });
+        });
+        const f1Label = bestF1 > 0 ? ` <span class="champ-f1">· ${(bestF1 * 100).toFixed(1)}%</span>` : '';
+        peak.innerHTML = `
+            <span class="material-icons" style="font-size:2.5rem;color:var(--color-text-on-accent);">emoji_events</span>
+            <span class="champ-name">${esc(winnerName)}${f1Label}</span>`;
+        peak.classList.add('visible');
+    }
+
+    // ── Pan / Zoom ────────────────────────────────────────
+    const PanZoom = {
+        scale: 1, px: 0, py: 0, dragging: false, sx: 0, sy: 0,
+        init() {
+            $viewport.addEventListener('mousedown', e => {
+                e.preventDefault();
+                this.dragging = true;
+                this.sx = e.clientX - this.px;
+                this.sy = e.clientY - this.py;
+                $viewport.classList.add('grabbing');
+            });
+            window.addEventListener('mouseup', () => {
+                this.dragging = false;
+                $viewport.classList.remove('grabbing');
+            });
+            $viewport.addEventListener('mousemove', e => {
+                if (!this.dragging) return;
+                e.preventDefault();
+                this.px = e.clientX - this.sx;
+                this.py = e.clientY - this.sy;
+                this.apply();
+            });
+            $viewport.addEventListener('wheel', e => {
+                e.preventDefault();
+                const xs = (e.clientX - this.px) / this.scale;
+                const ys = (e.clientY - this.py) / this.scale;
+                const f = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+                this.scale = Math.max(0.15, Math.min(this.scale * f, 4));
+                this.px = e.clientX - xs * this.scale;
+                this.py = e.clientY - ys * this.scale;
+                this.apply();
+            }, { passive: false });
+            document.getElementById('zoom-in').onclick = () => { this.scale = Math.min(this.scale * 1.25, 4); this.apply(); };
+            document.getElementById('zoom-out').onclick = () => { this.scale = Math.max(this.scale * 0.8, 0.15); this.apply(); };
+            document.getElementById('reset-zoom').onclick = () => this.fit();
+            window.addEventListener('resize', () => this.fit());
+
+            // Arrow-key panning. Listens globally but bails when the user is
+            // typing into a form field so we don't steal cursor keys.
+            window.addEventListener('keydown', e => {
+                const tag = (e.target && e.target.tagName) || '';
+                if (e.metaKey || e.ctrlKey || e.altKey) return;
+                if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+                    || (e.target && e.target.isContentEditable)) return;
+                const step = e.shiftKey ? 200 : 60;
+                let dx = 0, dy = 0;
+                switch (e.key) {
+                    case 'ArrowLeft': dx = step; break;
+                    case 'ArrowRight': dx = -step; break;
+                    case 'ArrowUp': dy = step; break;
+                    case 'ArrowDown': dy = -step; break;
+                    default: return;
+                }
+                e.preventDefault();
+                this.px += dx;
+                this.py += dy;
+                this.apply();
+            });
+        },
+        apply() {
+            $tournament.style.transform = `translate(${this.px}px, ${this.py}px) scale(${this.scale})`;
+            // Counter-scale round labels so they stay legible at any zoom level
+            const inv = Math.min(Math.max(1 / this.scale, 0.5), 5);
+            $tournament.querySelectorAll('.round-label').forEach(el => {
+                el.style.transform = `scale(${inv})`;
+                el.style.transformOrigin = 'left bottom';
+            });
+        },
+        fit() {
+            const vr = $viewport.getBoundingClientRect();
+            const tr = $tournament.getBoundingClientRect();
+            if (!tr.width || !tr.height) return;
+            this.scale = Math.min(vr.width / tr.width, vr.height / tr.height, 1) * 0.9;
+            this.px = (vr.width - tr.width * this.scale) / 2;
+            this.py = (vr.height - tr.height * this.scale) / 2;
+            this.apply();
+        }
+    };
+
+    // ── Poll ─────────────────────────────────────────────
+    function pollStatus() {
+        fetch(`/benchmarks/status/${BENCHMARK_ID}/poll`)
+            .then(r => r.json())
+            .then(data => {
+                const matchHistory = data.match_history || [];
+                const isFinished = data.status === 'SUCCESS';
+                const modelCount = data.model_count || 0;
+
+                if (!bracketInitialized && modelCount >= 2) {
+                    initBracket(modelCount);
+                }
+
+                // Update status line
+                const currentRound = Number(data.current_round) || 0;
+                const totalRounds = Number(data.total_rounds) || 0;
+                if (totalRounds > 0 && currentRound > 0) {
+                    // Show next round if current is fully complete
+                    const matchesInRound = (data.match_history || []).filter(m => Number(m.round) === currentRound).length;
+                    const slotsInRound = $tournament.querySelectorAll(`.matchup[data-round-id='${currentRound}']`).length;
+                    const displayRound = (matchesInRound >= slotsInRound && slotsInRound > 0)
+                        ? Math.min(currentRound + 1, totalRounds) : currentRound;
+                    document.getElementById('round-status').textContent =
+                        `${roundLabel(displayRound)} · Round ${displayRound} of ${totalRounds}`;
+                } else if (modelCount > 0) {
+                    document.getElementById('round-status').textContent =
+                        `${modelCount} models · ${roundLabel(1)}`;
+                }
+
+                updateBracket(matchHistory);
+                markActiveMatchup(data.current_round, matchHistory, isFinished);
+
+                if (isFinished) {
+                    clearInterval(pollInterval);
+                    stopTimer();
+                    if (data.winner) showChampion(data.winner, matchHistory);
+                    document.getElementById('cancel-btn').classList.add('hidden');
+                    const badge = document.getElementById('status-badge');
+                    badge.className = 'inline-flex items-center rounded-full bg-green-600 px-3 py-1 text-xs font-semibold text-white';
+                    badge.innerHTML = '<span class="material-icons text-[14px] mr-1">check_circle</span> Complete';
+                    document.getElementById('run_result_container').innerHTML = `
+                        <a href="/benchmarks/${BENCHMARK_ID}" class="button-primary">
+                            <span class="material-icons text-[20px]">emoji_events</span> View Full Results
+                        </a>`;
+                } else if (data.status === 'ERROR') {
+                    clearInterval(pollInterval);
+                    stopTimer();
+                    document.getElementById('cancel-btn').classList.add('hidden');
+                    const badge = document.getElementById('status-badge');
+                    badge.className = 'inline-flex items-center rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white';
+                    badge.innerHTML = '<span class="material-icons text-[14px] mr-1">error</span> Failed';
+                } else if (data.status === 'CANCELLED') {
+                    clearInterval(pollInterval);
+                    stopTimer();
+                    window.location.href = '/benchmarks/create';
+                }
+            })
+            .catch(err => console.error('Poll error:', err));
+    }
+
+    // ── Init ─────────────────────────────────────────────
+    PanZoom.init();
+    startTimer();
+
+    // Bootstrap bracket from server-rendered model_count if available
+    const initialModelCount = {{ model_count | default (0) }};
+    if (initialModelCount >= 2) initBracket(initialModelCount);
+
+    pollInterval = setInterval(pollStatus, 3000);
+    setTimeout(pollStatus, 500);
+});
+</script>
+{% endblock %}

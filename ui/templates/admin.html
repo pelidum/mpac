@@ -1,0 +1,1355 @@
+{% extends "base.html" %}
+
+{% block title %}Pelidum MPAC - Admin{% endblock %}
+
+{% block content %}
+<style>
+  /* Page-specific styles */
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 8px;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .status-badge.active {
+    color: #166534;
+    background-color: #dcfce7;
+  }
+
+  html.dark .status-badge.active {
+    color: #bbf7d0;
+    background-color: #14532d;
+  }
+
+  .status-badge.pending {
+    color: #71717a;
+    background-color: #f4f4f5;
+  }
+
+  html.dark .status-badge.pending {
+    color: #d4d4d8;
+    background-color: #3f3f46;
+  }
+
+  .button-danger {
+    background-color: #ef4444;
+    color: white;
+    border-color: #ef4444;
+  }
+
+  .button-danger:hover {
+    background-color: #dc2626;
+    border-color: #dc2626;
+  }
+
+  .toggle-checkbox {
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--color-accent-primary);
+    cursor: pointer;
+  }
+
+  /* ── MD2 dialog shell ─────────────────────────────────
+     Header (title + close) / scrollable body / sticky footer.
+     Used by Add Backend modal; other modals can adopt later. */
+  .modal-panel {
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    box-shadow: 0 24px 38px 3px rgba(0, 0, 0, 0.14),
+                0 9px 46px 8px rgba(0, 0, 0, 0.12),
+                0 11px 15px -7px rgba(0, 0, 0, 0.20);
+    width: 100%;
+    max-width: 44rem;
+    max-height: 92vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .modal-header .modal-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--color-text-primary);
+  }
+  .modal-header .modal-subtitle {
+    font-size: 0.875rem;
+    color: var(--color-text-secondary);
+    margin-top: 4px;
+    line-height: 1.4;
+  }
+
+  .modal-close {
+    all: unset;
+    cursor: pointer;
+    width: 32px; height: 32px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--color-text-secondary);
+    transition: background-color 0.15s, color 0.15s;
+  }
+  .modal-close:hover {
+    background: var(--color-highlight-shade2);
+    color: var(--color-text-primary);
+  }
+
+  .modal-body {
+    padding: 20px 24px 24px;
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 14px 24px;
+    border-top: 1px solid var(--color-border);
+    background: var(--color-highlight-shade1);
+  }
+
+  /* Small caps section header used inside modal body */
+  .modal-section-label {
+    display: block;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-secondary);
+    margin-bottom: 10px;
+  }
+
+  /* Provider preset card — refined lower-density version of the original */
+  .preset-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 6px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg-secondary);
+    cursor: pointer;
+    text-align: center;
+    transition: border-color 0.15s, background-color 0.15s, transform 0.15s;
+  }
+  .preset-card:hover {
+    border-color: var(--color-accent-secondary);
+    background: var(--color-highlight-shade1);
+    transform: translateY(-1px);
+  }
+  .preset-card.is-selected {
+    border-color: var(--color-accent-primary);
+    background: rgba(var(--color-accent-primary-rgb), 0.10);
+    box-shadow: inset 0 0 0 1px var(--color-accent-primary);
+  }
+  .preset-card .preset-icon {
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .preset-card .preset-icon img { width: 100%; height: 100%; object-fit: contain; }
+  .preset-card .preset-icon .preset-initial {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 0.875rem; font-weight: 700;
+  }
+  .preset-card .preset-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.15;
+    color: var(--color-text-primary);
+  }
+
+  /* MD2-style switch row (used inside modal body) */
+  .switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-highlight-shade1);
+  }
+  .switch-row .switch-title { font-weight: 600; font-size: 0.875rem; }
+  .switch-row .switch-desc  { font-size: 0.75rem; color: var(--color-text-secondary); margin-top: 2px; line-height: 1.45; }
+
+  .md-switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; cursor: pointer; }
+  .md-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .md-switch .track {
+    position: absolute; inset: 0;
+    background: var(--color-border);
+    border-radius: 999px;
+    transition: background-color 0.2s;
+  }
+  .md-switch .track::after {
+    content: ""; position: absolute;
+    top: 2px; left: 2px;
+    width: 16px; height: 16px;
+    background: #fff; border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.24);
+    transition: transform 0.2s;
+  }
+  .md-switch input:checked + .track { background: var(--color-accent-primary); }
+  .md-switch input:checked + .track::after { transform: translateX(16px); }
+  .md-switch input:focus-visible + .track {
+    box-shadow: 0 0 0 3px rgba(var(--color-accent-primary-rgb), 0.25);
+  }
+</style>
+
+<div class="content-header">
+  <h1 class="content-title">Admin Panel</h1>
+</div>
+<p class="muted -mt-6 mb-10">
+  Manage users, organizations, and platform-wide settings.
+</p>
+
+<div class="card p-6 mb-6">
+  <div class="flex flex-wrap justify-between items-center gap-4 mb-6">
+    <div>
+      <h3 class="flex items-center gap-2.5 text-xl font-semibold text-accent">
+        <span class="material-icons">dns</span>
+        Inference Backends
+      </h3>
+      <p class="muted mt-1">Configure inference backends available to all users.</p>
+    </div>
+    <button type="button" id="add-backend-btn" class="button-primary">
+      <span class="material-icons">add</span>
+      Add Backend
+    </button>
+  </div>
+  {% if backends %}
+  <div class="table-container">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Base URL</th>
+          <th>Owner</th>
+          <th>Enabled</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for backend in backends %}
+        <tr id="backend-row-{{ backend.id }}" class="{% if not backend.get('enabled', True) %}opacity-50{% endif %}">
+          <td>
+            <div class="font-medium">{{ backend.name or '—' }}</div>
+            {% if backend.description %}
+            <div class="muted text-xs mt-0.5">{{ backend.description }}</div>
+            {% endif %}
+          </td>
+          <td>
+            <div class="flex flex-col gap-1">
+              <span class="status-badge {% if backend.get('enabled', True) %}active{% else %}pending{% endif %}">
+                {{ backend.backend_type or 'UNSPECIFIED' }}
+              </span>
+              <span class="status-badge {% if backend.get('is_local') %}pending{% else %}active{% endif %}" style="font-size:0.65rem">
+                {% if backend.get('is_local') %}LOCAL{% else %}CLOUD{% endif %}
+              </span>
+            </div>
+          </td>
+          <td class="font-mono text-sm text-ellipsis overflow-hidden max-w-[220px]">
+            {{ backend.base_url or '—' }}
+          </td>
+          <td class="muted text-sm">{{ backend.owner or '—' }}</td>
+          <td>
+            <label class="inline-flex items-center cursor-pointer">
+              <input type="checkbox"
+                class="sr-only peer backend-enabled-toggle"
+                data-backend-id="{{ backend.id }}"
+                {% if backend.get('enabled', True) %}checked{% endif %}>
+              <div class="relative w-9 h-5 bg-[var(--color-border)] rounded-full peer
+                peer-checked:bg-[var(--color-accent-primary)]
+                after:content-[''] after:absolute after:top-0.5 after:left-0.5
+                after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all
+                peer-checked:after:translate-x-4"></div>
+            </label>
+          </td>
+          <td>
+            <div class="flex gap-2 flex-wrap">
+              {% if backend.backend_type == 'OPENROUTER' %}
+              <button class="pagination-button check-credits-btn"
+                data-backend-id="{{ backend.id }}"
+                data-backend-name="{{ backend.name }}">
+                Credits
+              </button>
+              {% endif %}
+              <button class="pagination-button edit-backend-btn"
+                data-backend-json='{{ backend | tojson | e }}'>
+                Edit
+              </button>
+              <button class="pagination-button button-danger delete-backend-btn"
+                data-backend-id="{{ backend.id }}"
+                data-backend-name="{{ backend.name }}">
+                Delete
+              </button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center py-10 muted">
+    <span class="material-icons text-4xl mb-2 block">dns</span>
+    No backends configured yet. Add one to enable inference.
+  </div>
+  {% endif %}
+</div>
+
+<!-- Provider Preset Data (shared by Add + Edit modals) -->
+<script>
+const PROVIDER_PRESETS = [
+  // defaultConcurrency: 0 = leave at system default; >0 = set explicit value.
+  // Sources: published API rate-limit docs where available, practical defaults otherwise.
+  { id: "openai",     label: "OpenAI",       type: "OPENAI",       url: "https://api.openai.com/v1",                                           icon: "/static/images/providers/openai.png",     needsKey: true,  isLocal: false, defaultConcurrency: 20  },
+  { id: "gemini",     label: "Google Gemini",type: "OPENAI",       url: "https://generativelanguage.googleapis.com/v1beta/openai",             icon: "/static/images/providers/google.png",     needsKey: true,  isLocal: false, defaultConcurrency: 20  },
+  { id: "deepseek",   label: "DeepSeek",     type: "OPENAI",       url: "https://api.deepseek.com/v1",                                         icon: "/static/images/providers/deepseek.png",   needsKey: true,  isLocal: false, defaultConcurrency: 20  },
+  { id: "mistral",    label: "Mistral",      type: "OPENAI",       url: "https://api.mistral.ai/v1",                                           icon: "/static/images/providers/mistral.png",    needsKey: true,  isLocal: false, defaultConcurrency: 20  },
+  { id: "perplexity", label: "Perplexity",   type: "OPENAI",       url: "https://api.perplexity.ai",                                           icon: "/static/images/providers/perplexity.png", needsKey: true,  isLocal: false, defaultConcurrency: 10  },
+  { id: "qwen",       label: "Alibaba Qwen", type: "OPENAI",       url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",              icon: "/static/images/providers/alibaba.png",    needsKey: true,  isLocal: false, defaultConcurrency: 20  },
+  { id: "groq",       label: "Groq",         type: "OPENAI",       url: "https://api.groq.com/openai/v1",                                      icon: null,                                      needsKey: true,  isLocal: false, defaultConcurrency: 5   },
+  { id: "openrouter", label: "OpenRouter",   type: "OPENROUTER",   url: "https://openrouter.ai/api/v1",                                        icon: null,                                      needsKey: true,  isLocal: false, defaultConcurrency: 20  },
+  { id: "together",   label: "Together AI",  type: "OPENAI",       url: "https://api.together.xyz/v1",                                         icon: null,                                      needsKey: true,  isLocal: false, defaultConcurrency: 20  },
+  { id: "fireworks",  label: "Fireworks AI", type: "OPENAI",       url: "https://api.fireworks.ai/inference/v1",                               icon: null,                                      needsKey: true,  isLocal: false, defaultConcurrency: 20  },
+  { id: "ollama",     label: "Ollama",       type: "OLLAMA",       url: "http://localhost:11434/v1",                                            icon: null,                                      needsKey: false, isLocal: true,  defaultConcurrency: 4   },
+  { id: "vllm",       label: "vLLM",         type: "VLLM",         url: "http://localhost:8000/v1",                                             icon: null,                                      needsKey: false, isLocal: true,  defaultConcurrency: 32  },
+  { id: "llamacpp",   label: "llama.cpp",    type: "LLAMA_CPP",    url: "http://localhost:8080/v1",                                             icon: null,                                      needsKey: false, isLocal: true,  defaultConcurrency: 4   },
+  { id: "debug",      label: "Debug",        type: "DEBUG_RANDOM", url: "",                                                                     icon: null,                                      needsKey: false, isLocal: true,  defaultConcurrency: 0   },
+];
+
+// Initials-based fallback colors for providers without icons
+const PRESET_COLORS = {
+  groq: "#F55036", openrouter: "#6C63FF", together: "#0066FF",
+  fireworks: "#FF4500", ollama: "#4CAF50", vllm: "#9C27B0",
+  llamacpp: "#795548", debug: "#607D8B",
+};
+
+function renderPresetCards(containerId, formPrefix) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = PROVIDER_PRESETS.map(p => {
+    const fallbackBg = PRESET_COLORS[p.id] || '#6C63FF';
+    const iconHtml = p.icon
+      ? `<img src="${p.icon}" alt="${p.label}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+        + `<div class="preset-initial" style="display:none;background:${fallbackBg}">${p.label[0]}</div>`
+      : `<div class="preset-initial" style="background:${fallbackBg}">${p.label[0]}</div>`;
+    return `<button type="button"
+      class="preset-card"
+      data-preset-id="${p.id}" data-form-prefix="${formPrefix}"
+      title="${p.label}">
+      <span class="preset-icon">${iconHtml}</span>
+      <span class="preset-label">${p.label}</span>
+    </button>`;
+  }).join('');
+}
+
+function applyPreset(presetId, formPrefix) {
+  const p = PROVIDER_PRESETS.find(x => x.id === presetId);
+  if (!p) return;
+  const name        = document.getElementById(`${formPrefix}-backend-name`);
+  const type        = document.getElementById(`${formPrefix}-backend-type`);
+  const url         = document.getElementById(`${formPrefix}-backend-url`);
+  const isLocal     = document.getElementById(`${formPrefix}-backend-is-local`);
+  const concurrency = document.getElementById(`${formPrefix}-backend-concurrency`);
+  const keyHint     = document.getElementById(`${formPrefix}-backend-key-hint`);
+  if (name)        name.value        = p.label;
+  if (type)        type.value        = p.type;
+  if (url)         url.value         = p.url;
+  if (isLocal)     isLocal.checked   = p.isLocal;
+  if (concurrency) concurrency.value = p.defaultConcurrency || 0;
+  if (keyHint)     keyHint.textContent = p.needsKey ? 'Enter your API key for this provider.' : 'No API key required for local backends.';
+
+  // Highlight selected card
+  document.querySelectorAll(`[data-form-prefix="${formPrefix}"].preset-card`).forEach(c => {
+    c.classList.toggle('is-selected', c.dataset.presetId === presetId);
+  });
+}
+</script>
+
+<!-- Add Backend Modal -->
+<div id="add-backend-modal" class="overlay hidden flex items-center justify-center p-4">
+  <div class="modal-panel">
+    <!-- Header -->
+    <div class="modal-header">
+      <div class="min-w-0">
+        <h2 class="modal-title flex items-center gap-2">
+          <span class="material-icons text-[var(--color-accent-secondary)]">dns</span>
+          Add Backend
+        </h2>
+        <p class="modal-subtitle">Pick a provider to pre-fill settings, then enter your API key.</p>
+      </div>
+      <button type="button" id="close-add-backend-btn" class="modal-close" aria-label="Close">
+        <span class="material-icons">close</span>
+      </button>
+    </div>
+
+    <!-- Body -->
+    <form id="add-backend-form" class="contents">
+      <div class="modal-body">
+        <!-- Section: Provider preset -->
+        <section class="mb-6">
+          <span class="modal-section-label">Provider</span>
+          <div id="add-preset-cards" class="grid grid-cols-4 sm:grid-cols-7 gap-2"></div>
+        </section>
+
+        <!-- Section: Configuration -->
+        <section>
+          <span class="modal-section-label">Configuration</span>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="flex flex-col gap-1.5">
+              <label for="add-backend-name" class="label-bold text-sm">Name</label>
+              <input type="text" id="add-backend-name" name="name" class="input-field" required
+                placeholder="e.g. OpenAI Production">
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="add-backend-type" class="label-bold text-sm">Type</label>
+              <select id="add-backend-type" name="backend_type" class="select-field" required>
+                <option value="OPENAI">OpenAI-compatible</option>
+                <option value="VLLM">vLLM</option>
+                <option value="OLLAMA">Ollama</option>
+                <option value="OPENROUTER">OpenRouter</option>
+                <option value="LLAMA_CPP">Llama.cpp</option>
+                <option value="DEBUG_RANDOM">Debug Random</option>
+              </select>
+            </div>
+            <div class="flex flex-col gap-1.5 md:col-span-2">
+              <label for="add-backend-url" class="label-bold text-sm">Base URL</label>
+              <input type="text" id="add-backend-url" name="base_url" class="input-field"
+                placeholder="e.g. https://api.openai.com/v1">
+            </div>
+            <div class="flex flex-col gap-1.5 md:col-span-2">
+              <label for="add-backend-key" class="label-bold text-sm">API Key</label>
+              <input type="password" id="add-backend-key" name="api_key" class="input-field"
+                placeholder="sk-...">
+              <p id="add-backend-key-hint" class="text-xs muted">Enter your API key for this provider.</p>
+            </div>
+            <div class="flex flex-col gap-1.5 md:col-span-2">
+              <label for="add-backend-desc" class="label-bold text-sm">
+                Description <span class="font-normal muted">(optional)</span>
+              </label>
+              <input type="text" id="add-backend-desc" name="description" class="input-field"
+                placeholder="Brief description of this backend">
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="add-backend-concurrency" class="label-bold text-sm">
+                Max Concurrency <span class="font-normal muted">(optional)</span>
+              </label>
+              <input type="number" id="add-backend-concurrency" name="max_concurrency" class="input-field"
+                min="0" placeholder="0 = default (local: 4, remote: 20)">
+              <p class="text-xs muted">Concurrent requests this backend can handle. Match your server's <code>--parallel</code> setting.</p>
+            </div>
+          </div>
+
+          <!-- Local backend switch row -->
+          <label class="switch-row mt-4 cursor-pointer">
+            <div class="min-w-0">
+              <div class="switch-title">Local backend</div>
+              <p class="switch-desc">Enable for self-hosted services (llama.cpp, Ollama, local vLLM). Increases timeout to 10 min. Disable for cloud APIs.</p>
+            </div>
+            <span class="md-switch">
+              <input type="checkbox" id="add-backend-is-local" name="is_local" value="true">
+              <span class="track"></span>
+            </span>
+          </label>
+        </section>
+      </div>
+
+      <!-- Footer -->
+      <div class="modal-footer">
+        <button type="button" id="cancel-add-backend-btn" class="pagination-button">Cancel</button>
+        <button type="submit" id="submit-add-backend-btn" class="button-primary">
+          <span class="material-icons text-[18px]">add</span>
+          Add Backend
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Edit Backend Modal -->
+<div id="edit-backend-modal" class="overlay hidden flex items-center justify-center">
+  <div class="card w-full max-w-3xl max-h-[92vh] overflow-y-auto">
+    <h2 class="text-xl font-semibold">Edit Backend</h2>
+    <p class="muted mt-1 mb-4">Update backend configuration. Use presets to quickly change provider.</p>
+
+    <!-- Provider Preset Cards -->
+    <div class="mb-5">
+      <p class="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider mb-2">Switch provider preset</p>
+      <div id="edit-preset-cards" class="grid grid-cols-4 sm:grid-cols-7 gap-2"></div>
+    </div>
+
+    <div class="border-t border-[var(--color-border)] pt-4">
+      <form id="edit-backend-form">
+        <input type="hidden" id="edit-backend-id" name="id">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="flex flex-col gap-1.5">
+            <label for="edit-backend-name" class="label-bold">Name</label>
+            <input type="text" id="edit-backend-name" name="name" class="input-field" required>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label for="edit-backend-type" class="label-bold">Type</label>
+            <select id="edit-backend-type" name="backend_type" class="select-field" required>
+              <option value="OPENAI">OpenAI-compatible</option>
+              <option value="VLLM">vLLM</option>
+              <option value="OLLAMA">Ollama</option>
+              <option value="OPENROUTER">OpenRouter</option>
+              <option value="LLAMA_CPP">Llama.cpp</option>
+              <option value="DEBUG_RANDOM">Debug Random</option>
+            </select>
+          </div>
+          <div class="flex flex-col gap-1.5 md:col-span-2">
+            <label for="edit-backend-url" class="label-bold">Base URL</label>
+            <input type="text" id="edit-backend-url" name="base_url" class="input-field">
+          </div>
+          <div class="flex flex-col gap-1.5 md:col-span-2">
+            <label for="edit-backend-key" class="label-bold">API Key</label>
+            <input type="password" id="edit-backend-key" name="api_key" class="input-field"
+              placeholder="Leave blank to keep existing key">
+            <p id="edit-backend-key-hint" class="text-xs muted mt-1">Leave blank to keep the existing key unchanged.</p>
+          </div>
+          <div class="flex flex-col gap-1.5 md:col-span-2">
+            <label for="edit-backend-desc" class="label-bold">Description</label>
+            <input type="text" id="edit-backend-desc" name="description" class="input-field">
+          </div>
+          <div class="md:col-span-2 flex items-center justify-between gap-6 p-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-highlight-shade1)]">
+            <div class="flex flex-col gap-1">
+              <span class="font-semibold text-sm">Local backend</span>
+              <p class="text-xs text-[var(--color-text-secondary)]">Enable for self-hosted services (llama.cpp, Ollama, local vLLM). Increases timeout to 10 min. Disable for cloud APIs.</p>
+            </div>
+            <label class="inline-flex items-center cursor-pointer shrink-0">
+              <input type="checkbox" id="edit-backend-is-local" name="is_local" value="true"
+                class="sr-only peer">
+              <div class="relative w-11 h-6 bg-[var(--color-border)] rounded-full peer
+                peer-checked:bg-[var(--color-accent-primary)]
+                after:content-[''] after:absolute after:top-0.5 after:left-0.5
+                after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all
+                peer-checked:after:translate-x-5"></div>
+            </label>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label for="edit-backend-concurrency" class="label-bold">Max Concurrency <span class="font-normal muted">(optional)</span></label>
+            <input type="number" id="edit-backend-concurrency" name="max_concurrency" class="input-field"
+              min="0" placeholder="0 = default (local: 4, remote: 20)">
+            <p class="text-xs muted">Concurrent requests this backend can handle. Match your server's <code>--parallel</code> setting.</p>
+          </div>
+        </div>
+        <div class="flex justify-end gap-3 mt-6 border-t border-[var(--color-border)] pt-4">
+          <button type="button" id="cancel-edit-backend-btn" class="pagination-button">Cancel</button>
+          <button type="submit" id="submit-edit-backend-btn" class="button-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Credits Modal -->
+<div id="credits-modal" class="overlay hidden flex items-center justify-center">
+  <div class="card w-full max-w-md">
+    <h2 class="text-xl font-semibold flex items-center gap-2">
+      <span class="material-icons">payments</span>
+      <span id="credits-modal-title">Backend Credits</span>
+    </h2>
+    <div id="credits-modal-body" class="mt-4">
+      <div class="flex justify-center py-6">
+        <span class="material-icons animate-spin text-2xl">hourglass_top</span>
+      </div>
+    </div>
+    <div class="flex justify-end mt-4 border-t border-[var(--color-border)] pt-4">
+      <button type="button" id="close-credits-modal-btn" class="pagination-button">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="card p-6 mb-6">
+  <div class="flex flex-wrap justify-between items-center gap-4 mb-6">
+    <div>
+      <h3 class="flex items-center gap-2.5 text-xl font-semibold text-accent">
+        <span class="material-icons">manage_accounts</span>
+        User Management
+      </h3>
+      <p class="muted mt-1">Manage roles and rate limits for users in your organization.</p>
+    </div>
+    <button type="button" id="add-user-btn" class="button-primary">
+      <span class="material-icons">person_add</span>
+      Add User
+    </button>
+  </div>
+  <input type="text" id="user-search" class="input-field mb-4" placeholder="Search users by name or email...">
+
+  <div class="table-container">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Role</th>
+          <th>Tokens/Min</th>
+          <th>Monthly Spend</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="users-table-body"></tbody>
+    </table>
+  </div>
+  <div class="pagination-controls">
+    <span id="user-count"></span>
+    <span id="user-page-info" class="mx-4"></span>
+    <button class="pagination-button" id="user-prev-page-btn" disabled>&larr; Previous</button>
+    <button class="pagination-button" id="user-next-page-btn" disabled>Next &rarr;</button>
+  </div>
+</div>
+
+<div id="add-user-modal" class="overlay hidden flex items-center justify-center">
+  <div class="card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <h2 class="text-xl font-semibold">Add New User</h2>
+    <p class="muted mt-1 mb-6">Enter the details for the new user account.</p>
+    <form id="add-user-form">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="flex flex-col gap-1.5">
+          <label for="user-id" class="label-bold">Email (ID)</label>
+          <input type="email" id="user-id" name="id" class="input-field" required>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label for="user-name" class="label-bold">Full Name</label>
+          <input type="text" id="user-name" name="name" class="input-field" required>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label for="user-role" class="label-bold">Role</label>
+          <select id="user-role" name="role" class="select-field">
+            <option value="NORMAL" selected>Normal</option>
+            <option value="ADMIN">Admin</option>
+          </select>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label for="user-verified" class="label-bold">Verified</label>
+          <select id="user-verified" name="verified" class="select-field">
+            <option value="true" selected>Yes</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="mt-4 border border-[var(--color-border)] rounded-md p-4 bg-[var(--color-bg-primary)]">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" id="add-user-toggle-pw" class="toggle-checkbox">
+          <span class="text-sm font-semibold">Set initial password manually</span>
+        </label>
+        <div id="add-user-pw-container" class="hidden mt-3 transition-all">
+          <label for="add-user-password" class="label-bold text-sm">Password</label>
+          <input type="password" id="add-user-password" name="password" class="input-field"
+            placeholder="Enter a secure password">
+          <p class="text-xs text-muted mt-1">If not set, user can login via OAuth.</p>
+        </div>
+      </div>
+
+      <h3 class="font-semibold mt-6 mb-3">Rate Limits (0 for unlimited)</h3>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="flex flex-col gap-1.5">
+          <label for="rate-limit-tpm" class="label-bold">Tokens / Minute</label>
+          <input type="number" id="rate-limit-tpm" name="tokens_per_minute" class="input-field" value="0" min="0">
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label for="rate-limit-daily" class="label-bold">Daily Spend ($)</label>
+          <input type="number" id="rate-limit-daily" name="daily_spend" class="input-field" value="0" min="0"
+            step="0.01">
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label for="rate-limit-monthly" class="label-bold">Monthly Spend ($)</label>
+          <input type="number" id="rate-limit-monthly" name="monthly_spend" class="input-field" value="0" min="0"
+            step="0.01">
+        </div>
+      </div>
+      <div class="flex justify-end gap-3 mt-6 border-t border-[var(--color-border)] pt-4">
+        <button type="button" id="cancel-add-user-btn" class="pagination-button">Cancel</button>
+        <button type="submit" id="submit-add-user-btn" class="button-primary">Create User</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="edit-user-modal" class="overlay hidden flex items-center justify-center">
+  <div class="card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <h2 class="text-xl font-semibold">Edit User</h2>
+    <p class="muted mt-1 mb-6">Update the details for the user account.</p>
+    <form id="edit-user-form">
+      <input type="hidden" id="edit-original-user-id" name="original_id">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="flex flex-col gap-1.5">
+          <label class="label-bold">Email (ID)</label>
+          <p id="edit-user-id-display" class="input-field bg-[var(--color-bg-primary)] text-[var(--color-text-secondary)] cursor-default select-all font-mono text-sm"></p>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label for="edit-user-name" class="label-bold">Full Name</label>
+          <input type="text" id="edit-user-name" name="name" class="input-field" required>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label for="edit-user-role" class="label-bold">Role</label>
+          <select id="edit-user-role" name="role" class="select-field">
+            <option value="NORMAL">Normal</option>
+            <option value="ADMIN">Admin</option>
+          </select>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label for="edit-user-verified" class="label-bold">Verified</label>
+          <select id="edit-user-verified" name="verified" class="select-field">
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="mt-4 border border-[var(--color-border)] rounded-md p-4 bg-[var(--color-bg-primary)]">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" id="edit-user-toggle-pw" class="toggle-checkbox">
+          <span class="text-sm font-semibold">Change Password (Admin Override)</span>
+        </label>
+        <div id="edit-user-pw-container" class="hidden mt-3 transition-all">
+          <label for="edit-user-password" class="label-bold text-sm">New Password</label>
+          <input type="password" id="edit-user-password" name="password" class="input-field"
+            placeholder="Enter new password">
+          <p class="text-xs text-muted mt-1">Leave unchecked to keep existing credentials.</p>
+        </div>
+      </div>
+
+      <h3 class="font-semibold mt-6 mb-3">Rate Limits (0 for unlimited)</h3>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="flex flex-col gap-1.5">
+          <label for="edit-rate-limit-tpm" class="label-bold">Tokens / Minute</label>
+          <input type="number" id="edit-rate-limit-tpm" name="tokens_per_minute" class="input-field" value="0" min="0">
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label for="edit-rate-limit-daily" class="label-bold">Daily Spend ($)</label>
+          <input type="number" id="edit-rate-limit-daily" name="daily_spend" class="input-field" value="0" min="0"
+            step="0.01">
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label for="edit-rate-limit-monthly" class="label-bold">Monthly Spend ($)</label>
+          <input type="number" id="edit-rate-limit-monthly" name="monthly_spend" class="input-field" value="0" min="0"
+            step="0.01">
+        </div>
+      </div>
+      <div class="flex justify-end gap-3 mt-6 border-t border-[var(--color-border)] pt-4">
+        <button type="button" id="cancel-edit-user-btn" class="pagination-button">Cancel</button>
+        <button type="submit" id="submit-edit-user-btn" class="button-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const AdminPage = {
+      allUsers: [],
+      filteredUsers: [],
+      currentPage: 1,
+      rowsPerPage: 10,
+      elements: {},
+
+      init: function (usersData) {
+        this.allUsers = usersData || [];
+        if (!this.cacheElements()) return;
+        this.setupEventListeners();
+        this.applyFilters();
+      },
+
+      cacheElements: function () {
+        this.elements = {
+          searchInput: document.getElementById('user-search'),
+          tableBody: document.getElementById('users-table-body'),
+          userCount: document.getElementById('user-count'),
+          pageInfo: document.getElementById('user-page-info'),
+          prevBtn: document.getElementById('user-prev-page-btn'),
+          nextBtn: document.getElementById('user-next-page-btn'),
+
+          // Edit Modal
+          editUserModal: document.getElementById('edit-user-modal'),
+          editUserForm: document.getElementById('edit-user-form'),
+          cancelEditUserBtn: document.getElementById('cancel-edit-user-btn'),
+          editUserTogglePw: document.getElementById('edit-user-toggle-pw'),
+          editUserPwContainer: document.getElementById('edit-user-pw-container'),
+
+          // Add Modal
+          addUserModal: document.getElementById('add-user-modal'),
+          addUserForm: document.getElementById('add-user-form'),
+          cancelAddUserBtn: document.getElementById('cancel-add-user-btn'),
+          addUserBtn: document.getElementById('add-user-btn'),
+          addUserTogglePw: document.getElementById('add-user-toggle-pw'),
+          addUserPwContainer: document.getElementById('add-user-pw-container'),
+        };
+        return !!this.elements.tableBody;
+      },
+
+      setupEventListeners: function () {
+        this.elements.searchInput.addEventListener('input', () => this.applyFilters());
+        this.elements.prevBtn.addEventListener('click', () => this.changePage(-1));
+        this.elements.nextBtn.addEventListener('click', () => this.changePage(1));
+        this.elements.tableBody.addEventListener('click', (event) => this.handleTableClick(event));
+
+        // -- Edit User Events --
+        this.elements.cancelEditUserBtn.addEventListener('click', () => {
+          this.elements.editUserModal.classList.add('hidden');
+          this.elements.editUserModal.classList.remove('visible');
+        });
+        this.elements.editUserTogglePw.addEventListener('change', (e) => {
+          this.elements.editUserPwContainer.classList.toggle('hidden', !e.target.checked);
+        });
+        this.elements.editUserForm.addEventListener('submit', (event) => this.handleUpdateUser(event));
+
+        // -- Add User Events --
+        this.elements.addUserBtn.addEventListener('click', () => {
+          this.elements.addUserModal.classList.remove('hidden');
+          this.elements.addUserModal.classList.add('visible');
+        });
+        this.elements.cancelAddUserBtn.addEventListener('click', () => {
+          this.elements.addUserModal.classList.add('hidden');
+          this.elements.addUserModal.classList.remove('visible');
+          this.elements.addUserForm.reset();
+          this.elements.addUserTogglePw.checked = false;
+          this.elements.addUserPwContainer.classList.add('hidden');
+        });
+        this.elements.addUserTogglePw.addEventListener('change', (e) => {
+          this.elements.addUserPwContainer.classList.toggle('hidden', !e.target.checked);
+        });
+        this.elements.addUserForm.addEventListener('submit', (event) => this.handleCreateUser(event));
+      },
+
+      handleTableClick: function (event) {
+        const deleteButton = event.target.closest('.delete-user-btn');
+        const editButton = event.target.closest('.edit-user-btn');
+
+        if (deleteButton) {
+          const userId = deleteButton.dataset.userId;
+          if (userId) this.deleteUser(userId, deleteButton);
+        } else if (editButton) {
+          const userData = JSON.parse(editButton.dataset.userJson);
+          if (userData) this.openEditModal(userData);
+        }
+      },
+
+      openEditModal: function (user) {
+        const form = this.elements.editUserForm;
+        form.elements['original_id'].value = user.id || '';
+        document.getElementById('edit-user-id-display').textContent = user.id || '';
+        form.elements['name'].value = user.name || '';
+        form.elements['role'].value = user.role || 'NORMAL';
+        form.elements['verified'].value = user.verified ? 'true' : 'false';
+
+        // Reset password fields
+        this.elements.editUserTogglePw.checked = false;
+        this.elements.editUserPwContainer.classList.add('hidden');
+        form.elements['password'].value = '';
+
+        const limits = user.rate_limits || {};
+        form.elements['tokens_per_minute'].value = parseInt(limits.tokens_per_minute || 0, 10);
+        form.elements['daily_spend'].value = (parseInt(limits.daily_spend || 0, 10) / 100).toFixed(2);
+        form.elements['monthly_spend'].value = (parseInt(limits.monthly_spend || 0, 10) / 100).toFixed(2);
+
+        this.elements.editUserModal.classList.remove('hidden');
+        this.elements.editUserModal.classList.add('visible');
+      },
+
+      handleUpdateUser: async function (event) {
+        event.preventDefault();
+        const submitBtn = this.elements.editUserForm.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Saving...';
+
+        const formData = new FormData(this.elements.editUserForm);
+        const userData = {
+          original_id: formData.get('original_id'),
+          id: formData.get('original_id'),
+          name: formData.get('name'),
+          role: formData.get('role'),
+          verified: formData.get('verified') === 'true',
+          rate_limits: {
+            tokens_per_minute: String(parseInt(formData.get('tokens_per_minute') || '0', 10)),
+            daily_spend: String(Math.round(parseFloat(formData.get('daily_spend') || '0') * 100)),
+            monthly_spend: String(Math.round(parseFloat(formData.get('monthly_spend') || '0') * 100))
+          }
+        };
+
+        if (this.elements.editUserTogglePw.checked) {
+          const pwVal = formData.get('password');
+          if (pwVal && pwVal.trim() !== '') {
+            userData.password = pwVal; // Sending as 'password' to be hashed by backend
+          }
+        }
+
+        try {
+          const response = await fetch('/admin/update_user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(userData)
+          });
+
+          if (response.ok) {
+            window.location.reload();
+          } else {
+            const errorData = await response.json();
+            const errorMsg = errorData.error || 'Unknown server error.';
+            alert('Error: ' + errorMsg);
+          }
+        } catch (error) {
+          console.error('Failed to send update request:', error);
+          alert('A network error occurred.');
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Save Changes';
+        }
+      },
+
+      handleCreateUser: async function (event) {
+        event.preventDefault();
+        const submitBtn = this.elements.addUserForm.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Creating...';
+
+        const formData = new FormData(this.elements.addUserForm);
+        const userData = {
+          id: formData.get('id'),
+          name: formData.get('name'),
+          role: formData.get('role'),
+          verified: formData.get('verified') === 'true',
+          rate_limits: {
+            tokens_per_minute: String(parseInt(formData.get('tokens_per_minute') || '0', 10)),
+            daily_spend: String(Math.round(parseFloat(formData.get('daily_spend') || '0') * 100)),
+            monthly_spend: String(Math.round(parseFloat(formData.get('monthly_spend') || '0') * 100))
+          }
+        };
+
+        if (this.elements.addUserTogglePw.checked) {
+          const pwVal = formData.get('password');
+          if (pwVal && pwVal.trim() !== '') {
+            userData.password = pwVal; // Sending as 'password' to be hashed by backend
+          }
+        }
+
+        try {
+          const response = await fetch('/admin/add_user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(userData)
+          });
+
+          if (response.ok) {
+            window.location.reload();
+          } else {
+            const errorData = await response.json();
+            const errorMsg = errorData.error || 'Unknown error.';
+            alert('Error: ' + errorMsg);
+          }
+        } catch (error) {
+          console.error('Failed to submit new user:', error);
+          alert('A network error occurred.');
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Create User';
+        }
+      },
+
+      deleteUser: async function (userId, buttonElement) {
+        if (!confirm(`Are you sure you want to delete the user ${userId}? This action cannot be undone.`)) {
+          return;
+        }
+        buttonElement.disabled = true;
+        buttonElement.innerHTML = '<span class="material-icons text-sm animate-spin">hourglass_top</span>';
+
+        try {
+          const response = await fetch('/admin/delete_user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: userId })
+          });
+
+          if (response.ok) {
+            window.location.reload();
+          } else {
+            const errorData = await response.json();
+            const errorMsg = errorData.error || 'Unknown server error.';
+            alert('Error: ' + errorMsg);
+            buttonElement.disabled = false;
+            buttonElement.textContent = 'Delete';
+          }
+        } catch (error) {
+          console.error('Failed to send delete request:', error);
+          alert('A network error occurred.');
+          buttonElement.disabled = false;
+          buttonElement.textContent = 'Delete';
+        }
+      },
+
+      applyFilters: function () {
+        const searchTerm = this.elements.searchInput.value.toLowerCase();
+        this.filteredUsers = this.allUsers.filter(user => {
+          const name = (user.name || '').toLowerCase();
+          const email = (user.id || '').toLowerCase();
+          return name.includes(searchTerm) || email.includes(searchTerm);
+        });
+        this.currentPage = 1;
+        this.renderTable();
+      },
+
+      renderTable: function () {
+        const startIndex = (this.currentPage - 1) * this.rowsPerPage;
+        const usersToDisplay = this.filteredUsers.slice(startIndex, startIndex + this.rowsPerPage);
+
+        this.elements.tableBody.innerHTML = usersToDisplay.map(user => {
+          const limits = user.rate_limits || {};
+          const tpm = parseInt(limits.tokens_per_minute || '0', 10);
+          const monthlySpend = parseInt(limits.monthly_spend || '0', 10) / 100;
+          const role = (user.role || 'NO_ROLE').replace('_', ' ').toLowerCase();
+          const rawName = user.name || 'N/A';
+          const userName = App.utils.escapeHTML(rawName);
+          const userAvatar = App.utils.escapeHTML(
+            user.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(rawName)}&background=random`
+          );
+          const userEmail = App.utils.escapeHTML(user.id || 'N/A');
+          const userJson = App.utils.escapeHTML(JSON.stringify(user));
+
+          return `
+            <tr>
+              <td>
+                <div class="flex items-center gap-3">
+                  <img src="${userAvatar}" alt="Avatar" class="w-10 h-10 rounded-full object-cover bg-[var(--color-bg-primary)] border border-[var(--color-border)]">
+                  <div>
+                    <div class="font-medium">${userName}</div>
+                    <div class="muted text-sm">${userEmail}</div>
+                  </div>
+                </div>
+              </td>
+              <td class="capitalize">${role}</td>
+              <td>${tpm > 0 ? tpm.toLocaleString() : 'Unlimited'}</td>
+              <td>${monthlySpend > 0 ? '$' + monthlySpend.toFixed(2) : 'Unlimited'}</td>
+              <td>
+                ${user.verified
+              ? '<span class="status-badge active">Active</span>'
+              : '<span class="status-badge pending">Pending</span>'
+            }
+              </td>
+              <td class="flex gap-2">
+                <button class="pagination-button edit-user-btn" data-user-json='${userJson}'>Edit</button>
+                <button class="pagination-button button-danger delete-user-btn" data-user-id="${userEmail}">Delete</button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+        this.updatePagination();
+      },
+
+      updatePagination: function () {
+        const totalPages = Math.ceil(this.filteredUsers.length / this.rowsPerPage);
+        this.elements.userCount.textContent = `${this.filteredUsers.length} users`;
+        this.elements.pageInfo.textContent = `Page ${totalPages > 0 ? this.currentPage : 0} of ${totalPages}`;
+        this.elements.prevBtn.disabled = this.currentPage <= 1;
+        this.elements.nextBtn.disabled = this.currentPage >= totalPages || totalPages === 0;
+      },
+
+      changePage: function (direction) {
+        const totalPages = Math.ceil(this.filteredUsers.length / this.rowsPerPage);
+        const newPage = this.currentPage + direction;
+        if (newPage >= 1 && newPage <= totalPages) {
+          this.currentPage = newPage;
+          this.renderTable();
+        }
+      }
+    };
+
+    AdminPage.init({{ users | tojson }});
+
+    // -------------------------------------------------------------------------
+    // Backends Section
+    // -------------------------------------------------------------------------
+    const Backends = {
+      elements: {},
+
+      init: function () {
+        this.elements = {
+          addBtn:            document.getElementById('add-backend-btn'),
+          addModal:          document.getElementById('add-backend-modal'),
+          addForm:           document.getElementById('add-backend-form'),
+          cancelAddBtn:      document.getElementById('cancel-add-backend-btn'),
+          closeAddBtn:       document.getElementById('close-add-backend-btn'),
+          addPresetCards:    document.getElementById('add-preset-cards'),
+          addKeyHint:        document.getElementById('add-backend-key-hint'),
+          editModal:         document.getElementById('edit-backend-modal'),
+          editForm:          document.getElementById('edit-backend-form'),
+          cancelEditBtn:     document.getElementById('cancel-edit-backend-btn'),
+          creditsModal:      document.getElementById('credits-modal'),
+          creditsModalTitle: document.getElementById('credits-modal-title'),
+          creditsModalBody:  document.getElementById('credits-modal-body'),
+          closeCreditsBtn:   document.getElementById('close-credits-modal-btn'),
+        };
+        // Render preset cards into both modals
+        renderPresetCards('add-preset-cards', 'add');
+        renderPresetCards('edit-preset-cards', 'edit');
+        this.setupEventListeners();
+      },
+
+      setupEventListeners: function () {
+        const e = this.elements;
+
+        e.addBtn.addEventListener('click', () => this.openAddModal());
+        e.cancelAddBtn.addEventListener('click', () => this.closeAddModal());
+        e.closeAddBtn.addEventListener('click', () => this.closeAddModal());
+        // Click on scrim (outside panel) also closes
+        e.addModal.addEventListener('click', (ev) => {
+          if (ev.target === e.addModal) this.closeAddModal();
+        });
+        e.addForm.addEventListener('submit', (ev) => this.handleCreate(ev));
+
+        e.cancelEditBtn.addEventListener('click', () => this.closeModal(e.editModal, e.editForm));
+        e.editForm.addEventListener('submit', (ev) => this.handleUpdate(ev));
+
+        e.closeCreditsBtn.addEventListener('click', () => this.closeModal(e.creditsModal));
+
+        // Table delegation (clicks)
+        document.addEventListener('click', (ev) => {
+          const deleteBtn = ev.target.closest('.delete-backend-btn');
+          const editBtn   = ev.target.closest('.edit-backend-btn');
+          const credits   = ev.target.closest('.check-credits-btn');
+          const presetCard = ev.target.closest('.preset-card');
+          if (deleteBtn) this.handleDelete(deleteBtn);
+          else if (editBtn) this.openEditModal(JSON.parse(editBtn.dataset.backendJson));
+          else if (credits) this.showCredits(credits.dataset.backendId, credits.dataset.backendName);
+          else if (presetCard) applyPreset(presetCard.dataset.presetId, presetCard.dataset.formPrefix);
+        });
+
+        // Toggle delegation (change)
+        document.addEventListener('change', (ev) => {
+          const toggle = ev.target.closest('.backend-enabled-toggle');
+          if (toggle) this.handleToggle(toggle);
+        });
+      },
+
+      openAddModal: function () {
+        this.elements.addForm.reset();
+        // Reset preset selection + key-hint text
+        this.elements.addPresetCards?.querySelectorAll('.preset-card.is-selected')
+          .forEach(c => c.classList.remove('is-selected'));
+        if (this.elements.addKeyHint) {
+          this.elements.addKeyHint.textContent = 'Enter your API key for this provider.';
+        }
+        this.elements.addModal.classList.remove('hidden');
+        this.elements.addModal.classList.add('visible');
+      },
+
+      closeAddModal: function () {
+        this.closeModal(this.elements.addModal, this.elements.addForm);
+        this.elements.addPresetCards?.querySelectorAll('.preset-card.is-selected')
+          .forEach(c => c.classList.remove('is-selected'));
+      },
+
+      openEditModal: function (backend) {
+        const f = this.elements.editForm;
+        f.elements['id'].value               = backend.id || '';
+        f.elements['name'].value             = backend.name || '';
+        f.elements['backend_type'].value     = backend.backend_type || 'VLLM';
+        f.elements['base_url'].value         = backend.base_url || '';
+        f.elements['api_key'].value          = '';  // never pre-fill the key
+        f.elements['description'].value      = backend.description || '';
+        f.elements['is_local'].checked       = !!backend.is_local;
+        f.elements['max_concurrency'].value  = backend.max_concurrency || 0;
+        this.elements.editModal.classList.remove('hidden');
+        this.elements.editModal.classList.add('visible');
+      },
+
+      closeModal: function (modal, form) {
+        modal.classList.add('hidden');
+        modal.classList.remove('visible');
+        if (form) form.reset();
+      },
+
+      handleCreate: async function (event) {
+        event.preventDefault();
+        const btn = this.elements.addForm.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        btn.textContent = 'Adding...';
+        const data = Object.fromEntries(new FormData(this.elements.addForm));
+        data.is_local = document.getElementById('add-backend-is-local').checked;
+        data.max_concurrency = parseInt(data.max_concurrency, 10) || 0;
+        try {
+          const res = await fetch('/admin/add_backend', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+          });
+          if (res.ok) { window.location.reload(); }
+          else {
+            const err = await res.json();
+            alert('Error: ' + (err.error || 'Unknown error'));
+          }
+        } catch (e) {
+          alert('Network error.');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Add Backend';
+        }
+      },
+
+      handleUpdate: async function (event) {
+        event.preventDefault();
+        const btn = this.elements.editForm.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+        const data = Object.fromEntries(new FormData(this.elements.editForm));
+        // Don't send api_key if blank — server preserves existing key
+        if (!data.api_key) delete data.api_key;
+        data.is_local = document.getElementById('edit-backend-is-local').checked;
+        data.max_concurrency = parseInt(data.max_concurrency, 10) || 0;
+        try {
+          const res = await fetch('/admin/update_backend', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+          });
+          if (res.ok) { window.location.reload(); }
+          else {
+            const err = await res.json();
+            alert('Error: ' + (err.error || 'Unknown error'));
+          }
+        } catch (e) {
+          alert('Network error.');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Save Changes';
+        }
+      },
+
+      handleDelete: async function (btn) {
+        const id   = btn.dataset.backendId;
+        const name = btn.dataset.backendName || id;
+        if (!confirm(`Delete backend "${name}"? This cannot be undone.`)) return;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="material-icons text-sm animate-spin">hourglass_top</span>';
+        try {
+          const res = await fetch('/admin/delete_backend', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id }),
+          });
+          if (res.ok) { window.location.reload(); }
+          else {
+            const err = await res.json();
+            alert('Error: ' + (err.error || 'Unknown error'));
+            btn.disabled = false;
+            btn.textContent = 'Delete';
+          }
+        } catch (e) {
+          alert('Network error.');
+          btn.disabled = false;
+          btn.textContent = 'Delete';
+        }
+      },
+
+      handleToggle: async function (checkbox) {
+        const backendId = checkbox.dataset.backendId;
+        const enabled   = checkbox.checked;
+        checkbox.disabled = true;
+        const row = document.getElementById(`backend-row-${backendId}`);
+        try {
+          const res = await fetch('/admin/toggle_backend', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: backendId, enabled }),
+          });
+          if (res.ok) {
+            // Update row opacity and type badge without a full reload
+            if (row) {
+              row.classList.toggle('opacity-50', !enabled);
+              const badge = row.querySelector('.status-badge');
+              if (badge) {
+                badge.classList.toggle('active', enabled);
+                badge.classList.toggle('pending', !enabled);
+              }
+            }
+          } else {
+            const err = await res.json();
+            alert('Error: ' + (err.error || 'Unknown error'));
+            checkbox.checked = !enabled; // revert
+          }
+        } catch (e) {
+          alert('Network error.');
+          checkbox.checked = !enabled; // revert
+        } finally {
+          checkbox.disabled = false;
+        }
+      },
+
+      showCredits: async function (backendId, backendName) {
+        const m = this.elements;
+        m.creditsModalTitle.textContent = `Credits - ${backendName || backendId}`;
+        m.creditsModalBody.innerHTML = '<div class="flex justify-center py-6"><span class="material-icons animate-spin text-2xl">hourglass_top</span></div>';
+        m.creditsModal.classList.remove('hidden');
+        m.creditsModal.classList.add('visible');
+        try {
+          const res = await fetch(`/admin/backend_credits/${encodeURIComponent(backendId)}`);
+          const data = await res.json();
+          if (!res.ok) {
+            m.creditsModalBody.innerHTML = `<p class="text-red-500">${data.error || 'Failed to fetch credits.'}</p>`;
+            return;
+          }
+          const used  = parseFloat(data.credits_used  || 0).toFixed(2);
+          const total = parseFloat(data.total_credits || 0).toFixed(2);
+          const rem   = parseFloat(data.credits_remaining || 0).toFixed(2);
+          const pct   = total > 0 ? Math.min(100, ((used / total) * 100)).toFixed(1) : 0;
+          const barColor = pct >= 90 ? '#dc2626' : pct >= 75 ? '#f59e0b' : '#4f46e5';
+          m.creditsModalBody.innerHTML = `
+            <div class="grid grid-cols-3 gap-3 mb-4">
+              <div class="bg-[var(--color-highlight-shade1)] p-3 rounded-lg border border-[var(--color-border)] text-center">
+                <div class="muted text-xs mb-1">Used</div>
+                <div class="font-semibold">$${used}</div>
+              </div>
+              <div class="bg-[var(--color-highlight-shade1)] p-3 rounded-lg border border-[var(--color-border)] text-center">
+                <div class="muted text-xs mb-1">Remaining</div>
+                <div class="font-semibold">$${rem}</div>
+              </div>
+              <div class="bg-[var(--color-highlight-shade1)] p-3 rounded-lg border border-[var(--color-border)] text-center">
+                <div class="muted text-xs mb-1">Total</div>
+                <div class="font-semibold">$${total}</div>
+              </div>
+            </div>
+            <div class="flex justify-between text-sm mb-1">
+              <span class="font-medium">Usage</span><span>${pct}%</span>
+            </div>
+            <div class="w-full bg-[var(--color-highlight-shade1)] rounded-full h-2 border border-[var(--color-border)]">
+              <div class="h-2 rounded-full" style="width:${pct}%;background-color:${barColor};"></div>
+            </div>
+          `;
+        } catch (e) {
+          m.creditsModalBody.innerHTML = '<p class="text-red-500">Network error fetching credits.</p>';
+        }
+      },
+    };
+
+    Backends.init();
+
+  });
+</script>
+{% endblock %}

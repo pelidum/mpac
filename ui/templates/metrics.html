@@ -1,0 +1,1397 @@
+{% extends "base.html" %}
+{% block title %}Pelidum MPAC - Metrics{% endblock %}
+
+{% block styles %}
+<style>
+    /* ── F1 pills ─────────────────────────────── */
+    .f1-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    .f1-high {
+        background: rgba(34, 197, 94, 0.15);
+        color: #16a34a;
+    }
+
+    .f1-mid {
+        background: rgba(234, 179, 8, 0.15);
+        color: #ca8a04;
+    }
+
+    .f1-low {
+        background: rgba(239, 68, 68, 0.15);
+        color: #dc2626;
+    }
+
+    .f1-none {
+        background: var(--color-bg-primary);
+        color: var(--color-text-secondary);
+    }
+
+    /* ── Leaderboard sticky header ────────────── */
+    #leaderboard-scroll thead th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--color-bg-primary);
+    }
+
+    #leaderboard-body tr {
+        transition: background 0.15s;
+    }
+
+    #leaderboard-body tr:hover {
+        background: var(--color-highlight-shade1);
+    }
+
+    /* ── Modality badges ──────────────────────── */
+    .modality-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 8px 3px 6px;
+        border-radius: 5px;
+        border: 1px solid var(--color-border);
+        background: var(--color-bg-primary);
+        color: var(--color-text-secondary);
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    /* ── Model filter (MD2 checkboxes) ────────────────── */
+    #model-filter-row {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    #model-filter-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 8px;
+        margin-top: 4px;
+    }
+
+    /* MD2 list item: 40px touch target, Roboto 14/20, 12dp gap */
+    .mf-check {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        height: 40px;
+        padding: 0 8px;
+        border-radius: 20px;
+        cursor: pointer;
+        user-select: none;
+        color: var(--color-text-primary, #1d1d1d);
+        font-family: inherit;
+        font-size: 0.875rem;
+        line-height: 1.25rem;
+        max-width: 280px;
+        overflow: visible;
+        /* let the focus ring escape */
+        transition: background-color 0.2s;
+    }
+
+    .mf-check:hover {
+        background: rgba(0, 0, 0, 0.04);
+    }
+
+    html.dark .mf-check:hover {
+        background: rgba(255, 255, 255, 0.06);
+    }
+
+    /* Master "All Models" checkbox */
+    .mf-check-all {
+        font-weight: 600;
+    }
+
+    /* Child model checkboxes — slight indent */
+    .mf-check-child {
+        padding-left: 24px;
+        font-size: 0.8125rem;
+    }
+
+    .mf-check input[type="checkbox"] {
+        /* Strip ALL browser defaults (including padding/line-height/font) */
+        all: unset;
+        /* Then restore the desired properties explicitly */
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        width: 18px;
+        height: 18px;
+        border: 2px solid var(--color-text-secondary, #767676);
+        border-radius: 2px;
+        background: transparent;
+        cursor: pointer;
+        position: relative;
+        flex-shrink: 0;
+        display: inline-block;
+        /* `all:unset` can reset display to inline */
+        /* MD2 "standard" curve — 280ms */
+        transition: background-color 0.2s cubic-bezier(0.4, 0.0, 0.2, 1),
+            border-color 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+        /* MD2 hover: 8% state-layer fill inside the box */
+    }
+
+    .mf-check:hover input[type="checkbox"]:not(:checked) {
+        background: rgba(var(--color-accent-primary-rgb, 15, 98, 254), 0.08);
+    }
+
+    .mf-check input[type="checkbox"]:checked {
+        background: var(--color-accent-primary, #0f62fe);
+        border-color: var(--color-accent-primary, #0f62fe);
+        border-radius: 2px;
+    }
+
+    /* ── Checkmark (MD2 two-segment path, SVG) ─────────── */
+    /*
+     * Unchecked → checked: scale-in with MD2 "standard" easing.
+     * Checked → unchecked: instant (MD2 removes the mark immediately).
+     */
+    .mf-check input[type="checkbox"]:checked::after {
+        content: "";
+        position: absolute;
+        /* 14×14 hit area centered in 18px box → 2px inset top/left */
+        left: 2px;
+        top: 2px;
+        width: 14px;
+        height: 14px;
+        /*
+         * MD2 checkmark path: M1.5 8.5 L5 12 L13.5 3.5
+         * Strokes: 2px, round cap/join, on-accent text color.
+         */
+        background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cpath d='M1.5 8.5 L5 12 L13.5 3.5' fill='none' stroke='%2311233e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
+        opacity: 0;
+        transform: scale(0.5);
+        animation: mf-check-in 0.2s cubic-bezier(0.4, 0.0, 0.2, 1) forwards;
+    }
+
+    html.dark .mf-check input[type="checkbox"]:checked::after {
+        background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cpath d='M1.5 8.5 L5 12 L13.5 3.5' fill='none' stroke='%23f5f5f5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
+    }
+
+    @keyframes mf-check-in {
+        to {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+
+    /* ── Indeterminate (MD2 horizontal dash) ─────────── */
+    .mf-check input[type="checkbox"]:indeterminate {
+        background: var(--color-accent-primary, #0f62fe);
+        border-color: var(--color-accent-primary, #0f62fe);
+    }
+
+    .mf-check input[type="checkbox"]:indeterminate::after {
+        content: "";
+        position: absolute;
+        left: 3px;
+        top: 7px;
+        width: 12px;
+        height: 2px;
+        background: var(--color-text-on-accent, #ffffff);
+        border-radius: 1px;
+        opacity: 0;
+        transform: scale(0.5);
+        animation: mf-check-in 0.2s cubic-bezier(0.4, 0.0, 0.2, 1) forwards;
+    }
+
+    /* ── MD2 focus ring (12dp touch-target padding) ──── */
+    .mf-check input[type="checkbox"]:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 10px rgba(var(--color-accent-primary-rgb, 15, 98, 254), 0.16);
+    }
+
+    .mf-check-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        transition: font-weight 0.2s;
+    }
+
+    .mf-check input[type="checkbox"]:checked+.mf-check-label,
+    .mf-check input[type="checkbox"]:indeterminate+.mf-check-label {
+        font-weight: 500;
+    }
+
+    .mf-empty {
+        font-size: 0.8125rem;
+        color: var(--color-text-secondary);
+        padding: 4px 0;
+    }
+
+    /* ── Recessed card for model filter ───────────────── */
+    .filter-recess-card {
+        border: 1px solid var(--color-border, #c3cddc);
+        border-radius: 8px;
+        background: var(--color-bg-primary, #f6f6f6);
+        padding: 12px;
+        box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.06);
+    }
+
+    html.dark .filter-recess-card {
+        background: var(--color-bg-secondary, #0a0a0a);
+        box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    /* ── Range slider (MD2 track/thumb) ─────────────────── */
+    .mdc-range {
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        width: 100%;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--color-border, #c3cddc);
+        outline: none;
+        cursor: pointer;
+    }
+
+    .mdc-range::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--color-accent-primary, #cca139);
+        border: 2px solid var(--color-bg-primary, #f6f6f6);
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+        cursor: pointer;
+        transition: transform 0.15s;
+    }
+
+    .mdc-range::-webkit-slider-thumb:hover {
+        transform: scale(1.2);
+    }
+
+    .mdc-range::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--color-accent-primary, #cca139);
+        border: 2px solid var(--color-bg-primary, #f6f6f6);
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+        cursor: pointer;
+    }
+
+    html.dark .mdc-range::-webkit-slider-thumb {
+        border-color: var(--color-bg-secondary, #0a0a0a);
+    }
+
+    html.dark .mdc-range::-moz-range-thumb {
+        border-color: var(--color-bg-secondary, #0a0a0a);
+    }
+
+    /* ── Modality chips ─────────────────────────────────── */
+    .mod-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--color-border, #c3cddc);
+        background: var(--color-bg-primary, #f6f6f6);
+        color: var(--color-text-secondary, #555);
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        user-select: none;
+        transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+    }
+
+    .mod-chip:hover {
+        background: var(--color-highlight-shade1, #fafbfc);
+    }
+
+    html.dark .mod-chip:hover {
+        background: var(--color-highlight-shade1, #1a1a1a);
+    }
+
+    .mod-chip input:checked+.material-icons+span,
+    .mod-chip input:checked~span:last-child {
+        color: var(--color-accent-primary, #cca139);
+    }
+
+    .mod-chip:has(input:checked) {
+        background: rgba(var(--color-accent-primary-rgb, 204, 161, 57), 0.12);
+        border-color: var(--color-accent-primary, #cca139);
+        color: var(--color-accent-primary, #cca139);
+    }
+
+    .mod-chip .material-icons {
+        font-size: 14px;
+        line-height: 1;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-[1280px] mx-auto">
+
+    <!-- ── Header ─────────────────────────────────────────── -->
+    <div class="mb-4">
+        <h1 class="content-title">Metrics</h1>
+    </div>
+
+    <!-- ── KPI strip ──────────────────────────────────────── -->
+    <div id="kpi-strip" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5"></div>
+
+    <!-- ── Filter bar ────────────────────────────────────── -->
+    <form method="GET" action="" id="metrics-filter-form" class="card p-4 mb-5">
+        <div class="flex flex-col sm:flex-row gap-4 items-stretch">
+            <!-- Left: Test filter + placeholder filters -->
+            <div class="flex flex-col gap-3 sm:w-64 flex-shrink-0">
+                <div>
+                    <label class="block text-xs font-semibold mb-1 label-bold">Filter by Test</label>
+                    <select name="test_id" onchange="this.form.submit()" class="select-field w-full text-sm">
+                        <option value="">All Tests</option>
+                        {% for test in test_dicts | sort(attribute='name') %}
+                        <option value="{{ test.id }}" {% if selected_test_id==test.id %}selected{% endif %}>
+                            {{ test.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <!-- Minimum F1 filter -->
+                <div>
+                    <label class="block text-xs font-semibold mb-1 label-bold" for="f1-min-input">
+                        Min F1
+                        <span id="f1-min-label" class="float-right font-normal">—</span>
+                    </label>
+                    <input type="range" id="f1-min-input" class="mdc-range" min="0" max="100" value="0" step="1">
+                    <div class="flex justify-between text-[10px] muted mt-0.5">
+                        <span>0%</span><span>100%</span>
+                    </div>
+                </div>
+
+                <!-- Minimum throughput filter -->
+                <div>
+                    <label class="block text-xs font-semibold mb-1 label-bold" for="throughput-min-input">
+                        Min throughput
+                        <span id="throughput-min-label" class="ml-1 font-normal">—</span>
+                    </label>
+                    <input type="range" id="throughput-min-input" class="mdc-range" min="0" max="100" value="0"
+                        step="1">
+                    <div class="flex justify-between text-[10px] muted mt-0.5">
+                        <span>0 tok/s</span><span id="throughput-max-label">—</span>
+                    </div>
+                </div>
+
+                <!-- Minimum cost filter -->
+                <div>
+                    <label class="block text-xs font-semibold mb-1 label-bold" for="cost-min-input">
+                        Min cost
+                        <span id="cost-min-label" class="ml-1 font-normal">—</span>
+                    </label>
+                    <input type="range" id="cost-min-input" class="mdc-range" min="0" max="100" value="0" step="1">
+                    <div class="flex justify-between text-[10px] muted mt-0.5">
+                        <span>$0</span><span id="cost-max-label">—</span>
+                    </div>
+                </div>
+
+                <!-- Modality filter (pushed to bottom) -->
+                <div class="mt-auto">
+                    <label class="block text-xs font-semibold mb-1 label-bold">Modality</label>
+                    <div id="modality-chips" class="flex flex-wrap gap-1.5">
+                        <label class="mod-chip">
+                            <input type="checkbox" value="text" class="hidden">
+                            <span class="material-icons text-[14px]">article</span>
+                            <span>TXT</span>
+                        </label>
+                        <label class="mod-chip">
+                            <input type="checkbox" value="image" class="hidden">
+                            <span class="material-icons text-[14px]">image</span>
+                            <span>IMG</span>
+                        </label>
+                        <label class="mod-chip">
+                            <input type="checkbox" value="audio" class="hidden">
+                            <span class="material-icons text-[14px]">audiotrack</span>
+                            <span>AUD</span>
+                        </label>
+                        <label class="mod-chip">
+                            <input type="checkbox" value="video" class="hidden">
+                            <span class="material-icons text-[14px]">videocam</span>
+                            <span>VID</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Model filter in recessed card (matches left column height, scrolls on overflow) -->
+            <div class="flex-1 w-full min-w-0 flex flex-col">
+                <label class="block text-xs font-semibold mb-1 label-bold flex-shrink-0">Filter by Model</label>
+                <div class="filter-recess-card flex-1 overflow-y-auto min-h-0">
+                    <div id="model-filter-row" role="group" aria-label="Filter by model">
+                        <!-- Hierarchy checkboxes rendered by initModelFilter() -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Clear filters (right-aligned) -->
+        {% if selected_test_id %}
+        <div class="flex justify-end mt-3">
+            <a href="{{ url_for('metrics') }}" class="button-secondary flex items-center gap-1 text-sm"
+                style="height:38px;padding:0 12px">
+                <span class="material-icons text-[16px]">clear</span>
+                Clear
+            </a>
+        </div>
+        {% endif %}
+
+        <!-- Date-range row -->
+        <div class="mt-3 pt-3 border-t border-[var(--color-border)]">
+            <input type="hidden" name="range" id="range-input" value="{{ active_range }}">
+            <div class="flex flex-wrap items-end gap-3">
+                <div>
+                    <label class="block text-xs font-semibold mb-1 label-bold">Date range</label>
+                    <div class="flex gap-1" id="range-presets">
+                        {% for key in range_presets %}
+                        <button type="button" data-range="{{ key }}"
+                            class="range-preset button-secondary text-xs px-3 py-1.5 {% if active_range == key %}is-active{% endif %}">
+                            {{ key }}
+                        </button>
+                        {% endfor %}
+                        <button type="button" data-range="custom"
+                            class="range-preset button-secondary text-xs px-3 py-1.5 {% if active_range == 'custom' %}is-active{% endif %}">
+                            Custom
+                        </button>
+                    </div>
+                </div>
+                <div id="custom-range-fields" class="flex gap-2 items-end" {% if active_range !='custom'
+                    %}style="display:none" {% endif %}>
+                    <div>
+                        <label class="block text-xs font-semibold mb-1 label-bold">Start</label>
+                        <input type="date" name="start_date" class="input-field text-sm" value="{{ start_date }}">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold mb-1 label-bold">End</label>
+                        <input type="date" name="end_date" class="input-field text-sm" value="{{ end_date }}">
+                    </div>
+                    <button type="submit" class="button-primary text-sm"
+                        style="height:38px;padding:0 14px">Apply</button>
+                </div>
+            </div>
+        </div>
+    </form>
+    <style>
+        .range-preset.is-active {
+            background: var(--color-accent-secondary);
+            color: var(--color-bg-primary);
+            border-color: var(--color-accent-secondary);
+        }
+    </style>
+    <script>
+        (function () {
+            const form = document.getElementById("metrics-filter-form");
+            const rangeInput = document.getElementById("range-input");
+            const customFields = document.getElementById("custom-range-fields");
+            document.querySelectorAll(".range-preset").forEach((btn) => {
+                btn.addEventListener("click", () => {
+                    const value = btn.dataset.range;
+                    rangeInput.value = value;
+                    if (value === "custom") {
+                        customFields.style.display = "";
+                    } else {
+                        // Drop any lingering custom dates so they don't override the preset.
+                        form.querySelectorAll('input[name="start_date"], input[name="end_date"]').forEach((el) => {
+                            el.value = "";
+                        });
+                        form.submit();
+                    }
+                });
+            });
+        })();
+    </script>
+
+    <!-- ── Leaderboard (full-width, scrollable body) ──────── -->
+    <div class="card p-0 overflow-hidden mb-6">
+        <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
+            <span class="material-icons text-[var(--color-accent-secondary)]">leaderboard</span>
+            <h2 class="text-base font-semibold">Model Leaderboard</h2>
+        </div>
+        <div id="leaderboard-scroll" class="overflow-x-auto overflow-y-auto" style="max-height:380px;">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr
+                        class="border-b border-[var(--color-border)] text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">
+                        <th class="px-4 py-2.5 text-left w-8">#</th>
+                        <th class="px-4 py-2.5 text-left">Model</th>
+                        <th class="px-4 py-2.5 text-center">F1</th>
+                        <th class="px-4 py-2.5 text-right">Responses</th>
+                        <th class="px-4 py-2.5 text-right">Runs</th>
+                        <th class="px-4 py-2.5 text-right" title="Median per-stream output tokens/sec.">Output tok/s
+                        </th>
+                        <th class="px-4 py-2.5 text-right" title="Median end-to-end answer latency (seconds).">Latency
+                            p50</th>
+                        <th class="px-4 py-2.5 text-right"
+                            title="Aggregate output tokens per second at this run's concurrency.">Throughput</th>
+                        <th class="px-4 py-2.5 text-right">Refusal</th>
+                        <th class="px-4 py-2.5 text-right">$/resp</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboard-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ── Scatter charts (side by side) ─────────────────── -->
+    <div class="grid lg:grid-cols-2 gap-4 mb-6">
+        <div class="card p-0 overflow-hidden">
+            <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
+                <span class="material-icons text-[var(--color-accent-secondary)]">scatter_plot</span>
+                <h2 class="text-base font-semibold">Quality vs Volume</h2>
+            </div>
+            <div id="scatter-chart" style="height:300px;"></div>
+        </div>
+        <div class="card p-0 overflow-hidden">
+            <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
+                <span class="material-icons text-[var(--color-accent-secondary)]">memory</span>
+                <h2 class="text-base font-semibold">Performance per Parameter</h2>
+            </div>
+            <div id="param-scatter-chart" style="height:300px;"></div>
+        </div>
+    </div>
+
+    <!-- ── Daily Activity ─────────────────────────────────── -->
+    <div class="mb-6">
+        <div class="flex items-center gap-2 mb-3">
+            <span class="material-icons text-[var(--color-accent-secondary)]">insights</span>
+            <h2 class="text-base font-semibold">Daily Activity</h2>
+        </div>
+        <div class="space-y-4">
+            <div class="card p-0 overflow-hidden">
+                <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
+                    <span class="material-icons text-[var(--color-accent-secondary)]">token</span>
+                    <h3 class="text-sm font-semibold">Token Usage</h3>
+                </div>
+                <div id="daily-tokens" style="height:300px;"></div>
+            </div>
+            <div id="spend-card" class="card p-0 overflow-hidden">
+                <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
+                    <span class="material-icons text-[var(--color-accent-secondary)]">calendar_month</span>
+                    <h3 class="text-sm font-semibold">Daily Spend (USD)</h3>
+                    <span id="spend-selected" class="ml-auto text-sm font-medium tabular-nums"></span>
+                </div>
+                <div class="px-6 py-4">
+                    <div id="daily-spend"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Detailed Metrics ───────────────────────────────── -->
+    <div class="mb-6">
+        <div class="flex items-center gap-2 mb-3">
+            <span class="material-icons text-[var(--color-accent-secondary)]">bar_chart</span>
+            <h2 class="text-base font-semibold">Detailed Metrics</h2>
+        </div>
+        <div class="grid lg:grid-cols-2 gap-4">
+            <div class="card p-0 overflow-hidden">
+                <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
+                    <span class="material-icons text-[var(--color-accent-secondary)] text-[18px]">fact_check</span>
+                    <h3 class="text-sm font-semibold">Median F1</h3>
+                </div>
+                <div id="f1-chart" style="height:300px;"></div>
+            </div>
+            <div class="card p-0 overflow-hidden" title="Median per-stream output tokens/sec across runs in window.">
+                <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
+                    <span class="material-icons text-[var(--color-accent-secondary)] text-[18px]">speed</span>
+                    <h3 class="text-sm font-semibold">Median Output tok/s</h3>
+                </div>
+                <div id="output-tps-chart" style="height:300px;"></div>
+            </div>
+            <div class="card p-0 overflow-hidden lg:col-span-2">
+                <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
+                    <span class="material-icons text-[var(--color-accent-secondary)] text-[18px]">block</span>
+                    <h3 class="text-sm font-semibold">Refusal / Error Rate</h3>
+                </div>
+                <div id="refusal-chart" style="height:280px;"></div>
+            </div>
+            <div class="card p-0 overflow-hidden" title="Median p50 of per-answer end-to-end latency across runs.">
+                <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
+                    <span class="material-icons text-[var(--color-accent-secondary)] text-[18px]">timer</span>
+                    <h3 class="text-sm font-semibold">Latency p50 (s)</h3>
+                </div>
+                <div id="dur-chart" style="height:280px;"></div>
+            </div>
+            <div class="card p-0 overflow-hidden"
+                title="Median p95 of per-answer end-to-end latency across runs. Tail behaviour for SLO planning.">
+                <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
+                    <span class="material-icons text-[var(--color-accent-secondary)] text-[18px]">trending_up</span>
+                    <h3 class="text-sm font-semibold">Latency p95 (s)</h3>
+                </div>
+                <div id="lat-p95-chart" style="height:280px;"></div>
+            </div>
+            <div class="card p-0 overflow-hidden"
+                title="Median aggregate output tokens/sec across runs at each run's concurrency. Capacity, not per-stream speed.">
+                <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
+                    <span class="material-icons text-[var(--color-accent-secondary)] text-[18px]">bolt</span>
+                    <h3 class="text-sm font-semibold">Throughput (tok/s)</h3>
+                </div>
+                <div id="throughput-chart" style="height:280px;"></div>
+            </div>
+            <div class="card p-0 overflow-hidden"
+                title="Median wall-clock time until the first answer in a run completed. Biased by concurrency, treat as a cold-start proxy, not true TTFT.">
+                <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
+                    <span class="material-icons text-[var(--color-accent-secondary)] text-[18px]">rocket_launch</span>
+                    <h3 class="text-sm font-semibold">First Response Latency (s)</h3>
+                </div>
+                <div id="first-response-chart" style="height:280px;"></div>
+            </div>
+            <div class="card p-0 overflow-hidden lg:col-span-2">
+                <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
+                    <span class="material-icons text-[var(--color-accent-secondary)] text-[18px]">attach_money</span>
+                    <h3 class="text-sm font-semibold">Cost per Response (USD)</h3>
+                </div>
+                <div id="cost-chart" style="height:280px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Per-Test Drilldown ─────────────────────────────── -->
+    <div class="mb-8">
+        <div class="flex items-center gap-2 mb-3">
+            <h2 class="text-base font-semibold">Per-Test Breakdown</h2>
+        </div>
+        <div id="drilldown-container">
+            <!-- populated by renderDrilldown() -->
+            <div class="card p-8 text-center">
+                <p class="text-sm muted">No per-test data available.</p>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://www.gstatic.com/charts/loader.js"></script>
+<script>
+    google.charts.load('current', { packages: ['corechart', 'calendar'] });
+    google.charts.setOnLoadCallback(onChartsReady);
+
+    /* ── Data injected from Flask ─────────────────────────────── */
+    const _allMetrics = JSON.parse({{ metrics_json        | tojson }});
+    const _allDaily = JSON.parse({{ daily_stats_json    | tojson }});
+    const modelsMeta = JSON.parse({{ models_meta_json    | tojson }});
+    const _allPerTestMetrics = JSON.parse({{ per_test_metrics_json | tojson }});
+    const testsById = JSON.parse({{ tests_by_id_json    | tojson }});
+
+    /* Filtered views — reassigned by applyModelFilter() before each render. */
+    let metrics = _allMetrics;
+    let perTestMetrics = _allPerTestMetrics;
+    let daily = _allDaily;
+
+    /* Model filter state — empty Set means "no filter, show all". */
+    const selectedModels = new Set();
+
+    /* Additional filter state */
+    let minF1 = 0;
+    const selectedModalities = new Set();
+    let minThroughput = 0;  // tok/s (median_throughput/60)
+    let minCost = 0;  // $/response
+    let maxThroughput = 0;  // computed from data
+    let maxCost = 0;  // computed from data
+
+    /* ── Theme helpers ────────────────────────────────────────── */
+    function gc(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+    function theme() {
+        return {
+            bg: gc('--color-bg-secondary'),
+            bgPri: gc('--color-bg-primary'),
+            txt: gc('--color-text-secondary'),
+            txtPri: gc('--color-text-primary'),
+            border: gc('--color-border') || '#444',
+            accent: gc('--color-accent-secondary'),
+        };
+    }
+
+    /* ── Formatters ───────────────────────────────────────────── */
+    function fmtPct(v) { return v == null ? '—' : (v * 100).toFixed(1) + '%'; }
+    function fmtNum(v) { return v == null ? '—' : Number(v).toLocaleString(); }
+    function fmtDec(v, d) { return v == null ? '—' : Number(v).toFixed(d ?? 2); }
+    function escHtml(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+    function f1Class(v) {
+        if (v == null) return 'f1-none';
+        if (v >= 0.85) return 'f1-high';
+        if (v >= 0.70) return 'f1-mid';
+        return 'f1-low';
+    }
+
+    /* ── KPI strip ────────────────────────────────────────────── */
+    function renderKPIs() {
+        const totalResponses = metrics.reduce((s, m) => s + (m.total_responses || 0), 0);
+        const totalTokens = daily.reduce((s, d) => s + (d.total_tokens || 0), 0);
+        const totalSpend = daily.reduce((s, d) => s + (d.total_cost_usd || 0), 0);
+        const totalRuns = metrics.reduce((s, m) => s + (m.total_runs || 0), 0);
+
+        const kpis = [
+            { label: 'Models', value: metrics.length, icon: 'psychology' },
+            { label: 'Model-Runs', value: fmtNum(totalRuns), icon: 'play_circle' },
+            { label: 'Responses', value: fmtNum(totalResponses), icon: 'question_answer' },
+            { label: 'Tokens', value: totalTokens >= 1e6 ? (totalTokens / 1e6).toFixed(1) + 'M' : fmtNum(Math.round(totalTokens)), icon: 'token' },
+            { label: 'Spend (USD)', value: '$' + totalSpend.toFixed(2), icon: 'attach_money' },
+        ];
+
+        document.getElementById('kpi-strip').innerHTML = kpis.map(k => `
+        <div class="card flex items-center gap-3 !p-4 !mb-0">
+            <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-[var(--color-accent-secondary)]/10 flex-shrink-0">
+                <span class="material-icons text-[20px] text-[var(--color-accent-secondary)]">${k.icon}</span>
+            </div>
+            <div>
+                <div class="text-xl font-bold text-[var(--color-text-primary)]">${k.value}</div>
+                <div class="muted" style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">${k.label}</div>
+            </div>
+        </div>`).join('');
+    }
+
+    /* ── Model Leaderboard ────────────────────────────────────── */
+    function renderLeaderboard() {
+        const tbody = document.getElementById('leaderboard-body');
+        if (!metrics.length) {
+            tbody.innerHTML = `<tr><td colspan="10" class="text-center py-10 text-sm muted">No data yet.</td></tr>`;
+            return;
+        }
+
+        const MODALITY_META = [
+            { key: 'median_text_f1', icon: 'article', label: 'TXT' },
+            { key: 'median_image_f1', icon: 'image', label: 'IMG' },
+            { key: 'median_audio_f1', icon: 'audiotrack', label: 'AUD' },
+            { key: 'median_video_f1', icon: 'videocam', label: 'VID' },
+        ];
+
+        const rows = [];
+        metrics.forEach((m, i) => {
+            const costPerResp = (m.total_cost_usd > 0 && m.total_responses > 0)
+                ? m.total_cost_usd / m.total_responses : null;
+
+            const modBadges = MODALITY_META
+                .filter(d => m[d.key] != null)
+                .map(d => `<span class="modality-badge">
+                <span class="material-icons" style="font-size:13px;line-height:1;color:var(--color-accent-secondary)">${d.icon}</span>
+                ${d.label}
+                <span class="f1-pill ${f1Class(m[d.key])}" style="padding:1px 6px;font-size:10px;margin-left:1px">${fmtPct(m[d.key])}</span>
+            </span>`).join('');
+
+            rows.push(`
+        <tr class="border-b border-[var(--color-border)] hover:bg-[var(--color-highlight-shade1)] transition-colors">
+            <td class="px-4 py-3 text-xs font-mono muted">${i + 1}</td>
+            <td class="px-4 py-3 text-sm font-medium max-w-[280px]">
+                <span class="truncate block" title="${escHtml(m.responder_id)}">${escHtml(m.responder_id)}</span>
+                ${modBadges ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">${modBadges}</div>` : ''}
+            </td>
+            <td class="px-4 py-3 text-center">
+                <span class="f1-pill ${f1Class(m.median_f1)}">${fmtPct(m.median_f1)}</span>
+            </td>
+            <td class="px-4 py-3 text-sm text-right muted">${fmtCompact(m.total_responses)}</td>
+            <td class="px-4 py-3 text-sm text-right muted">${fmtNum(m.total_runs)}</td>
+            <td class="px-4 py-3 text-sm text-right muted">${m.median_output_tps != null ? fmtDec(m.median_output_tps, 1) : '—'}</td>
+            <td class="px-4 py-3 text-sm text-right muted">${m.median_latency_p50 != null ? fmtDec(m.median_latency_p50, 2) + 's' : '—'}</td>
+            <td class="px-4 py-3 text-sm text-right muted">${m.median_throughput != null ? (m.median_throughput / 60).toFixed(1) + ' tok/s' : '—'}</td>
+            <td class="px-4 py-3 text-sm text-right ${Number(m.median_refusal_error_rate) > 0.1 ? 'text-red-500' : 'muted'}">${fmtPct(m.median_refusal_error_rate)}</td>
+            <td class="px-4 py-3 text-sm text-right muted">${costPerResp != null ? '$' + costPerResp.toFixed(5) : '—'}</td>
+        </tr>`);
+        });
+
+        tbody.innerHTML = rows.join('');
+    }
+
+    /* ── Per-Test Drilldown ───────────────────────────────────── */
+    function renderDrilldown() {
+        const container = document.getElementById('drilldown-container');
+        if (!perTestMetrics.length) return;
+
+        const byTest = {};
+        perTestMetrics.forEach(r => { (byTest[r.test_id] ??= []).push(r); });
+
+        // Most model coverage first
+        const testIds = Object.keys(byTest).sort((a, b) => byTest[b].length - byTest[a].length);
+
+        container.innerHTML = testIds.map(testId => {
+            const testName = testsById[testId] || testId;
+            const rows = byTest[testId].slice().sort((a, b) => (b.median_f1 ?? 0) - (a.median_f1 ?? 0));
+
+            const tableRows = rows.map((r, i) => `
+            <tr class="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-highlight-shade1)] transition-colors">
+                <td class="px-4 py-2.5 text-xs font-mono muted">${i + 1}</td>
+                <td class="px-4 py-2.5 text-sm font-medium max-w-[220px]">
+                    <span class="truncate block" title="${escHtml(r.responder_id)}">${escHtml(r.responder_id)}</span>
+                </td>
+                <td class="px-4 py-2.5 text-center">
+                    <span class="f1-pill ${f1Class(r.median_f1)}">${fmtPct(r.median_f1)}</span>
+                </td>
+                <td class="px-4 py-2.5 text-sm text-right muted">${r.median_output_tps != null ? fmtDec(r.median_output_tps, 1) : '—'}</td>
+                <td class="px-4 py-2.5 text-sm text-right muted">${r.median_latency_p50 != null ? fmtDec(r.median_latency_p50, 2) + 's' : '—'}</td>
+                <td class="px-4 py-2.5 text-sm text-right muted">${r.median_throughput != null ? (r.median_throughput / 60).toFixed(1) + ' tok/s' : '—'}</td>
+                <td class="px-4 py-2.5 text-sm text-right ${(r.median_refusal_rate ?? 0) > 0.1 ? 'text-red-500' : 'muted'}">${fmtPct(r.median_refusal_rate)}</td>
+                <td class="px-4 py-2.5 text-sm text-right muted">${fmtNum(r.total_responses)}</td>
+            </tr>`).join('');
+
+            return `
+            <div class="card p-0 overflow-hidden !mb-2">
+                <button class="accordion-trigger w-full px-5 py-3.5 flex items-center justify-between gap-3 text-left"
+                        onclick="toggleAccordion(this)">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                        <span class="material-icons text-[var(--color-accent-secondary)] text-[18px] flex-shrink-0">assignment</span>
+                        <span class="font-medium text-sm truncate">${escHtml(testName)}</span>
+                        <span class="text-xs muted flex-shrink-0">${rows.length} model${rows.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    <span class="material-icons accordion-icon muted flex-shrink-0">expand_more</span>
+                </button>
+                <div class="accordion-content" style="max-height:0;">
+                    <div class="border-t border-[var(--color-border)]">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="bg-[var(--color-bg-primary)] text-[10px] font-semibold uppercase tracking-wider muted">
+                                    <th class="px-4 py-2 text-left w-8">#</th>
+                                    <th class="px-4 py-2 text-left">Model</th>
+                                    <th class="px-4 py-2 text-center">F1</th>
+                                    <th class="px-4 py-2 text-right">Output tok/s</th>
+                                    <th class="px-4 py-2 text-right">Latency p50</th>
+                                    <th class="px-4 py-2 text-right">Throughput</th>
+                                    <th class="px-4 py-2 text-right">Refusal</th>
+                                    <th class="px-4 py-2 text-right">Responses</th>
+                                </tr>
+                            </thead>
+                            <tbody>${tableRows}</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function toggleAccordion(trigger) {
+        const content = trigger.nextElementSibling;
+        const icon = trigger.querySelector('.accordion-icon');
+        const isOpen = content.style.maxHeight !== '0px' && content.style.maxHeight !== '';
+        if (isOpen) {
+            content.style.maxHeight = '0';
+            icon.style.transform = '';
+        } else {
+            content.style.maxHeight = content.scrollHeight + 'px';
+            icon.style.transform = 'rotate(180deg)';
+        }
+    }
+
+    /* ── Quality vs Volume scatter ────────────────────────────── */
+    function drawScatter() {
+        const t = theme();
+        const container = document.getElementById('scatter-chart');
+        if (!metrics.length) { container.innerHTML = emptyMsg(); return; }
+
+        const data = new google.visualization.DataTable();
+        data.addColumn('number', 'Responses');
+        data.addColumn('number', 'Median F1');
+        data.addColumn({ type: 'string', role: 'tooltip', p: { html: true } });
+        data.addColumn({ type: 'string', role: 'style' });
+        metrics.forEach(m => data.addRow([
+            m.total_responses || 0,
+            m.median_f1 || 0,
+            `<div style="padding:10px;font-family:sans-serif;font-size:12px;color:${t.txtPri};background:${t.bgPri};border:1px solid ${t.border};border-radius:6px;min-width:180px">
+            <b style="display:block;margin-bottom:4px">${escHtml(m.responder_id)}</b>
+            F1: ${fmtPct(m.median_f1)}<br>
+            Responses: ${fmtNum(m.total_responses)}<br>
+            Runs: ${fmtNum(m.total_runs)}
+        </div>`,
+            `point {size: 6; fill-color: ${t.accent}; stroke-color: ${t.accent};}`,
+        ]));
+
+        new google.visualization.ScatterChart(container).draw(data, {
+            backgroundColor: t.bg,
+            chartArea: { left: 56, top: 20, width: '82%', height: '76%' },
+            hAxis: { title: 'Responses', textStyle: { color: t.txt }, titleTextStyle: { color: t.txt }, gridlines: { color: t.border }, baselineColor: t.border },
+            vAxis: { title: 'Median F1', format: 'percent', viewWindow: { min: 0, max: 1 }, textStyle: { color: t.txt }, titleTextStyle: { color: t.txt }, gridlines: { color: t.border }, baselineColor: t.border },
+            legend: { position: 'none' },
+            tooltip: { isHtml: true, trigger: 'focus' },
+        });
+    }
+
+    /* ── Performance per Parameter scatter ───────────────────── */
+    function parseParamsBillions(responder_id) {
+        const meta = modelsMeta[responder_id];
+        if (meta) {
+            if (meta.parameters && meta.parameters > 0) return meta.parameters / 1e9;
+            if (meta.parameters_label) return labelToBillions(meta.parameters_label);
+        }
+        return labelToBillions(responder_id);
+    }
+
+    function labelToBillions(s) {
+        if (!s) return null;
+        const m = String(s).match(/(\d+\.?\d*)\s*([bBmMtT])/);
+        if (!m) return null;
+        const v = parseFloat(m[1]), unit = m[2].toUpperCase();
+        if (unit === 'T') return v * 1000;
+        if (unit === 'B') return v;
+        if (unit === 'M') return v / 1000;
+        return null;
+    }
+
+    function drawParamScatter() {
+        const t = theme();
+        const container = document.getElementById('param-scatter-chart');
+        const points = metrics
+            .map(m => ({ m, params: parseParamsBillions(m.responder_id) }))
+            .filter(({ params }) => params != null && params > 0);
+
+        if (!points.length) {
+            container.innerHTML = '<p class="text-sm muted text-center py-16">No parameter data available.</p>';
+            return;
+        }
+
+        const data = new google.visualization.DataTable();
+        data.addColumn('number', 'Parameters (B)');
+        data.addColumn('number', 'Median F1');
+        data.addColumn({ type: 'string', role: 'tooltip', p: { html: true } });
+        data.addColumn({ type: 'string', role: 'style' });
+        points.forEach(({ m, params }) => data.addRow([
+            params,
+            m.median_f1 || 0,
+            `<div style="padding:10px;font-family:sans-serif;font-size:12px;color:${t.txtPri};background:${t.bgPri};border:1px solid ${t.border};border-radius:6px;min-width:180px">
+            <b style="display:block;margin-bottom:4px">${escHtml(m.responder_id)}</b>
+            F1: ${fmtPct(m.median_f1)}<br>
+            Parameters: ${params.toFixed(1)}B<br>
+            Responses: ${fmtNum(m.total_responses)}
+        </div>`,
+            `point {size: 6; fill-color: ${t.accent}; stroke-color: ${t.accent};}`,
+        ]));
+
+        new google.visualization.ScatterChart(container).draw(data, {
+            backgroundColor: t.bg,
+            chartArea: { left: 56, top: 20, width: '82%', height: '76%' },
+            hAxis: { title: 'Parameters (B)', textStyle: { color: t.txt }, titleTextStyle: { color: t.txt }, gridlines: { color: t.border }, baselineColor: t.border },
+            vAxis: { title: 'Median F1', format: 'percent', viewWindow: { min: 0, max: 1 }, textStyle: { color: t.txt }, titleTextStyle: { color: t.txt }, gridlines: { color: t.border }, baselineColor: t.border },
+            legend: { position: 'none' },
+            tooltip: { isHtml: true, trigger: 'focus' },
+        });
+    }
+
+    /* ── Daily token usage (stacked column) ──────────────────── */
+    function drawDailyTokens() {
+        const t = theme();
+        const container = document.getElementById('daily-tokens');
+        if (!daily.length) { container.innerHTML = emptyMsg(); return; }
+
+        const chartColors = [t.accent, '#60a5fa', '#f59e0b', '#34d399', '#a78bfa', '#f87171', '#fb923c'];
+
+        const data = new google.visualization.DataTable();
+        data.addColumn('string', 'Date');
+        const owners = [...new Set(daily.map(d => d.owner))].sort();
+        owners.forEach(o => data.addColumn('number', o));
+
+        const byDay = {};
+        daily.forEach(d => {
+            const day = new Date(d.date * 1000).toISOString().slice(0, 10);
+            byDay[day] ??= {};
+            byDay[day][d.owner] = d;
+        });
+        Object.keys(byDay).sort().forEach(day =>
+            data.addRow([day, ...owners.map(o => byDay[day][o]?.total_tokens || 0)]));
+
+        // Compute max stacked value so we can generate compact tick labels
+        const maxStacked = Object.values(byDay).reduce((mx, dayData) => {
+            const sum = owners.reduce((s, o) => s + (dayData[o]?.total_tokens || 0), 0);
+            return Math.max(mx, sum);
+        }, 0);
+
+        new google.visualization.ColumnChart(container).draw(data, {
+            backgroundColor: t.bg,
+            isStacked: true,
+            chartArea: { left: 52, top: 16, width: '89%', height: '72%' },
+            bar: { groupWidth: '65%' },
+            legend: { position: 'bottom', textStyle: { color: t.txt } },
+            hAxis: { textStyle: { color: t.txt }, gridlines: { color: t.border }, baselineColor: t.txt },
+            vAxis: {
+                textStyle: { color: t.txt }, gridlines: { color: t.border }, baselineColor: t.txt,
+                ticks: compactTicks(maxStacked)
+            },
+            colors: chartColors,
+        });
+    }
+
+    function compactTicks(maxVal, steps = 5) {
+        if (maxVal <= 0) return [{ v: 0, f: '0' }];
+        const raw = maxVal / steps;
+        const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+        const step = Math.ceil(raw / mag) * mag;
+        const ticks = [];
+        for (let v = 0; v <= maxVal + step * 0.5; v += step) {
+            ticks.push({ v, f: fmtCompact(v) });
+        }
+        return ticks;
+    }
+
+    function fmtCompact(v) {
+        if (v === 0) return '0';
+        if (v >= 1e9) return (v / 1e9).toFixed(v % 1e9 === 0 ? 0 : 1).replace(/\.0$/, '') + 'B';
+        if (v >= 1e6) return (v / 1e6).toFixed(v % 1e6 === 0 ? 0 : 1).replace(/\.0$/, '') + 'M';
+        if (v >= 1e3) return (v / 1e3).toFixed(v % 1e3 === 0 ? 0 : 1).replace(/\.0$/, '') + 'K';
+        return String(v);
+    }
+
+    /* ── Daily spend calendar heatmap ────────────────────────── */
+    let calendarChart = null;
+    let calendarRows = [];
+
+    function drawSpendCalendar() {
+        const t = theme();
+        const spendCard = document.getElementById('spend-card');
+        const container = document.getElementById('daily-spend');
+        if (!daily.length) { container.innerHTML = emptyMsg(); return; }
+
+        const currentYear = new Date().getFullYear();
+        const spendByDay = {};
+        daily.forEach(d => {
+            const day = new Date(d.date * 1000).toISOString().slice(0, 10);
+            if (!day.startsWith(currentYear + '-')) return;
+            spendByDay[day] = (spendByDay[day] || 0) + (d.total_cost_usd || 0);
+        });
+        calendarRows = Object.entries(spendByDay).sort(([a], [b]) => a.localeCompare(b));
+
+        const data = new google.visualization.DataTable();
+        data.addColumn({ type: 'date', id: 'Date' });
+        data.addColumn({ type: 'number', id: 'Spend (USD)' });
+        data.addColumn({ type: 'string', role: 'tooltip' }); // suppress default tooltip
+        calendarRows.forEach(([day, val]) => {
+            const [y, mo, dd] = day.split('-').map(Number);
+            data.addRow([new Date(y, mo - 1, dd), val, '']);
+        });
+
+        // Fill card width; account for px-6 padding (48px total)
+        const cardW = spendCard.clientWidth - 48;
+        const cellSize = Math.max(12, Math.floor((cardW - 60) / 54));
+        const chartH = cellSize * 7 + 85;
+        container.style.height = chartH + 'px';
+
+        calendarChart = new google.visualization.Calendar(container);
+
+        google.visualization.events.addListener(calendarChart, 'select', () => {
+            const sel = calendarChart.getSelection();
+            const el = document.getElementById('spend-selected');
+            if (!sel.length) { el.textContent = ''; return; }
+            const [day, val] = calendarRows[sel[0].row];
+            el.textContent = `${day}  -  $${val.toFixed(4)}`;
+        });
+
+        calendarChart.draw(data, {
+            width: cardW,
+            height: chartH,
+            backgroundColor: t.bg,
+            calendar: {
+                cellSize,
+                yearLabel: { fontName: 'Inter', fontSize: 18, color: t.txt, bold: false },
+                monthLabel: { fontName: 'Inter', fontSize: 11, color: t.txt },
+                dayOfWeekLabel: { fontName: 'Inter', fontSize: 10, color: t.txt },
+                unusedMonthOutlineColor: { stroke: t.border, strokeOpacity: 0.4, strokeWidth: 1 },
+                focusedCellColor: { stroke: t.accent, strokeOpacity: 1, strokeWidth: 2 },
+                backgroundColor: t.bg,
+            },
+            colorAxis: { minValue: 0, colors: [t.bgPri, t.accent] },
+            noDataPattern: { backgroundColor: t.bgPri, color: t.border },
+            tooltip: { trigger: 'none' },
+        });
+    }
+
+    /* ── Generic metric bar ───────────────────────────────────── */
+    function drawMetricBars(divId, key, fmtFn, isHorizontal) {
+        const t = theme();
+        const container = document.getElementById(divId);
+        if (!metrics.length) return;
+
+        const sorted = [...metrics].sort((a, b) => (b[key] ?? 0) - (a[key] ?? 0));
+        const data = new google.visualization.DataTable();
+        data.addColumn('string', 'Model');
+        data.addColumn('number', key);
+        data.addColumn({ type: 'string', role: 'tooltip' });
+        sorted.forEach(m => data.addRow([
+            m.responder_id,
+            m[key] == null ? 0 : Number(m[key]),
+            `${m.responder_id}\n${fmtFn ? fmtFn(m[key]) : fmtDec(m[key])}`
+        ]));
+
+        const ChartType = isHorizontal ? google.visualization.BarChart : google.visualization.ColumnChart;
+        new ChartType(container).draw(data, {
+            backgroundColor: t.bg,
+            legend: { position: 'none' },
+            colors: [t.accent],
+            chartArea: isHorizontal
+                ? { left: '32%', top: 16, width: '62%', height: '84%' }
+                : { left: 56, top: 16, width: '84%', height: '74%' },
+            hAxis: { textStyle: { color: t.txt }, gridlines: { color: t.border }, baselineColor: t.txt },
+            vAxis: { textStyle: { color: t.txt, fontSize: 10 }, gridlines: { color: isHorizontal ? 'transparent' : t.border } },
+        });
+    }
+
+    /* ── Helpers ──────────────────────────────────────────────── */
+    function emptyMsg() {
+        return '<p class="text-sm muted text-center py-16">No data available.</p>';
+    }
+
+    /* ── Model filter (Jira/Buganizer-style multi-select) ────── */
+    function applyModelFilter() {
+        let filtered = _allMetrics;
+
+        // Model filter
+        if (selectedModels.size > 0) {
+            filtered = filtered.filter(m => selectedModels.has(m.responder_id));
+        }
+
+        // F1 filter
+        if (minF1 > 0) {
+            filtered = filtered.filter(m => (m.median_f1 ?? 0) >= minF1);
+        }
+
+        // Modality filter
+        if (selectedModalities.size > 0) {
+            const modMap = { text: 'median_text_f1', image: 'median_image_f1', audio: 'median_audio_f1', video: 'median_video_f1' };
+            const keys = [...selectedModalities].map(k => modMap[k]);
+            filtered = filtered.filter(m => keys.some(k => m[k] != null));
+        }
+
+        // Throughput filter (tok/s)
+        if (minThroughput > 0) {
+            filtered = filtered.filter(m => {
+                const tps = (m.median_throughput ?? 0) / 60;
+                return tps >= minThroughput;
+            });
+        }
+
+        // Cost filter ($/response)
+        if (minCost > 0) {
+            filtered = filtered.filter(m => {
+                const cpr = (m.total_cost_usd > 0 && m.total_responses > 0)
+                    ? m.total_cost_usd / m.total_responses : 0;
+                return cpr >= minCost;
+            });
+        }
+
+        metrics = filtered;
+        perTestMetrics = _allPerTestMetrics.filter(m => metrics.find(fm => fm.responder_id === m.responder_id));
+        // daily stays unfiltered (org-level, not model-level).
+        daily = _allDaily;
+    }
+
+    function syncModelFilterUrl() {
+        const params = new URLSearchParams(window.location.search);
+        if (selectedModels.size === 0) {
+            params.delete('models');
+        } else {
+            params.set('models', [...selectedModels].join(','));
+        }
+        const qs = params.toString();
+        history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname);
+    }
+
+    function updateModelFilterUi() {
+        // Master checkbox
+        const masterCb = document.getElementById('mf-all-checkbox');
+        if (masterCb) {
+            const total = allModelIds.length;
+            const sel = selectedModels.size;
+            masterCb.checked = total > 0 && sel === total;
+            masterCb.indeterminate = sel > 0 && sel < total;
+        }
+        // Individual checkboxes
+        document.querySelectorAll('#model-filter-list .mf-check input[type="checkbox"]').forEach(cb => {
+            cb.checked = selectedModels.has(cb.value);
+        });
+    }
+
+    function rerender() {
+        applyModelFilter();
+        updateModelFilterUi();
+        syncModelFilterUrl();
+        renderAllCharts();
+    }
+
+    let allModelIds = [];
+
+    function initModelFilter() {
+        // Union of every responder_id we could ever show, sorted alphabetically.
+        allModelIds = [...new Set(_allMetrics.map(m => m.responder_id))].sort((a, b) =>
+            a.localeCompare(b, undefined, { sensitivity: 'base' })
+        );
+
+        // Restore state from URL
+        const urlModels = new URLSearchParams(window.location.search).get('models');
+        if (urlModels) {
+            const known = new Set(allModelIds);
+            urlModels.split(',').filter(id => known.has(id)).forEach(id => selectedModels.add(id));
+        }
+
+        const rowEl = document.getElementById('model-filter-row');
+
+        if (!allModelIds.length) {
+            rowEl.innerHTML = '<span class="mf-empty">No models available.</span>';
+            return;
+        }
+
+        // Master "All Models" checkbox + nested list
+        const checksHtml = allModelIds.map(id => `
+        <label class="mf-check mf-check-child" title="${escHtml(id)}">
+            <input type="checkbox" value="${escHtml(id)}">
+            <span class="mf-check-label">${escHtml(id)}</span>
+        </label>`).join('');
+
+        rowEl.innerHTML = `
+        <label class="mf-check mf-check-all" id="mf-all-label" title="Select or deselect all models">
+            <input type="checkbox" id="mf-all-checkbox">
+            <span class="mf-check-label">All Models</span>
+        </label>
+        <div id="model-filter-list" data-total="${allModelIds.length}">
+            ${checksHtml}
+        </div>`;
+
+        // Master checkbox → select all / deselect all
+        const masterCb = document.getElementById('mf-all-checkbox');
+        masterCb.addEventListener('change', () => {
+            if (masterCb.checked) {
+                allModelIds.forEach(id => selectedModels.add(id));
+            } else {
+                selectedModels.clear();
+            }
+            rerender();
+        });
+
+        // Individual checkboxes → update set + sync master
+        const listEl = document.getElementById('model-filter-list');
+        listEl.addEventListener('change', e => {
+            const cb = e.target;
+            if (cb.tagName !== 'INPUT') return;
+            if (cb.checked) selectedModels.add(cb.value);
+            else selectedModels.delete(cb.value);
+            rerender();
+        });
+
+        updateModelFilterUi();
+    }
+
+    /* ── F1 slider filter ───────────────────────────────────── */
+    function initF1Filter() {
+        const input = document.getElementById('f1-min-input');
+        const label = document.getElementById('f1-min-label');
+        if (!input || !label) return;
+
+        input.addEventListener('input', () => {
+            minF1 = parseInt(input.value, 10) / 100;
+            label.textContent = input.value + '%';
+            rerender();
+        });
+    }
+
+    /* ── Modality chips filter ──────────────────────────────── */
+    function initModalityFilter() {
+        const chips = document.querySelectorAll('#modality-chips .mod-chip input[type="checkbox"]');
+        chips.forEach(cb => {
+            cb.addEventListener('change', () => {
+                if (cb.checked) selectedModalities.add(cb.value);
+                else selectedModalities.delete(cb.value);
+                rerender();
+            });
+        });
+    }
+
+    /* ── Throughput slider filter ───────────────────────────── */
+    function initThroughputFilter() {
+        const input = document.getElementById('throughput-min-input');
+        const label = document.getElementById('throughput-min-label');
+        const maxLabel = document.getElementById('throughput-max-label');
+        if (!input || !label) return;
+
+        // Compute max throughput from all data (tok/s)
+        maxThroughput = Math.max(..._allMetrics.map(m => (m.median_throughput ?? 0) / 60));
+        const cap = maxThroughput > 0 ? Math.ceil(maxThroughput) : 100;
+        input.max = cap;
+        input.step = cap > 1000 ? 10 : cap > 100 ? 1 : 0.1;
+        if (maxLabel) maxLabel.textContent = cap + ' tok/s';
+
+        input.addEventListener('input', () => {
+            minThroughput = parseFloat(input.value);
+            label.textContent = parseFloat(input.value).toFixed(input.step < 1 ? 1 : 0) + ' tok/s';
+            rerender();
+        });
+    }
+
+    /* ── Cost slider filter ─────────────────────────────────── */
+    function initCostFilter() {
+        const input = document.getElementById('cost-min-input');
+        const label = document.getElementById('cost-min-label');
+        const maxLabel = document.getElementById('cost-max-label');
+        if (!input || !label) return;
+
+        // Compute max cost/response from all data
+        maxCost = 0;
+        _allMetrics.forEach(m => {
+            if (m.total_cost_usd > 0 && m.total_responses > 0) {
+                maxCost = Math.max(maxCost, m.total_cost_usd / m.total_responses);
+            }
+        });
+        const decimals = maxCost < 0.01 ? 6 : maxCost < 1 ? 5 : 2;
+        input.step = maxCost > 0 ? maxCost / 100 : 0.000001;
+        if (maxLabel) maxLabel.textContent = '$' + maxCost.toFixed(decimals);
+
+        input.addEventListener('input', () => {
+            minCost = parseFloat(input.value);
+            label.textContent = '$' + minCost.toFixed(decimals);
+            rerender();
+        });
+    }
+
+    /* ── Chart render pipeline ────────────────────────────────── */
+    function renderAllCharts() {
+        // Compute derived fields on the current (filtered) view
+        metrics.forEach(m => {
+            m.cost_per_response = (m.total_cost_usd > 0 && m.total_responses > 0)
+                ? m.total_cost_usd / m.total_responses : null;
+        });
+
+        renderKPIs();
+        renderLeaderboard();
+        renderDrilldown();
+        drawScatter();
+        drawParamScatter();
+        drawDailyTokens();
+        drawSpendCalendar();
+        drawMetricBars('f1-chart', 'median_f1', fmtPct, true);
+        drawMetricBars('output-tps-chart', 'median_output_tps', v => fmtDec(v, 1) + ' tok/s', true);
+        drawMetricBars('refusal-chart', 'median_refusal_error_rate', fmtPct, true);
+        drawMetricBars('dur-chart', 'median_latency_p50', v => fmtDec(v) + 's', false);
+        drawMetricBars('lat-p95-chart', 'median_latency_p95', v => fmtDec(v) + 's', false);
+        drawMetricBars('throughput-chart', 'median_throughput', v => (v / 60).toFixed(1) + ' tok/s', true);
+        drawMetricBars('first-response-chart', 'median_first_response_latency', v => fmtDec(v) + 's', false);
+        drawMetricBars('cost-chart', 'cost_per_response', v => v != null ? '$' + v.toFixed(5) : '—', true);
+    }
+
+    /* ── Entry point ──────────────────────────────────────────── */
+    let _filterInitialized = false;
+    function onChartsReady() {
+        if (!_filterInitialized) {
+            initModelFilter();
+            initF1Filter();
+            initModalityFilter();
+            initThroughputFilter();
+            initCostFilter();
+            _filterInitialized = true;
+        }
+        applyModelFilter();
+        renderAllCharts();
+    }
+
+    /* ── Redraw on resize / theme toggle ─────────────────────── */
+    window.addEventListener('resize', onChartsReady);
+    new MutationObserver(muts => muts.forEach(m => {
+        if (m.type === 'attributes') setTimeout(onChartsReady, 0);
+    })).observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] });
+</script>
+{% endblock %}

@@ -1,0 +1,605 @@
+{% extends "base.html" %}
+{% block title %}Pelidum MPAC - {{ test_pb.name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="content-title">{{ test_pb.name }}</h1>
+            <p class="mt-1 muted">
+                <span class="font-semibold">ID:</span> {{ test_pb.id }}
+            </p>
+        </div>
+        <div class="flex items-center space-x-2">
+            <button type="button" onclick="history.back()" class="button-secondary">
+                <span class="material-icons text-[20px]">arrow_back</span>
+                Back to List
+            </button>
+        </div>
+    </div>
+
+    <div class="card p-6 mb-6">
+        <h3
+            class="flex items-center gap-2.5 text-xl font-semibold pb-3 mb-4 border-b border-[var(--color-border)] text-accent">
+            <span class="material-icons">science</span>
+            Test Details
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+            <div class="flex items-start gap-3">
+                <span class="material-icons text-accent mt-px text-[20px]">person</span>
+                <div>
+                    <span class="block text-sm font-medium text-muted mb-0.5">Owner</span>
+                    <p class="font-medium text-base break-words">{{ test_pb.owner }}</p>
+                </div>
+            </div>
+            <div class="flex items-start gap-3">
+                <span class="material-icons text-accent mt-px text-[20px]">apartment</span>
+                <div>
+                    <span class="block text-sm font-medium text-muted mb-0.5">Provider</span>
+                    <p class="font-medium text-base break-words">{{ test_pb.provider }}</p>
+                </div>
+            </div>
+            <div class="flex items-start gap-3">
+                <span class="material-icons text-accent mt-px text-[20px]">event</span>
+                <div>
+                    <span class="block text-sm font-medium text-muted mb-0.5">Created</span>
+                    <p class="font-medium text-base break-words"
+                        data-timestamp="{{ test_pb.created_at_utc.ToJsonString() }}">
+                        {{ test_pb.created_at_utc.ToJsonString() }}
+                    </p>
+                </div>
+            </div>
+            <div class="flex items-start gap-3">
+                <span class="material-icons text-accent mt-px text-[20px]">update</span>
+                <div>
+                    <span class="block text-sm font-medium text-muted mb-0.5">Last Modified</span>
+                    <p class="font-medium text-base break-words"
+                        data-timestamp="{{ test_pb.modified_at_utc.ToJsonString() }}">
+                        {{ test_pb.modified_at_utc.ToJsonString() }}
+                    </p>
+                </div>
+            </div>
+
+            <div class="md:col-span-2 mt-2">
+                <span class="block text-sm font-medium text-muted mb-0.5">Description</span>
+                <div
+                    class="font-medium text-base break-words bg-[var(--color-highlight-shade1)] px-4 py-3 rounded-lg border border-[var(--color-border)]">
+                    {{ test_pb.description or 'No description provided.' }}
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-6">
+            {% if is_admin or test_pb.owner == user_email %}
+            <div class="mb-4 p-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-highlight-shade1)]">
+                <h4 class="text-sm font-semibold uppercase tracking-wider muted mb-3 flex items-center gap-2">
+                    <span class="material-icons text-[18px]">visibility</span>
+                    Visibility
+                </h4>
+                <div class="flex flex-wrap items-end gap-3">
+                    <div>
+                        <label for="visibility-select" class="label-bold block mb-1 text-sm">Who can view</label>
+                        <select id="visibility-select" class="select-field">
+                            <option value="PUBLIC" {{ 'selected' if test_pb.visibility.type in [0, 2, 4] }}>Public</option>
+                            <option value="OWNER_ONLY" {{ 'selected' if test_pb.visibility.type == 1 }}>Only me</option>
+                            <option value="SPECIFIED_USERS" {{ 'selected' if test_pb.visibility.type == 3 }}>Specific users</option>
+                            {% if is_admin %}
+                            <option value="ADMIN" {{ 'selected' if test_pb.visibility.type == 5 }}>Admins only</option>
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div id="allowed-users-field" class="{{ 'hidden' if test_pb.visibility.type != 3 }}">
+                        <label for="allowed-users-input" class="label-bold block mb-1 text-sm">Allowed users (comma-separated emails)</label>
+                        <input type="text" id="allowed-users-input" class="input-field w-64"
+                            placeholder="user@example.com, ..."
+                            value="{{ test_pb.visibility.allowed_users | join(', ') }}">
+                    </div>
+                    <button onclick="updateVisibility()" class="button-secondary">
+                        <span class="material-icons text-[18px]">save</span> Save
+                    </button>
+                </div>
+            </div>
+            {% else %}
+            {% if test_pb.visibility.type == 1 %}
+            <div class="mb-4 text-sm text-muted flex items-center gap-1">
+                <span class="material-icons text-[16px]">lock</span> Private (owner only)
+            </div>
+            {% endif %}
+            {% endif %}
+
+            <div class="flex justify-end items-center space-x-3">
+                {% if is_admin or test_pb.owner == user_email %}
+                <a href="/tests/{{ test_pb.id }}/edit" class="button-secondary">
+                    <span class="material-icons text-[20px]">edit</span> Edit
+                </a>
+                <button onclick="deleteTest()" class="button-secondary" style="color:#ef4444;border-color:#ef4444;">
+                    <span class="material-icons text-[20px]">delete</span> Delete
+                </button>
+                {% endif %}
+
+                {% if test_pb.type == 1 %}
+                <a class="button-secondary" href="/metrics?test_id={{ test_pb.id }}">
+                    <span class="material-icons-outlined">leaderboard</span> Metrics
+                </a>
+                {% endif %}
+
+                <a href="{{ url_for('run_config', test_id=test_pb.id) }}" class="button-primary">
+                    <span class="material-icons-outlined">play_arrow</span> Run Test
+                </a>
+
+                <div class="relative inline-block text-left">
+                    <button type="button" id="download-button" class="button-secondary" aria-expanded="false"
+                        aria-haspopup="true">
+                        Download
+                        <span class="material-icons text-secondary text-[20px]">expand_more</span>
+                    </button>
+                    <div id="download-dropdown"
+                        class="dropdown-menu origin-top-right absolute right-0 mt-2 w-36 rounded-md shadow-lg hidden"
+                        role="menu">
+                        <div class="py-1" role="none">
+                            <a href="{{ url_for('download_test_csv', test_id=test_pb.id) }}" class="dropdown-item"
+                                role="menuitem">CSV</a>
+                            <a href="{{ url_for('download_test_json', test_id=test_pb.id) }}" class="dropdown-item"
+                                role="menuitem">JSON</a>
+                            <a href="{{ url_for('download_test_archive', test_id=test_pb.id) }}" class="dropdown-item"
+                                role="menuitem">Archive (.zip)</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card p-6">
+        <h3 class="flex items-center gap-2.5 text-xl font-semibold pb-3 mb-4 section-divider text-accent">
+            <span class="material-icons">quiz</span>
+            Test Items ({{ test_pb.item_count }})
+        </h3>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div>
+                <label for="filterItemQuestion" class="label-bold block mb-1">Question Text</label>
+                <input type="text" id="filterItemQuestion" class="input-field w-full"
+                    placeholder="Filter by question...">
+            </div>
+            <div>
+                <label for="filterItemContent" class="label-bold block mb-1">Context Text</label>
+                <input type="text" id="filterItemContent" class="input-field w-full" placeholder="Filter by context...">
+            </div>
+            <div>
+                <label for="filterItemAnswer" class="label-bold block mb-1">Answer Text</label>
+                <input type="text" id="filterItemAnswer" class="input-field w-full" placeholder="Filter by answer...">
+            </div>
+            <div>
+                <label for="filterItemChoices" class="label-bold block mb-1">Choices Text</label>
+                <input type="text" id="filterItemChoices" class="input-field w-full" placeholder="Filter by choices...">
+            </div>
+            <div>
+                <label for="filterItemPositive" class="label-bold block mb-1">Relevant Instance</label>
+                <select id="filterItemPositive" class="select-field w-full">
+                    <option value="all">All</option>
+                    <option value="true">True</option>
+                    <option value="false">False</option>
+                </select>
+            </div>
+            <div>
+                <button id="clearItemFilters" class="button-secondary mt-7 w-full">
+                    <span class="material-icons text-[20px]">clear</span>
+                    Clear Filters
+                </button>
+            </div>
+        </div>
+
+        <div class="section-divider mb-4"></div>
+        <div class="flex justify-between items-center mb-4">
+            <p id="filter-results-count" class="muted text-sm"></p>
+            <span class="text-sm text-muted">
+                Showing {{ test_item_pbs|length }} of {{ test_pb.item_count }}
+            </span>
+        </div>
+
+        <div id="eval-items-accordion" class="space-y-3">
+            {% if test_item_pbs %}
+            {% for item in test_item_pbs %}
+            <div class="border border-[var(--color-border)] rounded-lg overflow-hidden"
+                data-filter-question="{{ (item.question or '').lower() }}"
+                data-filter-content="{{ (item.context or '').lower() }}"
+                data-filter-answer="{{ (item.answer or '').lower() }}"
+                data-filter-positive="{{ (item.is_relevant | string).lower() }}"
+                data-filter-choices="{{ (item.choices | join(' ')).lower() }}">
+
+                <button data-accordion-trigger
+                    class="flex justify-between items-center w-full p-4 text-left font-medium bg-[var(--color-bg-primary)] transition-colors duration-200 hover:bg-[var(--color-highlight-shade1)]"
+                    aria-expanded="false">
+                    <span class="flex-1 min-w-0 flex items-center gap-3">
+                        <span class="font-semibold mr-2">{{ loop.index }}.</span>
+
+                        <span class="clamp-1 text-primary flex items-center gap-2">
+                            {{ item.question }}
+                            {% if item.attachment_id %}
+                            <span class="material-icons text-secondary text-base"
+                                title="Has attachment">attach_file</span>
+                            {% endif %}
+                        </span>
+                    </span>
+                    <span data-accordion-icon
+                        class="material-icons text-secondary ml-4 transition-transform duration-200 ease-in-out">expand_more</span>
+                </button>
+
+                <div
+                    class="overflow-hidden max-h-0 transition-[max-height] duration-300 ease-in-out bg-[var(--color-highlight-shade1)]">
+                    <div class="p-4 space-y-4">
+                        <div class="flex items-start gap-3">
+                            <span class="material-icons text-accent mt-px text-[24px]">notes</span>
+                            <div>
+                                <span class="block text-sm font-medium text-muted mb-0.5">Question</span>
+                                <p class="font-medium text-base break-words">{{ item.question }}</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-start gap-3">
+                            <span class="material-icons text-accent mt-px text-[24px]">description</span>
+                            <div>
+                                <span class="block text-sm font-medium text-muted mb-0.5">Context</span>
+                                <p class="font-medium text-base break-words">{{ item.context }}</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-start gap-3">
+                            <span class="material-icons text-accent mt-px text-[24px]">check_circle_outline</span>
+                            <div>
+                                <span class="block text-sm font-medium text-muted mb-0.5">Correct Answer</span>
+                                <p class="font-medium text-base break-words">{{ item.answer }}</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-start gap-3">
+                            <span class="material-icons text-accent mt-px text-[24px]">thumb_up_off_alt</span>
+                            <div>
+                                <span class="block text-sm font-medium text-muted mb-0.5">Relevant Instance</span>
+                                <p class="font-medium text-base break-words">{{ item.is_relevant }}</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-start gap-3">
+                            <span class="material-icons text-accent mt-px text-[24px]">rule</span>
+                            <div>
+                                <span class="block text-sm font-medium text-muted mb-0.5">Choices</span>
+                                {% if item.choices %}
+                                <ul class="list-disc list-inside space-y-1 font-medium text-base break-words">
+                                    {% for choice in item.choices %}
+                                    <li>{{ choice }}</li>
+                                    {% endfor %}
+                                </ul>
+                                {% else %}
+                                <p class="font-medium text-base break-words text-muted">No choices for this item.</p>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        {% if item.attachment_id %}
+                        {% set att_pb = attachments_map.get(item.attachment_id) %}
+                        <div class="flex items-start gap-3">
+                            <span class="material-icons text-accent mt-px text-[24px]">attach_file</span>
+                            <div class="flex-1">
+                                <span class="block text-sm font-medium text-muted mb-1.5">Attachment</span>
+                                {% if att_pb %}
+                                    {% if att_pb.modality == 2 %}
+                                        {# Image — loaded lazily by browser #}
+                                        <img src="{{ url_for('attachment_file', attachment_id=att_pb.id) }}"
+                                             alt="{{ att_pb.name }}"
+                                             class="max-h-48 max-w-full object-contain rounded-lg border border-[var(--color-border)] cursor-pointer hover:opacity-85 transition-opacity"
+                                             data-name="{{ att_pb.name }}" onclick="openAttachmentModal(this.src, this.dataset.name)"
+                                             title="Click to enlarge">
+                                        <p class="text-xs text-muted mt-1.5">{{ att_pb.name }}</p>
+                                    {% elif att_pb.modality == 1 %}
+                                        {# Audio #}
+                                        <a href="{{ url_for('attachment_details', attachment_id=att_pb.id) }}"
+                                           class="inline-flex flex-col items-center gap-1 text-accent hover:text-accent/80 transition-opacity">
+                                            <span class="material-icons text-4xl">audiotrack</span>
+                                            <span class="text-xs">{{ att_pb.name }}</span>
+                                        </a>
+                                    {% elif att_pb.modality == 3 %}
+                                        {# Video #}
+                                        <a href="{{ url_for('attachment_details', attachment_id=att_pb.id) }}"
+                                           class="inline-flex flex-col items-center gap-1 text-accent hover:text-accent/80 transition-opacity">
+                                            <span class="material-icons text-4xl">videocam</span>
+                                            <span class="text-xs">{{ att_pb.name }}</span>
+                                        </a>
+                                    {% else %}
+                                        {# Generic file #}
+                                        <a href="{{ url_for('attachment_details', attachment_id=att_pb.id) }}"
+                                           class="inline-flex flex-col items-center gap-1 text-accent hover:text-accent/80 transition-opacity">
+                                            <span class="material-icons text-4xl">insert_drive_file</span>
+                                            <span class="text-xs">{{ att_pb.name }}</span>
+                                        </a>
+                                    {% endif %}
+                                {% else %}
+                                    {# Attachment exists but failed to load — fall back to link #}
+                                    <a href="{{ url_for('attachment_details', attachment_id=item.attachment_id) }}"
+                                        class="font-medium text-accent hover:underline">
+                                        View attachment
+                                    </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="flex items-center gap-2.5 text-xl font-semibold pb-3 mb-4 section-divider text-accent"></div>
+            {% endif %}
+        </div>
+
+        <div class="mt-6 flex flex-col items-center gap-3">
+            {% if test_item_pbs|length < test_pb.item_count %}
+            <div class="flex flex-col items-center gap-2">
+                <p class="text-sm text-muted">
+                    Showing {{ test_item_pbs|length }} of {{ test_pb.item_count }} items.
+                </p>
+                <a href="{{ url_for('test_details', test_id=test_pb.id, num_items=test_pb.item_count) }}"
+                    class="button-secondary min-w-[200px] flex justify-center items-center gap-2">
+                    <span class="material-icons text-[20px]">refresh</span>
+                    Show all items
+                </a>
+            </div>
+            {% else %}
+            <span class="text-muted text-sm flex items-center gap-1">
+                <span class="material-icons text-[16px]">check_circle</span>
+                All {{ test_item_pbs|length }} items loaded.
+            </span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Image lightbox modal -->
+<div id="attachment-modal"
+    class="fixed inset-0 z-50 hidden items-center justify-center bg-gray-900/80 backdrop-blur-sm"
+    aria-hidden="true">
+    <div class="relative w-full max-w-6xl m-4 flex flex-col max-h-[90vh]">
+        <div class="flex items-center justify-between mb-4">
+            <h3 id="attachment-modal-title" class="text-xl font-semibold text-white truncate pr-4"></h3>
+            <button onclick="closeAttachmentModal()" class="shrink-0 text-white hover:text-gray-300 focus:outline-none">
+                <span class="material-icons text-3xl">close</span>
+            </button>
+        </div>
+        <div class="flex items-center justify-center overflow-auto">
+            <img id="attachment-modal-image" src="" alt="" class="max-w-full max-h-[80vh] object-contain rounded-lg">
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        // 1. Timestamp Formatting (Converts UTC string to Browser Local Time)
+        document.querySelectorAll("p[data-timestamp]").forEach(el => {
+            const ts = el.dataset.timestamp;
+            // Note: We strip quotes if ToJsonString() added them, though usually new Date() handles it
+            if (ts) {
+                const date = new Date(ts.replace(/"/g, ''));
+                if (!isNaN(date.getTime())) {
+                    el.textContent = date.toLocaleString();
+                }
+            }
+        });
+
+        // 2. Accordion Logic
+        const accordionContainer = document.getElementById("eval-items-accordion");
+        if (accordionContainer) {
+            accordionContainer.addEventListener("click", (event) => {
+                const trigger = event.target.closest("[data-accordion-trigger]");
+                if (!trigger) return;
+
+                const content = trigger.nextElementSibling;
+                const icon = trigger.querySelector("[data-accordion-icon]");
+                const isOpen = !!content.style.maxHeight; // Simple check
+
+                if (isOpen) {
+                    // Close
+                    content.style.maxHeight = null;
+                    trigger.setAttribute("aria-expanded", "false");
+                    if (icon) icon.classList.remove("rotate-180");
+                } else {
+                    // Open
+                    content.style.maxHeight = content.scrollHeight + "px";
+                    trigger.setAttribute("aria-expanded", "true");
+                    if (icon) icon.classList.add("rotate-180");
+                }
+            });
+        }
+
+        // 3. Dropdown Logic
+        const downloadButton = document.getElementById("download-button");
+        const downloadDropdown = document.getElementById("download-dropdown");
+        if (downloadButton && downloadDropdown) {
+            downloadButton.addEventListener("click", (event) => {
+                event.stopPropagation();
+                downloadDropdown.classList.toggle("hidden");
+                downloadButton.setAttribute(
+                    "aria-expanded",
+                    downloadDropdown.classList.contains("hidden") ? "false" : "true"
+                );
+            });
+            document.addEventListener("click", (event) => {
+                if (!downloadButton.contains(event.target) && !downloadDropdown.contains(event.target)) {
+                    downloadDropdown.classList.add("hidden");
+                    downloadButton.setAttribute("aria-expanded", "false");
+                }
+            });
+        }
+
+        // 4. Filtering Logic
+        const filterInputs = {
+            question: document.getElementById("filterItemQuestion"),
+            content: document.getElementById("filterItemContent"),
+            answer: document.getElementById("filterItemAnswer"),
+            choices: document.getElementById("filterItemChoices"),
+            positive: document.getElementById("filterItemPositive")
+        };
+        const clearButton = document.getElementById("clearItemFilters");
+        const resultsCountEl = document.getElementById("filter-results-count");
+        // Get all item rows based on having a question data attribute
+        const allItems = Array.from(accordionContainer.querySelectorAll("div[data-filter-question]"));
+        const totalItems = allItems.length;
+
+        const applyFilters = () => {
+            // Create URL state
+            const params = new URLSearchParams();
+            const filters = {
+                question: filterInputs.question.value.toLowerCase(),
+                content: filterInputs.content.value.toLowerCase(),
+                answer: filterInputs.answer.value.toLowerCase(),
+                choices: filterInputs.choices.value.toLowerCase(),
+                positive: filterInputs.positive.value
+            };
+
+            // Set URL params if value exists
+            if (filters.question) params.set('q', filters.question);
+            if (filters.content) params.set('content', filters.content);
+            if (filters.answer) params.set('answer', filters.answer);
+            if (filters.choices) params.set('choices', filters.choices);
+            if (filters.positive !== 'all') params.set('positive', filters.positive);
+
+            // Update Browser History without reload
+            history.pushState(null, '', `?${params.toString()}`);
+
+            let visibleCount = 0;
+
+            allItems.forEach(item => {
+                // Read data attributes
+                const itemData = {
+                    question: item.dataset.filterQuestion || '',
+                    content: item.dataset.filterContent || '',
+                    answer: item.dataset.filterAnswer || '',
+                    choices: item.dataset.filterChoices || '',
+                    positive: item.dataset.filterPositive || 'none'
+                };
+
+                // Check Matches
+                const showQuestion = !filters.question || itemData.question.includes(filters.question);
+                const showContent = !filters.content || itemData.content.includes(filters.content);
+                const showAnswer = !filters.answer || itemData.answer.includes(filters.answer);
+                const showChoices = !filters.choices || itemData.choices.includes(filters.choices);
+                // "Positive" in JS maps to "Relevant" in your data
+                const showPositive = filters.positive === 'all' || itemData.positive === filters.positive;
+
+                const isVisible = showQuestion && showContent && showAnswer && showChoices && showPositive;
+
+                item.style.display = isVisible ? '' : 'none';
+                if (isVisible) visibleCount++;
+            });
+
+            // Update UI Count
+            if (resultsCountEl) {
+                if (visibleCount === totalItems) {
+                    resultsCountEl.textContent = '';
+                } else {
+                    resultsCountEl.textContent = `Showing ${visibleCount} of ${totalItems} items matching filters.`;
+                }
+            }
+        };
+
+        // Load Filters from URL on page load
+        const setFiltersFromURL = () => {
+            const params = new URLSearchParams(window.location.search);
+            filterInputs.question.value = params.get('q') || '';
+            filterInputs.content.value = params.get('content') || '';
+            filterInputs.answer.value = params.get('answer') || '';
+            filterInputs.choices.value = params.get('choices') || '';
+
+            const positiveParam = params.get('positive');
+            if (positiveParam === 'true' || positiveParam === 'false') {
+                filterInputs.positive.value = positiveParam;
+            } else {
+                filterInputs.positive.value = 'all';
+            }
+            applyFilters();
+        };
+
+        // Listeners
+        Object.values(filterInputs).forEach(input => {
+            const eventType = input.tagName === 'SELECT' ? 'change' : 'input';
+            input.addEventListener(eventType, applyFilters);
+        });
+
+        clearButton?.addEventListener('click', () => {
+            filterInputs.question.value = '';
+            filterInputs.content.value = '';
+            filterInputs.answer.value = '';
+            filterInputs.choices.value = '';
+            filterInputs.positive.value = 'all';
+            applyFilters();
+        });
+
+        // Init
+        setFiltersFromURL();
+    });
+
+    function openAttachmentModal(src, name) {
+        const modal = document.getElementById('attachment-modal');
+        document.getElementById('attachment-modal-image').src = src;
+        document.getElementById('attachment-modal-image').alt = name;
+        document.getElementById('attachment-modal-title').textContent = name;
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeAttachmentModal() {
+        const modal = document.getElementById('attachment-modal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        document.body.style.overflow = '';
+    }
+
+    document.getElementById('attachment-modal').addEventListener('click', function (e) {
+        if (e.target === this) closeAttachmentModal();
+    });
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') closeAttachmentModal();
+    });
+
+    const visSelect = document.getElementById('visibility-select');
+    const allowedField = document.getElementById('allowed-users-field');
+    if (visSelect && allowedField) {
+        visSelect.addEventListener('change', () => {
+            allowedField.classList.toggle('hidden', visSelect.value !== 'SPECIFIED_USERS');
+        });
+    }
+
+    async function updateVisibility() {
+        const visType = document.getElementById('visibility-select').value;
+        const allowedRaw = document.getElementById('allowed-users-input')?.value || '';
+        const allowedUsers = allowedRaw.split(',').map(s => s.trim()).filter(Boolean);
+
+        const resp = await fetch('/tests/{{ test_pb.id }}/visibility', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({visibility_type: visType, allowed_users: allowedUsers}),
+        });
+        const data = await resp.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.error || 'Failed to update visibility');
+        }
+    }
+
+    async function deleteTest() {
+        if (!confirm('Delete this test and all its items? This cannot be undone.')) return;
+        const resp = await fetch('/tests/{{ test_pb.id }}/delete', {method: 'POST'});
+        const data = await resp.json();
+        if (data.success) {
+            window.location.href = '/tests';
+        } else {
+            alert(data.error || 'Failed to delete test');
+        }
+    }
+</script>
+{% endblock %}

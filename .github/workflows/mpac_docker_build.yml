@@ -1,0 +1,65 @@
+name: MPAC Server actions
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "server/**"
+      - "ui/**"
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-test
+          repository-cache: true
+
+      - name: Run MPAC unit tests
+        run: |
+          bazel test \
+            //server/objects:auth_test \
+            //server/objects:db_test \
+            //server/objects:runs_test \
+            --test_output=errors \
+            --keep_going
+
+  mpac-server-actions:
+    name: Build and Push Images
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}
+          repository-cache: true
+
+      - name: Build / Push MPAC Server Docker Image
+        run: bazel run //server:server_image_push
+
+      - name: Build / Push MPAC UI Docker Image
+        run: bazel run //ui:mpac_ui_image_push

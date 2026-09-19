@@ -1,0 +1,876 @@
+/* main/static/css/style.css */
+
+/* CSS Variables for theming - LIGHT THEME (DEFAULT) */
+:root {
+  /* -- backgrounds -- */
+  --color-bg-primary: #f6f6f6;
+  /* Very Light Grey */
+  --color-bg-secondary: #ffffff;
+  /* White (for cards, modals, etc.) */
+
+  /* -- text -- */
+  --color-text-primary: #11233e;
+  /* Blue 1 */
+  --color-text-secondary: #555555;
+  /* Dark Grey */
+  --color-text-on-accent: #11233e;
+  /* Dark text for on-gold buttons */
+  --color-banner-logo: #edeff2;
+  /* For logo text on the main banner */
+  --color-banner: #11233e;
+  /*changes color on the top banner */
+
+  /* -- accents & ui -- */
+  --color-accent-primary: #cca139;
+  /* Light Gold */
+  --color-accent-primary-rgb: 204, 161, 57;
+  --color-accent-secondary: #aa914f;
+  /* Gold */
+  --color-border: #c3cddc;
+  /* Grey-Blue */
+  --color-table-header-bg: #eceef3;
+  /* A very light blue */
+  --color-table-header-text: var(--color-text-primary);
+  --surface-card-tint: transparent;
+  --surface-card-border: var(--color-border);
+  --color-highlight-shade1: #fafbfc;
+  --color-highlight-shade2: #f5f6f9;
+
+  --font-logo: "Poppins", sans-serif;
+  --font-mpac: "Orbitron", sans-serif;
+}
+
+/* logo fonts */
+.font-logo {
+  font-family: var(--font-logo);
+}
+
+.font-mpac {
+  font-family: var(--font-mpac);
+}
+
+/* Theme-aware pelican logo */
+.pelican-logo {
+  height: 40px;
+  width: auto;
+  transition: opacity 0.3s ease;
+}
+
+.pelican-logo-light {
+  display: block;
+}
+
+.pelican-logo-dark {
+  display: none;
+}
+
+html.dark .pelican-logo-light {
+  display: none;
+}
+
+html.dark .pelican-logo-dark {
+  display: block;
+}
+
+/* Smaller logo for drawer */
+.pelican-logo-small {
+  height: 32px;
+  width: auto;
+}
+
+/* Dark Theme - Matching logo_dark.png monochrome aesthetic */
+html.dark {
+  /* -- backgrounds -- */
+  --color-bg-primary: #000000;
+  /* Pure black background like logo_dark */
+  --color-bg-secondary: #0a0a0a;
+  /* Very dark for cards/surfaces */
+  --color-banner: #000000;
+  /* Black banner matching logo background */
+  --color-banner-logo: #f5f5f5;
+  /* Bright white for logo text */
+
+  /* -- text -- */
+  --color-text-primary: #f5f5f5;
+  /* Bright white like the pelican */
+  --color-text-secondary: #b0b0b0;
+  /* Medium gray for secondary text */
+  /* Set a dark text color for on-accent buttons for better contrast */
+  --color-text-on-accent: #000000;
+
+  /* -- accents & ui -- */
+  --color-accent-primary: #cca139;
+  /* Light gold matching light mode */
+  --color-accent-primary-rgb: 204, 161, 57;
+  --color-accent-secondary: #cca139;
+  /* Consistent gold accent */
+  --color-highlight-shade1: #1a1a1a;
+  /* Subtle highlight */
+  --color-highlight-shade2: #252525;
+  /* Slightly brighter highlight */
+  --color-table-header-bg: #0f0f0f;
+  /* Near-black table headers */
+  --color-border: #2a2a2a;
+  /* Dark gray borders for definition */
+  /* card - subtle gold-ish lift in dark */
+  --color-table-header-text: var(--color-text-primary);
+  --surface-card-tint: rgba(var(--color-accent-primary-rgb), 0.05);
+  /* Subtle gold tint */
+  /* card - border with accent for visibility on black */
+  --surface-card-border: color-mix(in srgb,
+      var(--color-border) 70%,
+      var(--color-accent-primary) 30%);
+}
+
+/* If you use Tailwind CDN: put this in your own stylesheet */
+:root {
+  color-scheme: light dark;
+}
+
+/* Base typography defaults */
+html {
+  color: var(--color-text-primary);
+  background: var(--color-bg-secondary);
+}
+
+@layer base {
+
+  html,
+  body {
+    min-height: 100vh;
+  }
+
+  body {
+    color: var(--color-text-primary);
+    background-color: var(--color-bg-primary);
+    font-family: "Inter", sans-serif;
+    margin: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  /* default headings, paragraphs, list items, etc. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p,
+  li,
+  dt,
+  dd,
+  small {
+    color: inherit;
+  }
+
+  /* helpers */
+  .muted,
+  small,
+  .text-muted {
+    color: var(--color-text-secondary);
+  }
+
+  .text-accent {
+    color: var(--color-accent-secondary);
+  }
+
+  .text-accent-2 {
+    color: var(--color-text-on-accent);
+  }
+}
+
+/* General Body Styles */
+
+.branding-header {
+  padding: 16px;
+  border-bottom: 2px solid var(--color-accent-secondary);
+  margin-bottom: 8px;
+  font-family: "Poppins", sans-serif;
+  background-color: var(--color-banner);
+}
+
+.branding-header h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--color-banner-logo);
+}
+
+.branding-header p {
+  font-size: 0.875rem;
+  margin: 4px 0 0;
+  color: var(--color-accent-secondary);
+}
+
+/* Icon Button Base Class */
+.icon-button-base {
+  background: none;
+  border: none;
+  color: var(--color-banner-logo);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.icon-button-base:hover {
+  background-color: rgba(var(--color-accent-primary-rgb), 0.1);
+  color: var(--color-accent-primary);
+}
+
+/* Component Styles */
+.app-bar {
+  background-color: var(--color-banner);
+  color: var(--color-text-primary);
+  height: 64px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  position: fixed;
+  width: 100%;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  transition: background-color 0.3s ease, color 0.3s ease;
+  border-bottom: 2px solid var(--color-accent-secondary);
+}
+
+.app-bar .icon-button-base {
+  margin-right: 16px;
+}
+
+.section-divider {
+  border-bottom-width: 1.5px;
+  border-bottom-style: solid;
+  border-bottom-color: var(--color-border);
+  margin-top: 10px;
+}
+
+html.dark .section-divider {
+  border-bottom-color: color-mix(in srgb,
+      var(--color-border) 80%,
+      var(--color-bg-secondary) 20%);
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  left: -280px;
+  width: 280px;
+  height: 100%;
+  background-color: var(--color-bg-secondary);
+  box-shadow: 2px 0 6px rgba(0, 0, 0, 0.3);
+  transition: left 0.3s ease-in-out, background-color 0.3s ease;
+  z-index: 1002;
+  padding-top: 0;
+  /* Changed from 64px to 0 */
+  display: flex;
+  flex-direction: column;
+}
+
+.drawer.open {
+  left: 0;
+}
+
+.drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  /* border-bottom: 1px solid var(--color-border); */
+  margin-bottom: 8px;
+  min-height: 64px;
+  /* Ensure it aligns with app-bar height */
+  box-sizing: border-box;
+}
+
+.drawer .icon-button-base {
+  color: var(--color-text-secondary);
+}
+
+.drawer-item {
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--color-text-primary);
+  text-decoration: none;
+  transition: background-color 0.2s;
+  border-radius: 8px;
+  margin: 4px 8px;
+}
+
+/* Style for the currently active navigation link */
+.drawer-item.active {
+  background-color: rgba(var(--color-accent-primary-rgb),
+      0.15);
+  /* A stronger gold glow */
+  color: var(--color-accent-primary);
+  font-weight: 600;
+  /* Make the font bolder */
+}
+
+.drawer-item.active .material-icons {
+  color: var(--color-accent-primary);
+}
+
+.drawer-item:hover {
+  background-color: rgba(var(--color-accent-primary-rgb), 0.1);
+}
+
+.drawer-item .material-icons {
+  margin-right: 16px;
+  color: var(--color-text-secondary);
+}
+
+.main-content {
+  padding-top: 110px;
+  padding-left: 25px;
+  padding-right: 25px;
+  padding-bottom: 100px;
+  transition: margin-left 0.3s ease-in-out;
+}
+
+.main-content.drawer-open {
+  margin-left: 280px;
+}
+
+.content-wrapper {
+  max-width: 1440px;
+  /* A comfortable max width for wide screens */
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.card {
+  background-color: var(--color-bg-secondary);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+  margin-bottom: 24px;
+  padding: 24px;
+  transition: background-color 0.3s ease;
+  border: 1px solid var(--color-border);
+  /* Add padding to the top and bottom of the filter section */
+  padding-top: 24px;
+  padding-bottom: 24px;
+}
+
+/* Creation */
+.content-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 40px;
+}
+
+.content-title {
+  font-size: 1.75rem;
+  /* 28px */
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.button-primary {
+  background-color: var(--color-accent-secondary);
+  color: var(--color-text-on-accent);
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 0.2s, transform 0.2s;
+}
+
+.button-primary:hover {
+  background-color: var(--color-accent-primary);
+  transform: translateY(-2px);
+}
+
+.button-secondary {
+  background-color: transparent;
+  color: var(--color-accent-secondary);
+  border: 1px solid var(--color-accent-secondary);
+  padding: 9px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.button-secondary:hover {
+  background-color: rgba(var(--color-accent-primary-rgb), 0.1);
+  border-color: var(--color-accent-primary);
+}
+
+/* Dropdown Menu Styling */
+.dropdown-menu {
+  background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.dropdown-item {
+  display: block;
+  padding: 8px 16px;
+  color: var(--color-text-primary);
+  text-decoration: none;
+  font-size: 0.875rem;
+}
+
+.dropdown-item:hover {
+  background-color: var(--color-highlight-shade1);
+}
+
+/* ---------- Scroll wrapper for horizontal swipe on narrow screens ---------- */
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+  /* sideways scroll when too narrow */
+  -webkit-overflow-scrolling: touch;
+  /* momentum scroll on iOS */
+}
+
+/* ---------- Base table ---------- */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+  border-radius: 8px;
+  overflow: hidden;
+
+  /* Stable layout: col widths come from <colgroup> / first row */
+  table-layout: fixed;
+
+  /* Ensures scroll instead of squishing columns on small screens */
+  min-width: 920px;
+  /* tweak if you want a wider/narrower baseline */
+}
+
+.data-table th,
+.data-table td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  vertical-align: center;
+}
+
+.data-table td:last-child,
+.data-table th:last-child {
+  text-align: center;
+  vertical-align: middle;
+}
+
+/* Long tokens shouldn't blow up columns */
+.data-table td {
+  overflow-wrap: anywhere;
+}
+
+.data-table th {
+  background-color: var(--color-table-header-bg);
+  font-weight: 500;
+  text-transform: uppercase;
+  font-size: 0.9rem;
+  color: var(--color-table-header-text);
+  transition: background-color 0.3s ease;
+}
+
+.data-table th:last-child,
+.data-table tbody tr td:last-child {
+  text-align: center;
+}
+
+.data-table tbody tr:hover {
+  background-color: var(--color-highlight-shade1);
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ---------- Column widths via <colgroup> ---------- */
+.col-provider {
+  width: 10rem;
+}
+
+/* provider names */
+.col-id {
+  width: 18ch;
+}
+
+/* ~18 characters */
+/* Give the actions column a bit more breathing room */
+.col-actions {
+  width: 5.5rem;
+  /* was 4rem/72px — bump to ~88px */
+  min-width: 5.5rem;
+  /* don't let it shrink below this */
+}
+
+.col-desc {
+  width: auto;
+}
+
+/* takes remaining space */
+
+/* Prevent Provider + ID from wrapping (stops “hopping”) */
+.data-table th:nth-child(1),
+.data-table td:nth-child(1),
+.data-table th:nth-child(2),
+.data-table td:nth-child(2) {
+  white-space: normal;
+  /* let it spill to next line(s) */
+  overflow-wrap: anywhere;
+  /* break long tokens if needed */
+  text-overflow: clip;
+}
+
+/* Make sure the header/cell have sane padding and can center nicely */
+.data-table th:last-child,
+.data-table td:last-child {
+  text-align: center;
+  vertical-align: middle;
+  padding-left: 8px;
+  padding-right: 8px;
+  white-space: nowrap;
+  /* keep "DETAILS" on one line */
+}
+
+/* ---------- Sortable header polish ---------- */
+.data-table th.th-sortable {
+  user-select: none;
+  white-space: nowrap;
+}
+
+.data-table th.th-sortable .th-sort-btn {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.data-table th:hover {
+  background-color: var(--color-highlight-shade2);
+}
+
+.data-table th.th-sortable .th-sort-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-accent-secondary);
+  border-radius: 6px;
+}
+
+.data-table th .sort-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+  opacity: 0.7;
+  color: var(--color-text-secondary);
+}
+
+.data-table th[aria-sort="ascending"] .sort-icon,
+.data-table th[aria-sort="descending"] .sort-icon {
+  color: var(--color-accent-secondary);
+  opacity: 1;
+}
+
+html.dark .data-table th .sort-icon {
+  opacity: 0.85;
+}
+
+/* ---------- Action button ---------- */
+.action-button {
+  background: none;
+  border: none;
+  color: var(--color-accent-primary);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.action-button:hover {
+  background-color: rgba(var(--color-accent-primary-rgb), 0.1);
+  color: var(--color-accent-primary);
+}
+
+.action-button.delete:hover {
+  color: #ef5350;
+}
+
+.fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background-color: var(--color-accent-secondary);
+  color: var(--color-text-on-accent);
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.2), 0 7px 10px rgba(0, 0, 0, 0.14),
+    0 2px 16px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.2s;
+}
+
+.fab:hover {
+  background-color: var(--color-accent-primary);
+  transform: scale(1.05);
+}
+
+.input-field,
+.select-field {
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  color: var(--color-text-primary);
+  width: 100%;
+  box-sizing: border-box;
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.2s;
+}
+
+.input-field:focus,
+.select-field:focus {
+  outline: none;
+  border-color: var(--color-accent-primary);
+  box-shadow: 0 0 0 2px rgba(var(--color-accent-primary-rgb), 0.2);
+}
+
+.label-bold {
+  font-weight: 600;
+}
+
+.pagination-controls {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 16px;
+  color: var(--color-text-secondary);
+}
+
+.pagination-button {
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin: 0 4px;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.pagination-button:hover:not(:disabled) {
+  background-color: var(--color-accent-primary);
+  color: var(--color-text-on-accent);
+  border-color: var(--color-accent-primary);
+}
+
+.pagination-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1001;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease-in-out;
+}
+
+.overlay.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Tab Navigation Component */
+.tab-nav {
+  display: flex;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tab-button {
+  padding: 12px 24px;
+  font-weight: 500;
+  text-align: center;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  margin-bottom: -1px;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.tab-button:hover {
+  color: var(--color-accent-primary);
+}
+
+.tab-button.active {
+  color: var(--color-accent-primary);
+  border-bottom-color: var(--color-accent-primary);
+}
+
+.tab-button:focus {
+  outline: none;
+}
+
+/* ---------- Expandable description cells ---------- */
+td.description-cell {
+  position: relative;
+  cursor: pointer;
+  padding-right: 2.25rem;
+  line-height: 1.6;
+}
+
+td.description-cell .truncated-text {
+  display: block;
+}
+
+td.description-cell .full-text {
+  display: none;
+}
+
+td.description-cell.is-expanded .truncated-text {
+  display: none;
+}
+
+td.description-cell.is-expanded .full-text {
+  display: block;
+}
+
+td.description-cell .expand-toggle {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  line-height: 1;
+  transition: transform 0.2s ease;
+  pointer-events: none;
+  color: var(--color-text-secondary);
+}
+
+td.description-cell.is-expanded .expand-toggle {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+/* Keep text clear of the icon in both states */
+td.description-cell .truncated-text,
+td.description-cell .full-text {
+  padding-right: 2.25rem;
+  overflow-wrap: anywhere;
+}
+
+/* hover color via your theme var */
+.accordion-trigger:hover {
+  background: var(--color-highlight-shade2);
+}
+
+.accordion-trigger {
+  background: var(--color-highlight-shade1);
+}
+
+/* smooth open/close + divider */
+.accordion-content {
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 0.25s ease;
+  border-top: 1px solid var(--color-border);
+  background: color-mix(in oklab, var(--color-bg-primary) 92%, transparent);
+}
+
+/* 1-line clamp in header */
+.clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Responsive adjustments */
+
+@media (max-width: 768px) {
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  .app-bar h1 {
+    font-size: 1.2rem;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 8px 12px;
+    font-size: 0.8rem;
+  }
+
+  .fab {
+    width: 48px;
+    height: 48px;
+    font-size: 20px;
+    bottom: 16px;
+    right: 16px;
+  }
+
+  .drawer {
+    width: 250px;
+  }
+
+  .main-content.drawer-open {
+    margin-left: 250px;
+  }
+
+  .tab-button {
+    padding: 10px 16px;
+    font-size: 0.9rem;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  td.description-cell .full-text {
+    transition: opacity 0.15s ease;
+  }
+
+  td.description-cell:not(.is-expanded) .full-text {
+    opacity: 0;
+  }
+
+  td.description-cell.is-expanded .full-text {
+    opacity: 1;
+  }
+}

@@ -1,0 +1,953 @@
+{% extends "base.html" %}
+{% block title %}Pelidum MPAC - Benchmark Results{% endblock %}
+
+{% block content %}
+<style>
+    /* ── Bracket (matches status page styling) ─── */
+    #bracket-viewport {
+        width: 100%;
+        height: 68vh;
+        cursor: grab;
+        background-color: var(--color-bg-primary);
+        overflow: hidden;
+        position: relative;
+        border-radius: 8px;
+        border: 1px solid var(--color-border);
+    }
+
+    #bracket-viewport.grabbing {
+        cursor: grabbing;
+    }
+
+    #controls {
+        position: absolute;
+        bottom: 0.75rem;
+        right: 0.75rem;
+        z-index: 10;
+        display: flex;
+        gap: 0.4rem;
+        background: rgba(0, 0, 0, 0.45);
+        padding: 0.4rem;
+        border-radius: 0.5rem;
+    }
+
+    .ctrl-btn {
+        width: 2rem;
+        height: 2rem;
+        color: var(--color-banner-logo);
+        font-weight: 600;
+        font-size: 1rem;
+        border-radius: 50%;
+        background: var(--color-banner);
+        border: none;
+        cursor: pointer;
+        display: grid;
+        place-content: center;
+        transition: background 0.15s;
+    }
+
+    .ctrl-btn:hover {
+        background: color-mix(in srgb, var(--color-banner) 75%, white 25%);
+    }
+
+    .ctrl-btn.wide {
+        width: auto;
+        border-radius: 0.4rem;
+        padding: 0 0.75rem;
+        font-size: 0.75rem;
+    }
+
+    #tournament {
+        display: flex;
+        flex-direction: column-reverse;
+        align-items: center;
+        transform-origin: 0 0;
+        padding: 2.5rem;
+        user-select: none;
+    }
+
+    .round {
+        display: flex;
+        justify-content: center;
+        align-items: flex-end;
+        width: 100%;
+        gap: 1.5rem;
+        margin-bottom: 2.5rem;
+        position: relative;
+    }
+
+    .round-label {
+        position: absolute;
+        left: 0;
+        top: -1.4rem;
+        font-size: 0.65rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--color-text-secondary);
+        opacity: 0.6;
+    }
+
+    .matchup {
+        width: 260px;
+        min-width: 260px;
+        background: var(--color-bg-secondary);
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        border: 1px solid var(--color-border);
+        overflow: hidden;
+        transition: border-color 0.3s, box-shadow 0.3s;
+    }
+
+    .matchup.active {
+        border-color: var(--color-accent-secondary);
+        animation: matchup-pulse 1.2s ease-in-out infinite;
+    }
+
+    @keyframes matchup-pulse {
+
+        0%,
+        100% {
+            box-shadow: 0 0 0 1px var(--color-accent-secondary), 0 0 8px rgba(var(--color-accent-primary-rgb), 0.12);
+        }
+
+        50% {
+            box-shadow: 0 0 0 2px var(--color-accent-secondary), 0 0 22px rgba(var(--color-accent-primary-rgb), 0.3);
+        }
+    }
+
+    .team {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.6rem 0.85rem;
+    }
+
+    .team-top {
+        border-bottom: 1px solid var(--color-border);
+    }
+
+    .team-info {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        flex: 1;
+    }
+
+    .participant-name {
+        font-weight: 600;
+        font-size: 0.8rem;
+        color: var(--color-text-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .kpi-stats {
+        font-size: 0.7rem;
+        color: var(--color-text-secondary);
+        margin-top: 0.15rem;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .team.winner {
+        background: rgba(var(--color-accent-primary-rgb), 0.08);
+    }
+
+    .team.winner .participant-name {
+        color: var(--color-accent-secondary);
+        font-weight: 700;
+    }
+
+    .team.loser {
+        opacity: 0.45;
+    }
+
+    .team.tbd .participant-name {
+        font-style: italic;
+        color: var(--color-text-secondary);
+        opacity: 0.6;
+    }
+
+    .champion-peak {
+        margin-bottom: 1.5rem;
+        padding: 1rem 2rem;
+        background: var(--color-accent-secondary);
+        border-radius: 8px;
+        text-align: center;
+    }
+
+    .champion-peak .champ-name {
+        display: block;
+        font-size: 1.4rem;
+        font-weight: 800;
+        color: var(--color-text-on-accent);
+    }
+
+    .champion-peak .champ-f1 {
+        font-size: 0.85rem;
+        font-weight: 600;
+        font-family: ui-monospace, monospace;
+        color: var(--color-text-on-accent);
+        opacity: 0.8;
+    }
+
+    /* ── Match result cards ─── */
+    .match-card {
+        border: 1px solid var(--color-border);
+        border-radius: 10px;
+        overflow: hidden;
+        background: var(--color-bg-secondary);
+    }
+
+    .match-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.6rem 1rem;
+        border-bottom: 1px solid var(--color-border);
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--color-text-secondary);
+    }
+
+    .match-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.75rem 1rem;
+    }
+
+    .match-row+.match-row {
+        border-top: 1px solid var(--color-border);
+    }
+
+    .match-row.winner-row {
+        background: rgba(var(--color-accent-primary-rgb), 0.06);
+    }
+
+    .match-row.loser-row {
+        opacity: 0.55;
+    }
+
+    .match-row.bye-row {
+        opacity: 0.35;
+        font-style: italic;
+    }
+
+    .model-name {
+        font-weight: 600;
+        font-size: 0.85rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .stat-pills {
+        display: flex;
+        gap: 0.4rem;
+        flex-shrink: 0;
+    }
+
+    .pill {
+        font-family: ui-monospace, monospace;
+        font-size: 0.72rem;
+        font-weight: 600;
+        padding: 0.15rem 0.5rem;
+        border-radius: 99px;
+        background: var(--color-bg-primary);
+        border: 1px solid var(--color-border);
+    }
+
+    .pill.f1 {
+        border-color: var(--color-accent-secondary);
+        color: var(--color-accent-secondary);
+    }
+
+    .win-badge {
+        font-size: 0.65rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--color-accent-secondary);
+        margin-left: 0.4rem;
+    }
+
+    /* ── Per-match confusion matrix (side-by-side per responder) ── */
+    .match-confusion-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0;
+    }
+
+    .match-confusion-grid > .confusion-cell + .confusion-cell {
+        border-left: 1px solid var(--color-border);
+    }
+
+    .confusion-cell {
+        padding: 0.75rem 0.9rem 0.9rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .confusion-cell.winner-side {
+        background: rgba(var(--color-accent-primary-rgb), 0.06);
+    }
+
+    .confusion-cell.loser-side {
+        opacity: 0.75;
+    }
+
+    .confusion-cell.bye-side {
+        opacity: 0.4;
+        font-style: italic;
+        justify-content: center;
+        align-items: center;
+        min-height: 100%;
+        text-align: center;
+    }
+
+    .confusion-model-row {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        min-width: 0;
+    }
+
+    .confusion-model-name {
+        flex: 1;
+        min-width: 0;
+        font-weight: 600;
+        font-size: 0.8rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .confusion-f1 {
+        font-family: ui-monospace, monospace;
+        font-size: 0.7rem;
+        font-weight: 700;
+        padding: 0.1rem 0.45rem;
+        border-radius: 99px;
+        border: 1px solid var(--color-accent-secondary);
+        color: var(--color-accent-secondary);
+        flex-shrink: 0;
+    }
+
+    .cm-mini {
+        display: grid;
+        grid-template-columns: auto 1fr 1fr;
+        grid-template-rows: auto 1fr 1fr;
+        gap: 2px;
+        font-size: 0.65rem;
+        color: var(--color-text-secondary);
+    }
+
+    .cm-mini .cm-corner,
+    .cm-mini .cm-col-head,
+    .cm-mini .cm-row-head {
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 2px 4px;
+        text-align: center;
+    }
+
+    .cm-mini .cm-col-head {
+        color: var(--color-text-secondary);
+    }
+
+    .cm-mini .cm-row-head {
+        text-align: right;
+        align-self: center;
+    }
+
+    .cm-mini .cm-cell {
+        border-radius: 4px;
+        padding: 6px 4px 4px;
+        text-align: center;
+        font-family: ui-monospace, monospace;
+        line-height: 1.1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+    }
+
+    .cm-mini .cm-count {
+        font-size: 1rem;
+        font-weight: 700;
+    }
+
+    .cm-mini .cm-label {
+        font-size: 0.55rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        opacity: 0.75;
+        margin-top: 1px;
+    }
+
+    /* Colour scale: greens for TP/TN, reds for FP/FN. Intensity is set inline
+       so it can scale with the value; these are just base styles. */
+    .cm-mini .cm-good { background: rgb(240, 253, 244); color: #14532d; }
+    .cm-mini .cm-bad  { background: rgb(254, 242, 242); color: #7f1d1d; }
+</style>
+
+<div class="max-w-[1440px] mx-auto">
+
+    {# ── Header ───────────────────────────────────────── #}
+    <div class="content-header">
+        <div>
+            <h1 class="content-title flex items-center gap-3">
+                Benchmark Results
+            </h1>
+            <p class="muted mt-1">{{ test_pb.name if test_pb else benchmark_pb.test_id }}</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <a href="{{ url_for('benchmarks') }}" class="button-secondary">
+                <span class="material-icons text-[20px]">arrow_back</span>
+                All Benchmarks
+            </a>
+            {% if is_admin or benchmark_pb.owner == user_email %}
+            <button onclick="deleteBenchmark()" id="delete-btn" class="button-secondary"
+                style="color:#ef4444;border-color:#ef4444;">
+                <span class="material-icons text-[20px]">delete</span>
+                Delete
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    {# ── Meta strip ───────────────────────────────────── #}
+    <div class="card p-4 mb-5 grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div>
+            <div class="text-xs font-semibold uppercase tracking-wider muted mb-1">Owner</div>
+            <div class="font-medium text-sm">{{ benchmark_pb.owner }}</div>
+        </div>
+        <div>
+            <div class="text-xs font-semibold uppercase tracking-wider muted mb-1">Test</div>
+            <a href="{{ url_for('test_details', test_id=benchmark_pb.test_id) }}"
+                class="text-[var(--color-accent-secondary)] hover:underline text-sm font-medium">
+                {{ test_pb.name if test_pb else benchmark_pb.test_id }}
+            </a>
+        </div>
+        <div>
+            <div class="text-xs font-semibold uppercase tracking-wider muted mb-1">Winner</div>
+            {% if benchmark_pb.winner %}
+            <a href="/models/{{ benchmark_pb.winner }}"
+                class="font-semibold text-sm text-[var(--color-accent-secondary)] hover:underline truncate block">
+                {{ benchmark_pb.winner }}
+            </a>
+            {% else %}
+            <div class="font-semibold text-sm text-[var(--color-text-secondary)]">—</div>
+            {% endif %}
+        </div>
+        <div>
+            <div class="text-xs font-semibold uppercase tracking-wider muted mb-1">Completed</div>
+            {% set dt = benchmark_pb.completed_at_utc.ToDatetime() %}
+            <div class="font-medium text-sm">{{ dt.strftime('%Y-%m-%d %H:%M') if dt.year > 1970 else '—' }}</div>
+        </div>
+        <div>
+            <div class="text-xs font-semibold uppercase tracking-wider muted mb-1">Total Cost</div>
+            {% set cost = benchmark_pb.total_cost_usd %}
+            {% if cost > 0 %}
+            <div class="font-medium text-sm">${{ '%.4f' % cost }}</div>
+            {% else %}
+            <div class="font-medium text-sm text-[var(--color-text-secondary)]">—</div>
+            {% endif %}
+        </div>
+    </div>
+
+    {# ── Bracket ──────────────────────────────────────── #}
+    {% if bracket_data and bracket_data.total_models >= 2 %}
+    <div class="card mb-5" style="padding:0;overflow:hidden;">
+        <div id="bracket-viewport">
+            <div id="tournament"></div>
+            <div id="controls">
+                <button class="ctrl-btn" id="zoom-out">-</button>
+                <button class="ctrl-btn" id="zoom-in">+</button>
+                <button class="ctrl-btn wide" id="reset-zoom">Fit</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ── Per-round match results ───────────────────────── #}
+    {% if matches_by_round %}
+
+    <h3
+        class="flex items-center gap-2.5 text-base font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider mb-4">
+        <span class="material-icons text-[18px]">sports_mma</span>
+        Match Results
+    </h3>
+
+    {% set total_rounds = matches_by_round.keys() | list | max if matches_by_round else 0 %}
+
+    {% for r in matches_by_round.keys() | sort %}
+    {% set from_end = total_rounds - r %}
+    {% set round_name = 'Final' if from_end == 0 else ('Semifinals' if from_end == 1 else ('Quarterfinals' if from_end
+    == 2 else ('First Round' if r == 1 else 'Round ' ~ r))) %}
+    {% set match_count = matches_by_round[r] | length %}
+
+    {% if from_end == 0 %}
+    {# ── Final ── #}
+    <div class="card mb-4 overflow-hidden" style="border-color: rgba(245,158,11,0.45);">
+        <div class="flex items-center gap-3 px-5 py-3 border-b"
+            style="background: rgba(245,158,11,0.07); border-color: rgba(245,158,11,0.2);">
+            <span class="font-bold text-base text-amber-500">Final</span>
+            <span class="ml-auto text-xs text-[var(--color-text-secondary)]">{{ match_count }} match{{ 'es' if
+                match_count != 1 else '' }}</span>
+        </div>
+        <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-3">
+
+            {% elif from_end == 1 %}
+            {# ── Semifinals ── #}
+            <div class="card mb-4 overflow-hidden" style="border-color: rgba(var(--color-accent-primary-rgb), 0.35);">
+                <div class="flex items-center gap-3 px-5 py-3 border-b"
+                    style="background: rgba(var(--color-accent-primary-rgb), 0.05); border-color: rgba(var(--color-accent-primary-rgb), 0.15);">
+                    <span class="font-semibold text-base text-[var(--color-accent-secondary)]">Semifinals</span>
+                    <span class="ml-auto text-xs text-[var(--color-text-secondary)]">{{ match_count }} match{{ 'es' if
+                        match_count != 1 else '' }}</span>
+                </div>
+                <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-3">
+
+                    {% else %}
+                    {# ── Earlier rounds ── #}
+                    <div class="card mb-4 overflow-hidden">
+                        <div
+                            class="flex items-center gap-3 px-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-primary)]">
+                            <span
+                                class="text-xs font-bold uppercase tracking-widest text-[var(--color-text-secondary)]">{{
+                                round_name }}</span>
+                            <span class="ml-auto text-xs text-[var(--color-text-secondary)]">{{ match_count }} match{{
+                                'es' if match_count != 1 else '' }}</span>
+                        </div>
+                        <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-3">
+
+                            {% endif %}
+
+                            {% for m in matches_by_round[r] %}
+                            {% set responses = m.get('responses', []) %}
+                            {% set winner = m.get('winner', '') %}
+                            {% set is_bye = responses | length == 1 %}
+                            {% set run_id = responses[0].get('run_id', '') if responses else '' %}
+                            {% set has_confusion = responses and (responses[0].get('confusion') or (responses|length > 1 and responses[1].get('confusion'))) %}
+
+                            <div class="match-card">
+                                <div class="match-card-header">
+                                    <span>Match {{ m.get('id', loop.index) }}</span>
+                                    <span class="flex items-center gap-2">
+                                        {% if is_bye %}<span>BYE</span>
+                                        {% elif not has_confusion %}<span>F1 · P · R</span>{% endif %}
+                                        {% if run_id %}
+                                        <a href="{{ url_for('run_details', run_id=run_id) }}"
+                                            class="inline-flex items-center gap-0.5 text-[var(--color-accent-secondary)] hover:underline text-[11px] font-semibold"
+                                            title="View full eval results">
+                                            <span class="material-icons text-[13px]">open_in_new</span>
+                                            Eval
+                                        </a>
+                                        {% endif %}
+                                    </span>
+                                </div>
+
+                                {% if has_confusion %}
+                                {# ── Confusion-matrix layout (per responder) ── #}
+                                <div class="match-confusion-grid">
+                                    {% for resp in responses %}
+                                    {% set is_winner = resp.get('responder', '') == winner %}
+                                    {% set responder = resp.get('responder', '?') %}
+                                    {% set f1 = resp.get('f1', 0) %}
+                                    {% set cf = resp.get('confusion') %}
+                                    <div class="confusion-cell {{ 'winner-side' if is_winner else 'loser-side' }}">
+                                        <div class="confusion-model-row">
+                                            {% if is_winner %}<span
+                                                class="material-icons text-[14px] text-[var(--color-accent-secondary)] flex-shrink-0">emoji_events</span>{% endif %}
+                                            <span class="confusion-model-name" title="{{ responder }}">
+                                                {% if responder and responder != '?' %}
+                                                <a href="/models/{{ responder }}"
+                                                    class="hover:underline hover:text-[var(--color-accent-secondary)] transition-colors">{{ responder }}</a>
+                                                {% else %}{{ responder }}{% endif %}
+                                            </span>
+                                            {% if f1 >= 0 %}
+                                            <span class="confusion-f1" title="F1">{{ '%.0f' % (f1 * 100) }}%</span>
+                                            {% endif %}
+                                        </div>
+                                        {% if cf %}
+                                        {% set gmax = [cf.tp, cf.tn, 1] | max %}
+                                        {% set bmax = [cf.fp, cf.fn, 1] | max %}
+                                        <div class="cm-mini">
+                                            <span class="cm-corner"></span>
+                                            <span class="cm-col-head">Pred +</span>
+                                            <span class="cm-col-head">Pred −</span>
+                                            <span class="cm-row-head">Actual +</span>
+                                            <div class="cm-cell cm-good" data-count="{{ cf.tp }}" data-max="{{ gmax }}" data-kind="good" title="True positives">
+                                                <span class="cm-count">{{ cf.tp }}</span><span class="cm-label">TP</span>
+                                            </div>
+                                            <div class="cm-cell cm-bad" data-count="{{ cf.fn }}" data-max="{{ bmax }}" data-kind="bad" title="False negatives">
+                                                <span class="cm-count">{{ cf.fn }}</span><span class="cm-label">FN</span>
+                                            </div>
+                                            <span class="cm-row-head">Actual −</span>
+                                            <div class="cm-cell cm-bad" data-count="{{ cf.fp }}" data-max="{{ bmax }}" data-kind="bad" title="False positives">
+                                                <span class="cm-count">{{ cf.fp }}</span><span class="cm-label">FP</span>
+                                            </div>
+                                            <div class="cm-cell cm-good" data-count="{{ cf.tn }}" data-max="{{ gmax }}" data-kind="good" title="True negatives">
+                                                <span class="cm-count">{{ cf.tn }}</span><span class="cm-label">TN</span>
+                                            </div>
+                                        </div>
+                                        {% else %}
+                                        <div class="text-xs muted italic">No confusion data.</div>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                    {% if is_bye %}
+                                    <div class="confusion-cell bye-side">BYE</div>
+                                    {% endif %}
+                                </div>
+                                {% else %}
+                                {# ── Fallback: original F1 · P · R pill layout ── #}
+                                {% for resp in responses %}
+                                {% set is_winner = resp.get('responder', '') == winner %}
+                                {% set f1 = resp.get('f1', 0) %}
+                                {% set pr = resp.get('precision', 0) %}
+                                {% set rc = resp.get('recall', 0) %}
+                                {% set has_metrics = f1 >= 0 and pr >= 0 and rc >= 0 %}
+                                <div class="match-row {{ 'winner-row' if is_winner else 'loser-row' }}">
+                                    <div class="model-name">
+                                        {% if is_winner %}<span
+                                            class="material-icons text-[14px] text-[var(--color-accent-secondary)] align-middle mr-1">emoji_events</span>{%
+                                        endif %}
+                                        {% set responder = resp.get('responder', '?') %}
+                                        {% if responder and responder != '?' %}
+                                        <a href="/models/{{ responder }}"
+                                            class="hover:underline hover:text-[var(--color-accent-secondary)] transition-colors">{{
+                                            responder }}</a>
+                                        {% else %}
+                                        {{ responder }}
+                                        {% endif %}
+                                    </div>
+                                    {% if not is_bye %}
+                                    <div class="stat-pills">
+                                        {% if has_metrics %}
+                                        <span class="pill f1">{{ '%.1f' % (f1 * 100) }}%</span>
+                                        <span class="pill">P {{ '%.0f' % (pr * 100) }}%</span>
+                                        <span class="pill">R {{ '%.0f' % (rc * 100) }}%</span>
+                                        {% else %}
+                                        <span class="pill" style="color:#ef4444;border-color:#ef4444;">Error</span>
+                                        {% endif %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                                {% if is_bye %}
+                                <div class="match-row bye-row">
+                                    <div class="model-name">BYE</div>
+                                </div>
+                                {% endif %}
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+
+                        </div>
+                    </div>
+
+                    {% endfor %}
+                    {% endif %}
+
+                </div>
+
+                <script>
+                    const bracketData = {{ bracket_data | tojson | safe }};
+
+                    function esc(s) {
+                        const el = document.createElement('span');
+                        el.textContent = s;
+                        return el.innerHTML;
+                    }
+
+                    // ── Delete ───────────────────────────────────────────
+                    async function deleteBenchmark() {
+                        if (!confirm('Delete this benchmark?')) return;
+                        const btn = document.getElementById('delete-btn');
+                        btn.disabled = true;
+                        try {
+                            const r = await fetch('/benchmarks/{{ benchmark_pb.id }}/delete', {
+                                method: 'POST', headers: { 'Content-Type': 'application/json' }
+                            });
+                            const res = await r.json();
+                            if (res.success) window.location.href = '/benchmarks';
+                            else throw new Error(res.error || 'Delete failed');
+                        } catch (err) {
+                            alert('Failed to delete: ' + err.message);
+                            btn.disabled = false;
+                        }
+                    }
+
+                    // ── Bracket ──────────────────────────────────────────
+                    const $tournament = document.getElementById('tournament');
+                    const $viewport = document.getElementById('bracket-viewport');
+                    const appState = { totalRounds: 0 };
+
+                    function roundLabel(roundNum) {
+                        const fromEnd = appState.totalRounds - roundNum;
+                        if (fromEnd === 0) return 'Final';
+                        if (fromEnd === 1) return 'Semifinals';
+                        if (fromEnd === 2) return 'Quarterfinals';
+                        if (roundNum === 1) return 'First Round';
+                        return `Round ${roundNum}`;
+                    }
+
+                    // Build all-TBD bracket from model count (mirrors status page logic exactly)
+                    function initBracket(n) {
+                        if (!$tournament || n < 2) return;
+                        $tournament.innerHTML = '';
+
+                        let tempCount = n, rc = 0;
+                        while (tempCount > 1) { tempCount = Math.ceil(tempCount / 2); rc++; }
+                        appState.totalRounds = rc;
+
+                        let count = n, roundNum = 1;
+                        while (count > 1) {
+                            const matchCount = Math.floor(count / 2);
+                            if (matchCount > 0) {
+                                const roundEl = document.createElement('div');
+                                roundEl.className = 'round';
+                                roundEl.dataset.roundId = roundNum;
+                                const label = document.createElement('div');
+                                label.className = 'round-label';
+                                label.textContent = roundLabel(roundNum);
+                                roundEl.appendChild(label);
+                                for (let i = 0; i < matchCount; i++) {
+                                    const el = document.createElement('div');
+                                    el.className = 'matchup';
+                                    el.dataset.roundId = roundNum;
+                                    el.dataset.matchupId = i;
+                                    el.innerHTML = `
+                    <div class="team team-top tbd"><div class="team-info"><span class="participant-name">TBD</span><span class="kpi-stats"></span></div></div>
+                    <div class="team team-bottom tbd"><div class="team-info"><span class="participant-name">TBD</span><span class="kpi-stats"></span></div></div>`;
+                                    roundEl.appendChild(el);
+                                }
+                                $tournament.appendChild(roundEl);
+                            }
+                            count = Math.ceil(count / 2);
+                            roundNum++;
+                        }
+
+                        // Champion slot (hidden until winner revealed)
+                        const peak = document.createElement('div');
+                        peak.className = 'champion-peak';
+                        peak.id = 'champion-peak';
+                        peak.style.opacity = '0';
+                        peak.style.transition = 'opacity 0.6s ease';
+                        peak.innerHTML = `<span class="material-icons" style="font-size:2.5rem;color:var(--color-text-on-accent);opacity:0.3;">emoji_events</span>
+        <span class="champ-name" style="opacity:0.3;">?</span>`;
+                        $tournament.appendChild(peak);
+                    }
+
+                    // Advance winner to next round's slot
+                    function advanceWinner(name, roundNum, matchIdx) {
+                        const nextRoundNum = roundNum + 1;
+                        if (nextRoundNum > appState.totalRounds) return;
+                        const nextMatchupId = Math.floor(matchIdx / 2);
+                        const nextSlot = matchIdx % 2 === 0 ? 'team-top' : 'team-bottom';
+                        const nextEl = $tournament.querySelector(
+                            `.matchup[data-round-id='${nextRoundNum}'][data-matchup-id='${nextMatchupId}']`
+                        );
+                        if (!nextEl) return;
+                        const teamEl = nextEl.querySelector('.' + nextSlot);
+                        const nameEl = teamEl && teamEl.querySelector('.participant-name');
+                        if (nameEl && nameEl.textContent === 'TBD') {
+                            nameEl.textContent = name;
+                            teamEl.classList.remove('tbd');
+                        }
+                    }
+
+                    // Fill a team slot from bracketData model object (uses responder_id / f1 / precision / recall)
+                    function fillTeam(matchupEl, selector, model, winnerModel) {
+                        const teamEl = matchupEl.querySelector(selector);
+                        if (!teamEl) return;
+                        const nameEl = teamEl.querySelector('.participant-name');
+                        const kpiEl = teamEl.querySelector('.kpi-stats');
+                        const isWinner = winnerModel && model && model.responder_id === winnerModel.responder_id;
+
+                        if (!model) {
+                            // BYE slot
+                            if (nameEl) nameEl.textContent = 'BYE';
+                            teamEl.classList.remove('tbd');
+                            teamEl.classList.add('loser');
+                            teamEl.style.opacity = '0.3';
+                            teamEl.style.fontStyle = 'italic';
+                            return;
+                        }
+
+                        teamEl.classList.remove('tbd');
+                        if (nameEl) nameEl.textContent = isWinner ? `🏆 ${model.responder_id}` : model.responder_id;
+                        if (isWinner) teamEl.classList.add('winner');
+                        else if (winnerModel) teamEl.classList.add('loser');
+
+                        if (kpiEl) {
+                            if (model.f1 >= 0 && model.precision >= 0 && model.recall >= 0) {
+                                kpiEl.textContent = model.f1 > 0
+                                    ? `P: ${(model.precision * 100).toFixed(0)}%  R: ${(model.recall * 100).toFixed(0)}%  F1: ${(model.f1 * 100).toFixed(0)}%`
+                                    : `P: 0%  R: 0%  F1: 0%`;
+                            } else {
+                                kpiEl.textContent = 'Error';
+                                kpiEl.style.color = '#ef4444';
+                            }
+                        }
+                    }
+
+                    // Replay all matches progressively over TOTAL_MS milliseconds
+                    const TOTAL_MS = 10000;
+
+                    function replayBracket() {
+                        if (!bracketData || !bracketData.rounds || bracketData.rounds.length === 0) return;
+
+                        // Collect all match reveals in order (round 1 first, BYEs included)
+                        const reveals = [];
+                        bracketData.rounds.forEach((matchups, roundIdx) => {
+                            const roundNum = roundIdx + 1;
+                            matchups.forEach((matchup, matchupIdx) => {
+                                reveals.push({ matchup, roundNum, matchupIdx });
+                            });
+                        });
+
+                        if (reveals.length === 0) return;
+
+                        // Distribute evenly; min 400ms per step, max such that total ≤ TOTAL_MS
+                        const step = Math.max(400, Math.floor(TOTAL_MS / reveals.length));
+
+                        reveals.forEach(({ matchup, roundNum, matchupIdx }, i) => {
+                            setTimeout(() => {
+                                const matchupEl = $tournament.querySelector(
+                                    `.matchup[data-round-id='${roundNum}'][data-matchup-id='${matchupIdx}']`
+                                );
+
+                                if (!matchupEl) {
+                                    // BYE — advance winner with no visual slot
+                                    if (matchup.winner) advanceWinner(matchup.winner.responder_id, roundNum, matchupIdx);
+                                    return;
+                                }
+
+                                // Brief flash of active border before revealing result
+                                matchupEl.classList.add('active');
+                                setTimeout(() => {
+                                    matchupEl.classList.remove('active');
+                                    fillTeam(matchupEl, '.team-top', matchup.top, matchup.winner);
+                                    fillTeam(matchupEl, '.team-bottom', matchup.bottom, matchup.winner);
+                                    if (matchup.winner) advanceWinner(matchup.winner.responder_id, roundNum, matchupIdx);
+                                }, 300);
+
+                            }, i * step);
+                        });
+
+                        // Reveal champion after all matches are done
+                        const totalDelay = reveals.length * step + 400;
+                        setTimeout(() => {
+                            const winner = bracketData.winner;
+                            const peak = document.getElementById('champion-peak');
+                            if (!winner || !peak) return;
+                            const f1Label = winner.f1 > 0 ? ` <span class="champ-f1">· ${(winner.f1 * 100).toFixed(1)}%</span>` : '';
+                            peak.innerHTML = `
+            <span class="material-icons" style="font-size:2.5rem;color:var(--color-text-on-accent);">emoji_events</span>
+            <span class="champ-name">${esc(winner.responder_id)}${f1Label}</span>`;
+                            peak.style.opacity = '1';
+                        }, totalDelay);
+                    }
+
+                    // ── Pan / Zoom ────────────────────────────────────────
+                    const PanZoom = {
+                        scale: 1, px: 0, py: 0, dragging: false, sx: 0, sy: 0,
+                        init() {
+                            if (!$viewport) return;
+                            $viewport.addEventListener('mousedown', e => {
+                                e.preventDefault();
+                                this.dragging = true;
+                                this.sx = e.clientX - this.px;
+                                this.sy = e.clientY - this.py;
+                                $viewport.classList.add('grabbing');
+                            });
+                            window.addEventListener('mouseup', () => {
+                                this.dragging = false;
+                                $viewport.classList.remove('grabbing');
+                            });
+                            $viewport.addEventListener('mousemove', e => {
+                                if (!this.dragging) return;
+                                e.preventDefault();
+                                this.px = e.clientX - this.sx;
+                                this.py = e.clientY - this.sy;
+                                this.apply();
+                            });
+                            $viewport.addEventListener('wheel', e => {
+                                e.preventDefault();
+                                const xs = (e.clientX - this.px) / this.scale;
+                                const ys = (e.clientY - this.py) / this.scale;
+                                const f = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+                                this.scale = Math.max(0.15, Math.min(this.scale * f, 4));
+                                this.px = e.clientX - xs * this.scale;
+                                this.py = e.clientY - ys * this.scale;
+                                this.apply();
+                            }, { passive: false });
+                            document.getElementById('zoom-in').onclick = () => { this.scale = Math.min(this.scale * 1.25, 4); this.apply(); };
+                            document.getElementById('zoom-out').onclick = () => { this.scale = Math.max(this.scale * 0.8, 0.15); this.apply(); };
+                            document.getElementById('reset-zoom').onclick = () => this.fit();
+                            window.addEventListener('resize', () => this.fit());
+                        },
+                        apply() {
+                            if ($tournament) $tournament.style.transform = `translate(${this.px}px,${this.py}px) scale(${this.scale})`;
+                            // Counter-scale round labels so they stay legible at any zoom level
+                            const inv = Math.min(Math.max(1 / this.scale, 0.5), 5);
+                            $tournament.querySelectorAll('.round-label').forEach(el => {
+                                el.style.transform = `scale(${inv})`;
+                                el.style.transformOrigin = 'left bottom';
+                            });
+                        },
+                        fit() {
+                            if (!$viewport || !$tournament) return;
+                            const vr = $viewport.getBoundingClientRect();
+                            const tr = $tournament.getBoundingClientRect();
+                            if (!tr.width || !tr.height) return;
+                            this.scale = Math.min(vr.width / tr.width, vr.height / tr.height, 1) * 0.9;
+                            this.px = (vr.width - tr.width * this.scale) / 2;
+                            this.py = (vr.height - tr.height * this.scale) / 2;
+                            this.apply();
+                        }
+                    };
+
+                    // ── Confusion-matrix cell colouring ──────────────────
+                    // Palette mirrors run_details.html: white → deep green for
+                    // TP/TN; white → deep red for FP/FN. Intensity is per-cell
+                    // (value / max within its colour group), so a match's
+                    // hottest cell always saturates.
+                    function colourConfusionCells() {
+                        document.querySelectorAll('.cm-cell').forEach(cell => {
+                            const count = Number(cell.dataset.count) || 0;
+                            const max = Math.max(Number(cell.dataset.max) || 1, 1);
+                            const intensity = Math.min(1, count / max);
+                            const good = cell.dataset.kind === 'good';
+                            const r = Math.round((good ? 240 : 254) + intensity * ((good ?  22 : 153) - (good ? 240 : 254)));
+                            const g = Math.round((good ? 253 : 242) + intensity * ((good ? 101 :  27) - (good ? 253 : 242)));
+                            const b = Math.round((good ? 244 : 242) + intensity * ((good ?  72 :  27) - (good ? 244 : 242)));
+                            cell.style.backgroundColor = `rgb(${r},${g},${b})`;
+                            cell.style.color = intensity > 0.55
+                                ? '#ffffff'
+                                : (good ? '#14532d' : '#7f1d1d');
+                        });
+                    }
+
+                    document.addEventListener('DOMContentLoaded', () => {
+                        PanZoom.init();
+                        if (bracketData && bracketData.total_models >= 2) {
+                            initBracket(bracketData.total_models);
+                            setTimeout(() => PanZoom.fit(), 80);
+                            setTimeout(() => replayBracket(), 600);
+                        }
+                        colourConfusionCells();
+                    });
+                </script>
+                {% endblock %}

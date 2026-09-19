@@ -1,0 +1,14 @@
+{
+    "id": "debug_animals",
+    "name": "Debug Animal Test",
+    "description": "The default animal test. For testing, with some sense of irony.",
+    "owner": "mike@pelidum.com",
+    "provider": "pelidum",
+    "labels": [
+        "debug",
+        "reasoning",
+        "vision",
+        "audio"
+    ],
+    "type": "EVALUATION"
+}

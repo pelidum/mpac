@@ -1,0 +1,368 @@
+{% extends "base.html" %} {% block title %}Pelidum MPAC - Home{% endblock %} {% block
+styles %}
+<style>
+    .card-icon {
+        font-size: 1.5rem;
+        line-height: 1;
+    }
+</style>
+{% endblock %} {% block content %}
+<script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    google.charts.load('current', { 'packages': ['corechart'] });
+    google.charts.setOnLoadCallback(drawChart);
+
+    function getThemeColor(variableName) {
+        const root = document.documentElement;
+        const styles = getComputedStyle(root);
+        return styles.getPropertyValue(variableName).trim();
+    }
+
+    var rawData = {{ metrics_data | tojson }};
+    var chartWindowDays = {{ chart_window_days }};
+
+    function drawChart() {
+        const accentColor = getThemeColor('--color-accent-secondary');
+        const chartColors = [accentColor, '#60a5fa', '#f59e0b', '#34d399', '#a78bfa', '#f87171', '#fb923c'];
+
+        var data = new google.visualization.DataTable();
+
+        // 1. Define X-Axis
+        data.addColumn('number', 'Recall');
+
+        // 2. Identify unique test names
+        const testNames = [...new Set(rawData.map(item => item.test_name))].sort();
+
+        // 3. Add columns per test name
+        testNames.forEach(testName => {
+            data.addColumn('number', testName);
+            data.addColumn({ type: 'string', role: 'tooltip', p: { html: true } });
+        });
+
+        // 4. Transform Data
+        const rows = rawData.map(item => {
+            const row = new Array(1 + testNames.length * 2).fill(null);
+            row[0] = item.recall;
+            const testIndex = testNames.indexOf(item.test_name);
+            const valueColIndex = 1 + (testIndex * 2);
+            row[valueColIndex] = item.precision;
+            row[valueColIndex + 1] = createCustomTooltip(item);
+            return row;
+        });
+
+        data.addRows(rows);
+
+        const primaryBg = getThemeColor('--color-bg-primary');
+        const secondaryBg = getThemeColor('--color-bg-secondary');
+        const textColor = getThemeColor('--color-text-secondary');
+
+        var options = {
+            title: 'MPAC Run Performance - Last ' + chartWindowDays + ' Days',
+            titleTextStyle: { color: textColor, fontSize: 16 },
+            colors: chartColors,
+            hAxis: {
+                title: 'Recall',
+                minValue: 0,
+                maxValue: 1,
+                format: 'percent',
+                gridlines: { color: '#333' },
+                textStyle: { color: textColor },
+                titleTextStyle: { color: textColor }
+            },
+            vAxis: {
+                title: 'Precision',
+                minValue: 0,
+                maxValue: 1,
+                format: 'percent',
+                gridlines: { color: '#333' },
+                textStyle: { color: textColor },
+                titleTextStyle: { color: textColor }
+            },
+            backgroundColor: secondaryBg,
+            chartArea: { backgroundColor: primaryBg, width: '85%', height: '65%', left: 80, top: 60 },
+            legend: {
+                position: 'bottom',
+                textStyle: { color: textColor, fontSize: 12 },
+                alignment: 'start',
+                maxLines: 10
+            },
+            tooltip: { isHtml: true, trigger: 'selection' },
+            pointSize: 6,
+            dataOpacity: 0.8
+        };
+
+        var chart = new google.visualization.ScatterChart(document.getElementById('chart_div'));
+
+        google.visualization.events.addListener(chart, 'click', function (target) {
+            if (!target.targetID) {
+                chart.setSelection([]);
+            }
+        });
+
+        chart.draw(data, options);
+    }
+
+    function escapeHTML(s) {
+        return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+            .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+
+    function createCustomTooltip(item) {
+        const textColor = getThemeColor('--color-text-primary');
+        const subTextColor = getThemeColor('--color-text-secondary');
+        const bg = getThemeColor('--color-bg-primary');
+        const linkColor = '#4dabf7';
+
+        const style = `
+        padding: 12px;
+        background-color: ${bg};
+        color: ${textColor};
+        font-family: sans-serif;
+        font-size: 12px;
+        border: 1px solid ${getThemeColor('--color-border-primary') || '#555'};
+        border-radius: 4px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+        min-width: 220px;
+        z-index: 1000; 
+    `;
+
+        const rowStyle = "display: flex; justify-content: space-between; margin-bottom: 5px;";
+        const labelStyle = `color: ${subTextColor}; margin-right: 15px; font-weight: 500;`;
+        const valStyle = "font-weight: bold;";
+
+        // Formatting helper
+        const toPct = (val) => (val * 100).toFixed(1) + '%';
+
+        return `
+        <div style="${style}">
+            <div style="margin-bottom: 8px; border-bottom: 1px solid #555; padding-bottom: 6px;">
+                <div style="font-weight: bold; font-size: 14px; margin-bottom: 4px; word-wrap: break-word;">
+                    ${escapeHTML(item.owner)}
+                </div>
+                <div style="display: flex; justify-content: flex-end;">
+                    <a href="/runs/${encodeURIComponent(item.id)}" style="color: ${linkColor}; text-decoration: none; font-size: 12px;" target="_blank">
+                        View Run &#8599;
+                    </a>
+                </div>
+            </div>
+
+            <div style="${rowStyle}"><span style="${labelStyle}">Test:</span> <span style="${valStyle}">${escapeHTML(item.test_name)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Models:</span> <span style="${valStyle}">${escapeHTML(item.model_count)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Responder:</span> <span style="${valStyle}">${escapeHTML(item.responder)}</span></div>
+            <hr style="border: 0; border-top: 1px solid #444; margin: 8px 0;">
+            
+            <div style="${rowStyle}"><span style="${labelStyle}">Precision:</span> <span style="${valStyle}">${toPct(item.precision)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Recall:</span> <span style="${valStyle}">${toPct(item.recall)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">F1 Score:</span> <span style="${valStyle}">${toPct(item.f1)}</span></div>
+            
+            <div style="${rowStyle}; margin-top: 6px;">
+                <span style="${labelStyle}">Refusal Err:</span> 
+                <span style="${valStyle}; color: ${item.refusal_error_rate > 0.1 ? '#ff6b6b' : '#51cf66'}">
+                    ${toPct(item.refusal_error_rate)}
+                </span>
+            </div>
+            <div style="margin-top:8px; font-style:italic; font-size:10px; color:${subTextColor}; text-align:right;">
+                (Click background to close)
+            </div>
+        </div>
+    `;
+    }
+    window.addEventListener('resize', () => {
+        drawChart();
+    });
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        drawChart();
+    });
+    const observer = new MutationObserver(function (mutations) {
+        mutations.forEach(function (mutation) {
+            if (mutation.type === "attributes") {
+                setTimeout(drawChart, 0);
+            }
+        });
+    });
+    observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class', 'data-theme']
+    });
+</script>
+<div class="mx-auto max-w-7xl px-4 py-8">
+    <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <!-- Create Test Card -->
+        <a href="/tests/create"
+            class="card-surface group relative h-full min-h-28 flex items-start gap-4 rounded-2xl border border-[var(--surface-card-border)] bg-[var(--color-bg-secondary)] px-5 py-6 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent-secondary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)] dark:bg-[var(--surface-card-tint)] dark:hover:bg-[var(--surface-card-tint)] dark:shadow-[0_1px_0_rgba(255,255,255,0.04),0_4px_12px_rgba(0,0,0,0.28)]">
+            <!-- accent bar -->
+            <span
+                class="absolute left-0 top-0 h-full w-1.5 rounded-l-2xl bg-[var(--color-accent-secondary)]/70 opacity-80 transition-opacity group-hover:opacity-100"></span>
+
+            <!-- icon bubble -->
+            <span
+                class="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--color-accent-secondary)]/12 text-[var(--color-accent-secondary)]">
+                <span class="material-icons card-icon !text-[36px]">add</span>
+            </span>
+
+            <!-- text -->
+            <div>
+                <h2 class="text-lg font-semibold text-[var(--text-color-body)]">
+                    Create Test
+                </h2>
+                <p class="mt-1 text-sm text-[var(--color-text-secondary)]">
+                    Create a new test, defining questions and answers in your
+                    own terms, that AI models can take and be graded on.
+                </p>
+            </div>
+
+            <!-- chevron -->
+            <span
+                class="material-icons absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-color-light)] opacity-0 transition-opacity group-hover:opacity-100">chevron_right</span>
+        </a>
+
+        <!-- Benchmark Card -->
+        <a href="{{ url_for('benchmark_create') }}"
+            class="card-surface group relative h-full min-h-28 flex items-start gap-4 rounded-2xl border border-[var(--surface-card-border)] bg-[var(--color-bg-secondary)] px-5 py-6 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent-secondary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)] dark:bg-[var(--surface-card-tint)] dark:hover:bg-[var(--surface-card-tint)] dark:shadow-[0_1px_0_rgba(255,255,255,0.04),0_4px_12px_rgba(0,0,0,0.28)]">
+            <span
+                class="absolute left-0 top-0 h-full w-1.5 rounded-l-2xl bg-[var(--color-accent-secondary)]/70 opacity-80 transition-opacity group-hover:opacity-100"></span>
+            <span
+                class="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--color-accent-secondary)]/12 text-[var(--color-accent-secondary)]">
+                <span class="material-icons card-icon !text-[36px]">emoji_events</span>
+            </span>
+            <div>
+                <h2 class="text-lg font-semibold text-[var(--text-color-body)]">
+                    Run Benchmark
+                </h2>
+                <p class="mt-1 text-sm text-[var(--color-text-secondary)]">
+                    Pit models head-to-head on an evaluation and crown a winner.
+                </p>
+            </div>
+            <span
+                class="material-icons absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-color-light)] opacity-0 transition-opacity group-hover:opacity-100">chevron_right</span>
+        </a>
+
+        <!-- Run Test Card -->
+        <a href="{{ url_for('run_config') }}"
+            class="card-surface group relative h-full min-h-28 flex items-start gap-4 rounded-2xl border border-[var(--surface-card-border)] bg-[var(--color-bg-secondary)] px-5 py-6 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent-secondary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)] dark:bg-[var(--surface-card-tint)] dark:hover:bg-[var(--surface-card-tint)] dark:shadow-[0_1px_0_rgba(255,255,255,0.04),0_4px_12px_rgba(0,0,0,0.28)]">
+            <span
+                class="absolute left-0 top-0 h-full w-1.5 rounded-l-2xl bg-[var(--color-accent-secondary)]/70 opacity-80 transition-opacity group-hover:opacity-100"></span>
+            <span
+                class="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--color-accent-secondary)]/12 text-[var(--color-accent-secondary)]">
+                <span class="material-icons card-icon !text-[36px]">play_circle</span>
+            </span>
+            <div>
+                <h2 class="text-lg font-semibold text-[var(--text-color-body)]">
+                    Run Test
+                </h2>
+                <p class="mt-1 text-sm text-[var(--color-text-secondary)]">
+                    Evaluate one or more models against a test and review detailed results.
+                </p>
+            </div>
+            <span
+                class="material-icons absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-color-light)] opacity-0 transition-opacity group-hover:opacity-100">chevron_right</span>
+        </a>
+    </div>
+</div>
+<div class="mx-auto max-w-7xl px-4 py-8 space-y-6">
+    <!-- Metrics Chart Card (full width) -->
+    <div class="card p-6 flex flex-col" style="min-height: 500px;">
+        <h3
+            class="flex items-center gap-2.5 text-xl font-semibold pb-3 mb-4 border-b border-[var(--color-border)] text-accent">
+            <span class="material-icons !text-[30px]">area_chart</span>
+            Metrics
+        </h3>
+        <div id="chart_div" class="w-full flex-grow" style="min-height: 420px;"></div>
+        <div class="flex justify-center gap-4 mt-4 pt-4">
+            <a href="{{ url_for('metrics') }}"
+                class="bg-transparent border border-[var(--color-accent-primary)] text-[var(--color-accent-primary)] hover:bg-[var(--color-accent-primary)] hover:text-white font-bold py-2 px-4 rounded">
+                View All Metrics
+            </a>
+            <a href="{{ url_for('models') }}"
+                class="bg-transparent border border-[var(--color-accent-primary)] text-[var(--color-accent-primary)] hover:bg-[var(--color-accent-primary)] hover:text-white font-bold py-2 px-4 rounded">
+                View All Models
+            </a>
+        </div>
+    </div>
+
+    <!-- Recent Tests & Runs (side by side) -->
+    <div class="grid gap-6 lg:grid-cols-2 pb-8">
+        <!-- Recent Tests Card -->
+        <div class="card p-6 flex flex-col">
+            <h3 class="flex items-center gap-2.5 text-xl font-semibold pb-3 mb-4 border-b border-[var(--color-border)] text-accent">
+                <span class="material-icons !text-[30px]">assignment</span>
+                Recent Tests
+            </h3>
+            <ul class="space-y-2 flex-grow">
+                {% for recent_test in recent_tests %}
+                <li><a href="{{ url_for('test_details', test_id=recent_test.id) }}"
+                       class="block hover:bg-[var(--color-bg-primary)] p-2 rounded transition-colors">
+                        <div class="flex items-center gap-2 mb-0.5">
+                            {% if recent_test.type == 1 %}
+                            <span class="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-400 shrink-0">
+                                <span class="material-icons !text-[11px]">fact_check</span>Eval
+                            </span>
+                            {% elif recent_test.type == 2 %}
+                            <span class="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-sky-500/15 text-sky-400 shrink-0">
+                                <span class="material-icons !text-[11px]">poll</span>Survey
+                            </span>
+                            {% endif %}
+                            <p class="text-sm font-medium text-[var(--text-color-body)] truncate">
+                                {{ recent_test.name }}
+                            </p>
+                        </div>
+                        <p class="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                            {{ "{:,}".format(recent_test.item_count) }} items
+                        </p>
+                    </a></li>
+                {% endfor %}
+            </ul>
+            <div class="flex justify-center mt-6 pt-4 border-t border-[var(--color-border)]">
+                <a href="{{ url_for('tests') }}"
+                    class="bg-transparent border border-[var(--color-accent-primary)] text-[var(--color-accent-primary)] hover:bg-[var(--color-accent-primary)] hover:text-white font-bold py-2 px-4 rounded">
+                    View All Tests
+                </a>
+            </div>
+        </div>
+
+        <!-- Recent Activity Card -->
+        <div class="card p-6 flex flex-col">
+            <h3 class="flex items-center gap-2.5 text-xl font-semibold pb-3 mb-4 border-b border-[var(--color-border)] text-accent">
+                <span class="material-icons !text-[30px]">history</span>
+                Recent Activity
+            </h3>
+            <ul class="space-y-2 flex-grow">
+                {% for item in recent_runs %}
+                <li>
+                    <a href="{% if item.kind == 'benchmark' %}/benchmarks/{{ item.id }}{% else %}/runs/{{ item.id }}{% endif %}"
+                       class="block hover:bg-[var(--color-bg-primary)] p-2 rounded transition-colors">
+                        <div class="flex items-center gap-2 mb-0.5">
+                            {% if item.kind == 'benchmark' %}
+                            <span class="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-500 shrink-0">
+                                <span class="material-icons !text-[11px]">emoji_events</span>Benchmark
+                            </span>
+                            {% else %}
+                            <span class="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--color-accent-secondary)]/15 text-[var(--color-accent-secondary)] shrink-0">
+                                <span class="material-icons !text-[11px]">play_circle</span>Test Run
+                            </span>
+                            {% endif %}
+                            <p class="text-sm font-medium text-[var(--text-color-body)] truncate">
+                                {{ item.test_name or "Untitled Test" }}
+                            </p>
+                        </div>
+                        <p class="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                            {{ item.model_count }} models • {{ item.owner }}
+                        </p>
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+            <div class="flex justify-center gap-3 mt-6 pt-4 border-t border-[var(--color-border)]">
+                <a href="{{ url_for('runs') }}"
+                    class="bg-transparent border border-[var(--color-accent-primary)] text-[var(--color-accent-primary)] hover:bg-[var(--color-accent-primary)] hover:text-white font-bold py-2 px-4 rounded">
+                    View All Runs
+                </a>
+                <a href="/benchmarks"
+                    class="bg-transparent border border-[var(--color-accent-primary)] text-[var(--color-accent-primary)] hover:bg-[var(--color-accent-primary)] hover:text-white font-bold py-2 px-4 rounded">
+                    View All Benchmarks
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

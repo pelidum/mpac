@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Pelidum MPAC - New Run{% endblock %}
+
+{% block styles %}
+<style>
+  .create-page-container {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .card {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+  }
+
+  .creation-button {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    text-align: left;
+    text-decoration: none;
+    color: var(--text-color-body);
+    background-color: var(--bg-color-card);
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color-ui);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    width: 100%;
+    max-width: 600px;
+  }
+
+  .creation-button:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05), 0 10px 20px rgba(0, 0, 0, 0.08);
+  }
+
+  .creation-button .icon {
+    font-size: 3rem;
+    color: var(--primary-color);
+    flex-shrink: 0;
+  }
+
+  .creation-button h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin: 0 0 0.25rem 0;
+  }
+
+  .creation-button p {
+    color: var(--text-color-light);
+    margin: 0;
+    line-height: 1.4;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="create-page-container">
+  <div class="card">
+    <a href="/create/run/survey" class="creation-button">
+      <span class="material-icons icon">playlist_add_check</span>
+      <div>
+        <h2>Run Survey</h2>
+        <p>Select models to run against an existing survey.</p>
+      </div>
+    </a>
+  </div>
+
+  <div class="card">
+    <a href="/create/run/eval" class="creation-button">
+      <span class="material-icons icon">rule</span>
+      <div>
+        <h2>Run Eval</h2>
+        <p>Select models to run against an existing eval.</p>
+      </div>
+    </a>
+  </div>
+</div>
+{% endblock %}

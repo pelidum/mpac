@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="csrf-token" content="{{ request.state.csrf_token | default('', true) }}" />
+  <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.ico') }}">
+  <script>
+    (function () {
+      try {
+        var savedTheme = localStorage.getItem("theme");
+        if (savedTheme === "dark") {
+          document.documentElement.classList.add("dark");
+        }
+      } catch (e) {
+        console.error("Could not access localStorage to set theme.", e);
+      }
+
+      var originalFetch = window.fetch;
+      window.fetch = function (url, options) {
+        options = options || {};
+        var method = (options.method || "GET").toUpperCase();
+        if (["POST", "PUT", "DELETE", "PATCH"].indexOf(method) !== -1) {
+          var token = document.querySelector('meta[name="csrf-token"]');
+          if (token) {
+            options.headers = options.headers || {};
+            options.headers["X-CSRF-Token"] = token.content;
+          }
+        }
+        return originalFetch.call(this, url, options);
+      };
+    })();
+  </script>
+  <title>{% block title %}Pelidum MPAC{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400..900&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class", // This enables dark mode based on <html class="dark">
+      theme: {
+        extend: {
+          colors: {
+            // Here, we're mapping your CSS variables from style.css
+            "bg-primary": "var(--color-bg-primary)",
+            "bg-secondary": "var(--color-bg-secondary)",
+            "text-primary": "var(--color-text-primary)",
+            "text-secondary": "var(--color-text-secondary)",
+            "accent-primary": "var(--color-accent-primary)",
+            "accent-secondary": "var(--color-accent-secondary)",
+            border: "var(--color-border)",
+            "table-header": "var(--color-table-header-bg)",
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  {% block styles %}{% endblock %}
+</head>
+
+<body>
+  <div class="app-bar">
+    <button class="drawer-toggle-btn icon-button-base material-icons">
+      menu
+    </button>
+    <a href="{{ url_for('home') }}" class="flex items-center gap-3 no-underline cursor-default">
+      <img src="{{ url_for('static', filename='images/logo/logo_light.png') }}" alt="Pelidum Logo"
+        class="pelican-logo pelican-logo-light">
+      <img src="{{ url_for('static', filename='images/logo/logo_dark.png') }}" alt="Pelidum Logo"
+        class="pelican-logo pelican-logo-dark">
+      <h1 class="text-xl font-semibold text-[var(--color-banner-logo)] font-logo">
+        Pelidum
+      </h1>
+      <h1 class="text-xl font-semibold text-[var(--color-text-secondary)]">
+        |
+      </h1>
+      <h2 class="text-l font-semibold text-[var(--color-accent-secondary)] font-mpac">
+        M P A C
+      </h2>
+    </a>
+  </div>
+
+  <div id="navigation-drawer" class="drawer">
+    <div class="branding-header">
+      <a href="{{ url_for('home') }}" class="flex items-center gap-3 no-underline cursor-default">
+        <img src="{{ url_for('static', filename='images/logo/logo_light.png') }}" alt="Pelidum Logo"
+          class="pelican-logo pelican-logo-small pelican-logo-light">
+        <img src="{{ url_for('static', filename='images/logo/logo_dark.png') }}" alt="Pelidum Logo"
+          class="pelican-logo pelican-logo-small pelican-logo-dark">
+        <div>
+          <h1 class="text-lg font-bold">Pelidum</h1>
+          <h2 class="text-l font-semibold text-[var(--color-accent-secondary)] font-mpac">
+            M P A C
+          </h2>
+        </div>
+      </a>
+    </div>
+
+    <div class="drawer-header">
+      <h2 class="text-lg font-bold">Navigation</h2>
+      <button class="drawer-toggle-btn icon-button-base material-icons">
+        arrow_back
+      </button>
+    </div>
+    <a href="{{ url_for('home') }}" class="drawer-item">
+      <span class="material-icons">dashboard</span> Dashboard
+    </a>
+    <a href="{{ url_for('models') }}" class="drawer-item">
+      <span class="material-icons">memory</span> Models
+    </a>
+    <a href="{{ url_for('tests') }}" class="drawer-item">
+      <span class="material-icons">assignment</span> Tests
+    </a>
+    <a href="{{ url_for('benchmarks') }}" class="drawer-item">
+      <span class="material-icons">emoji_events</span> Benchmarks
+    </a>
+    <a href="{{ url_for('metrics') }}" class="drawer-item">
+      <span class="material-icons">area_chart</span> Metrics
+    </a>
+    <a href="{{ url_for('runs') }}" class="drawer-item">
+      <span class="material-icons">history</span> Runs
+    </a>
+    <a href="{{ url_for('settings') }}" class="drawer-item">
+      <span class="material-icons">settings</span> Settings
+    </a>
+    <a href="{{ url_for('help') }}" class="drawer-item">
+      <span class="material-icons">help_outline</span> Help
+    </a>
+    {% if is_admin %}
+    <a href="{{ url_for('admin') }}" class="drawer-item">
+      <span class="material-icons">admin_panel_settings</span> Admin
+    </a>
+    {% endif %}
+    <a href="{{ url_for('logout') }}" class="drawer-item">
+      <span class="material-icons">logout</span> Logout
+    </a>
+
+
+    <div class="mt-auto p-4 flex items-center justify-between" style="border-top: 1px solid var(--color-border)">
+      <span>Theme:</span>
+      <button class="theme-toggle icon-button-base material-icons"></button>
+    </div>
+  </div>
+
+  <div id="drawer-overlay" class="overlay"></div>
+  <main id="main-content" class="main-content">
+    <div class="content-wrapper">{% block content %}{% endblock %}</div>
+  </main>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+
+</html>

@@ -1,0 +1,1533 @@
+{% extends "base.html" %}
+{% block title %}Pelidum MPAC - Run Results{% endblock %}
+
+{% block content %}
+<style>
+    .filter-btn {
+        background: transparent;
+        color: var(--color-text-secondary);
+        border-color: var(--color-border);
+        cursor: pointer;
+    }
+    .filter-btn:hover {
+        border-color: var(--color-accent-secondary);
+        color: var(--color-accent-secondary);
+    }
+    .filter-btn.active {
+        background: var(--color-accent-secondary);
+        color: white;
+        border-color: var(--color-accent-secondary);
+    }
+    .incorrect-answer-cell {
+        background: repeating-linear-gradient(
+            45deg,
+            rgb(254 226 226),
+            rgb(254 226 226) 10px,
+            rgb(239 68 68 / 0.25) 10px,
+            rgb(239 68 68 / 0.25) 20px
+        ) !important;
+    }
+
+    .dark .incorrect-answer-cell {
+        background: repeating-linear-gradient(
+            45deg,
+            rgb(127 29 29 / 0.3),
+            rgb(127 29 29 / 0.3) 10px,
+            rgb(239 68 68 / 0.15) 10px,
+            rgb(239 68 68 / 0.15) 20px
+        ) !important;
+    }
+
+    /* Answers spreadsheet */
+    .answers-ss {
+        overflow: auto;
+        max-height: 80vh;
+    }
+    .answers-ss::-webkit-scrollbar { width: 6px; height: 6px; }
+    .answers-ss::-webkit-scrollbar-track { background: transparent; }
+    .answers-ss::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+    .answers-ss::-webkit-scrollbar-thumb:hover { background: var(--color-text-secondary); }
+
+    .answers-ss table { border-collapse: separate; border-spacing: 0; width: 100%; }
+    .answers-ss th,
+    .answers-ss td {
+        padding: 6px 10px;
+        border-right: 1px solid var(--color-border);
+        border-bottom: 1px solid var(--color-border);
+        font-size: 13px;
+        vertical-align: top;
+    }
+    .answers-ss thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: var(--color-bg-primary);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--color-text-secondary);
+        padding: 8px 10px;
+        white-space: nowrap;
+    }
+    .answers-ss .col-f {
+        position: sticky;
+        background: var(--color-bg-primary);
+        z-index: 1;
+    }
+    .answers-ss thead .col-f { z-index: 3; }
+    .answers-ss .col-fe {
+        border-right: 2px solid var(--color-border);
+        box-shadow: 4px 0 8px -4px rgba(0,0,0,0.08);
+    }
+    .dark .answers-ss .col-fe {
+        box-shadow: 4px 0 8px -4px rgba(0,0,0,0.3);
+    }
+    .answers-ss tbody tr:hover td { background: var(--color-highlight-shade1); }
+    .answers-ss tbody tr:hover .col-f { background: var(--color-highlight-shade1); }
+
+    .answers-ss .col-model {
+        word-break: break-word;
+        white-space: normal;
+    }
+    .answers-ss .cell-c {
+        max-height: 80px;
+        overflow-y: auto;
+        word-break: break-word;
+        white-space: normal;
+        line-height: 1.45;
+    }
+    .answers-ss .ans-ok { background: #dcfce7; }
+    .answers-ss .ans-bad { background: #fef2f2; border-left: 3px solid #ef4444; }
+    .dark .answers-ss .ans-ok { background: rgba(34,197,94,0.12); }
+    .dark .answers-ss .ans-bad { background: rgba(239,68,68,0.10); border-left-color: #ef4444; }
+    .answers-ss tbody tr:hover .ans-ok { background: #bbf7d0; }
+    .answers-ss tbody tr:hover .ans-bad { background: #fecaca; }
+    .dark .answers-ss tbody tr:hover .ans-ok { background: rgba(34,197,94,0.2); }
+    .dark .answers-ss tbody tr:hover .ans-bad { background: rgba(239,68,68,0.18); }
+    .answers-ss .ans-expected {
+        background: color-mix(in srgb, var(--color-accent-primary) 6%, var(--color-bg-primary));
+    }
+    .answers-ss tbody tr:hover .ans-expected {
+        background: color-mix(in srgb, var(--color-accent-primary) 12%, var(--color-bg-primary));
+    }
+    .answers-ss .cell-actions {
+        display: flex; gap: 2px; margin-top: 4px;
+    }
+    .answers-ss .cell-actions button {
+        background: none; border: none; cursor: pointer;
+        padding: 2px; color: var(--color-text-secondary);
+        border-radius: 3px; line-height: 1;
+    }
+    .answers-ss .cell-actions button:hover {
+        color: var(--color-accent-secondary);
+        background: rgba(var(--color-accent-primary-rgb), 0.08);
+    }
+
+    .toc-link {
+        display: block;
+        padding: 0.5rem 0.75rem;
+        border-radius: 0.375rem;
+        font-size: 0.875rem;
+        color: var(--color-text-secondary);
+        text-decoration: none;
+        transition: background 0.15s, color 0.15s;
+        border-left: 2px solid transparent;
+    }
+
+    .toc-link:hover {
+        background: var(--color-bg-secondary);
+        color: var(--color-text-primary);
+    }
+
+    .toc-link.active {
+        border-left-color: var(--color-accent-primary);
+        color: var(--color-accent-primary);
+        font-weight: 500;
+    }
+
+    .toc-sub {
+        padding-left: 1.5rem;
+        font-size: 0.8rem;
+    }
+
+    .toc-group {
+        display: flex;
+        flex-direction: column;
+        padding-top: 0.5rem;
+        margin-top: 0.5rem;
+        border-top: 1px solid var(--color-border);
+    }
+
+    .toc-group:first-of-type {
+        padding-top: 0;
+        margin-top: 0;
+        border-top: none;
+    }
+
+    .run-nav-section {
+        scroll-margin-top: 7.5rem;
+    }
+</style>
+
+<div class="max-w-[1280px] mx-auto">
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="content-title">Run Results</h1>
+            <p class="mt-1 muted">
+                <span class="font-semibold">ID:</span> {{ result_pb.id }}
+            </p>
+        </div>
+        <div class="flex items-center space-x-2">
+            {% if is_admin or result_pb.owner == user_email %}
+            <button type="button" onclick="deleteRun()" class="button-secondary" style="color:#ef4444;border-color:#ef4444;">
+                <span class="material-icons text-[20px]">delete</span>
+                Delete
+            </button>
+            {% endif %}
+            {% if result_pb.status == 3 %}
+            <button type="button" id="cancel-run-button" onclick="cancelRun('{{ result_pb.id }}')" class="button-secondary text-red-600 border-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
+                <span class="material-icons text-[20px]">cancel</span>
+                Cancel Job
+            </button>
+            {% endif %}
+            <div class="relative inline-block text-left">
+                <button type="button" id="download-button" class="button-secondary" aria-expanded="false"
+                    aria-haspopup="true">
+                    <span id="download-button-default">
+                        Download
+                        <span class="material-icons text-secondary text-[20px]">expand_more</span>
+                    </span>
+                    <span id="download-button-loading" class="hidden inline-flex items-center gap-1.5">
+                        <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        Generating PDF…
+                    </span>
+                </button>
+                <div id="download-dropdown"
+                    class="dropdown-menu origin-top-right absolute right-0 mt-2 w-36 rounded-md shadow-lg hidden z-10"
+                    role="menu">
+                    <div class="py-1" role="none">
+                        <a href="{{ url_for('download_run_pdf', run_id=result_pb.id) }}" class="dropdown-item" role="menuitem" id="pdf-download-link">PDF Report</a>
+                        <a href="{{ url_for('download_run_csv', run_id=result_pb.id) }}" class="dropdown-item" role="menuitem">CSV</a>
+                        <a href="{{ url_for('download_run_json', run_id=result_pb.id) }}" class="dropdown-item" role="menuitem">JSON</a>
+                    </div>
+                </div>
+            </div>
+            <button type="button" onclick="history.back()" class="button-secondary">
+                <span class="material-icons text-[20px]">arrow_back</span>
+                Back to List
+            </button>
+        </div>
+    </div>
+
+    <div class="flex gap-8 items-start">
+
+        <!-- ── Sticky nav ─────────────────────────────────────────── -->
+        <aside class="hidden lg:block w-56 flex-shrink-0 sticky top-[7rem] self-start">
+            <nav id="run-toc" class="card p-4">
+                <p class="text-xs font-semibold uppercase tracking-wider text-muted mb-3">On this page</p>
+                <ul style="list-style:none; margin:0; padding:0;">
+                    <li class="toc-group"><a href="#run-details" class="toc-link">Run Details</a></li>
+                    {% if ranked_models %}
+                    <li class="toc-group"><a href="#results-summary" class="toc-link">Results Summary</a></li>
+                    {% endif %}
+                    {% if answers %}
+                    <li class="toc-group"><a href="#answers" class="toc-link">Answers</a></li>
+                    {% endif %}
+                    {% if metrics_dict %}
+                    <li class="toc-group">
+                        <a href="#analysis" class="toc-link">Analysis</a>
+                        <ul style="list-style:none; margin:0; padding:0;">
+                            <li><a href="#models" class="toc-link toc-sub">Models</a></li>
+                            {% if metrics_dict|length > 1 and test_pb and test_pb.type == 1 %}
+                            <li><a href="#quality-leaderboard" class="toc-link toc-sub">Quality Leaderboard</a></li>
+                            {% endif %}
+                            {% if test_pb and test_pb.type == 1 and confusion_data %}
+                            <li><a href="#confusion-matrix" class="toc-link toc-sub">Confusion Matrix</a></li>
+                            {% endif %}
+                            {% if metrics_dict|length > 1 %}
+                            <li><a href="#execution-timeline" class="toc-link toc-sub">Execution Timeline</a></li>
+                            {% endif %}
+                        </ul>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- ── Main content ───────────────────────────────────────── -->
+        <div class="flex-1 min-w-0">
+
+    <!-- Details Card -->
+    <section id="run-details" class="run-nav-section">
+    <div class="card p-6 mb-6">
+        <h3
+            class="flex items-center gap-2.5 text-xl font-semibold pb-3 mb-4 border-b border-[var(--color-border)] text-accent">
+            <span class="material-icons">info</span>
+            Run Details
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+            <div class="flex items-start gap-3">
+                <span class="material-icons text-accent mt-px text-[20px]">person</span>
+                <div>
+                    <span class="block text-sm font-medium text-muted mb-0.5">Owner</span>
+                    <p class="font-medium text-base break-words">{{ result_pb.owner }}</p>
+                </div>
+            </div>
+            <div class="flex items-start gap-3">
+                <span class="material-icons text-accent mt-px text-[20px]">assignment</span>
+                <div>
+                    <span class="block text-sm font-medium text-muted mb-0.5">Test</span>
+                    <a href="{{ url_for('test_details', test_id=result_pb.test_id) }}">{{ test_pb.name if test_pb else result_pb.test_id }}</a>
+                </div>
+            </div>
+            {% if test_pb %}
+            <div class="flex items-start gap-3">
+                <span class="material-icons text-accent mt-px text-[20px]">quiz</span>
+                <div>
+                    <span class="block text-sm font-medium text-muted mb-0.5">Test Type</span>
+                    {% if test_pb.type == 0 %}
+                    <p class="font-medium text-base break-words">UNSPECIFIED</p>
+                    {% elif test_pb.type == 1 %}
+                    <p class="font-medium text-base break-words">EVALUATION</p>
+                    {% elif test_pb.type == 2 %}
+                    <p class="font-medium text-base break-words">SURVEY</p>
+                    {% else %}
+                    <p class="font-medium text-base break-words">UNSPECIFIED</p>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+            <div class="flex items-start gap-3">
+                <span class="material-icons text-accent mt-px text-[20px]">start</span>
+                <div>
+                    <span class="block text-sm font-medium text-muted mb-0.5">Created</span>
+                    <p class="font-medium text-base break-words"
+                        data-timestamp="{{ result_pb.created_at_utc.ToJsonString() }}">
+                        {{ result_pb.created_at_utc.ToJsonString() }}
+                    </p>
+                </div>
+            </div>
+            <div class="flex items-start gap-3">
+                <span class="material-icons text-accent mt-px text-[20px]">done</span>
+                <div>
+                    <span class="block text-sm font-medium text-muted mb-0.5">Completed</span>
+                    <p class="font-medium text-base break-words"
+                        data-timestamp="{{ result_pb.completed_at_utc.ToJsonString() }}">
+                        {{ result_pb.completed_at_utc.ToJsonString() }}
+                    </p>
+                </div>
+            </div>
+            <div class="flex items-start gap-3">
+                <span class="material-icons text-accent mt-px text-[20px]">change_circle</span>
+                <div>
+                    <span class="block text-sm font-medium text-muted mb-0.5">Status</span>
+                    {% if result_pb.status == 0 %}
+                    <p class="font-medium text-base break-words text-gray-600">UNKNOWN</p>
+                    {% elif result_pb.status == 1 %}
+                    <p class="font-medium text-base break-words text-green-600">SUCCESS</p>
+                    {% elif result_pb.status == 2 %}
+                    <p class="font-medium text-base break-words text-red-600">ERROR</p>
+                    {% elif result_pb.status == 3 %}
+                    <p class="font-medium text-base break-words text-blue-600">IN PROGRESS</p>
+                    {% elif result_pb.status == 4 %}
+                    <p class="font-medium text-base break-words text-yellow-600">CANCELLED</p>
+                    {% else %}
+                    <p class="font-medium text-base break-words text-gray-600">UNKNOWN</p>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="flex items-start gap-3">
+                <span class="material-icons text-accent mt-px text-[20px]">psychology</span>
+                <div>
+                    <span class="block text-sm font-medium text-muted mb-0.5">Reasoning</span>
+                    <p class="font-medium text-base break-words">{{ result_pb.include_reasoning }}</p>
+                </div>
+            </div>
+            <div class="flex items-start gap-3">
+                <span class="material-icons text-accent mt-px text-[20px]">format_list_numbered</span>
+                <div>
+                    <span class="block text-sm font-medium text-muted mb-0.5">Sample Size</span>
+                    <p class="font-medium text-base break-words">{{ result_pb.sample_size }}</p>
+                </div>
+            </div>
+            <div class="flex items-start gap-3">
+                <span class="material-icons text-accent mt-px text-[20px]">attach_money</span>
+                <div>
+                    <span class="block text-sm font-medium text-muted mb-0.5">Estimated Cost (USD)</span>
+                    <p class="font-medium text-base break-words">{{ "${:,.8f}".format(result_pb.total_cost_usd) }}</p>
+                </div>
+            </div>
+            <div class="flex items-start gap-3">
+                <span class="material-icons text-accent mt-px text-[20px]">token</span>
+                <div>
+                    <span class="block text-sm font-medium text-muted mb-0.5">Total Tokens</span>
+                    <p class="font-medium text-base break-words">{{ "{:,}".format(result_pb.total_tokens) }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    </section>
+
+    <!-- Results Summary -->
+    {% if ranked_models %}
+    <section id="results-summary" class="run-nav-section">
+    <div class="card p-6 mb-6">
+        <h3 class="flex items-center gap-2.5 text-xl font-semibold text-accent">
+            <span class="material-icons">emoji_events</span>
+            Results Summary
+        </h3>
+        {% if ranked_models|length > 1 %}
+        <p class="muted text-sm mt-1 pb-3 mb-4 border-b border-[var(--color-border)]">
+            Models ranked by F1 score. {% if test_pb and test_pb.type == 1 %}<strong>{{ ranked_models[0].get("responder_id") }}</strong> performed best with an F1 of {{ "{:.2%}".format(ranked_models[0].get("f1", 0)) }}.{% endif %}
+        </p>
+        {% else %}
+        <p class="muted text-sm mt-1 pb-3 mb-4 border-b border-[var(--color-border)]">
+            Single-model run summary.
+        </p>
+        {% endif %}
+        <div class="space-y-3">
+            {% for m in ranked_models %}
+            <div class="flex items-center gap-4 p-3 rounded-lg {{ 'bg-[var(--color-bg-secondary)]' if loop.index == 1 else '' }}">
+                <div class="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg
+                    {% if loop.index == 1 %}
+                    bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300
+                    {% elif loop.index == 2 %}
+                    bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300
+                    {% elif loop.index == 3 %}
+                    bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300
+                    {% else %}
+                    bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)]
+                    {% endif %}
+                ">
+                    {{ loop.index }}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-sm truncate">{{ m.get("responder_id") }}</p>
+                </div>
+                {% if test_pb and test_pb.type == 1 %}
+                <div class="flex items-center gap-4 text-sm tabular-nums">
+                    <span title="Precision"><span class="text-muted text-xs">P</span> {{ "{:.1%}".format(m.get("precision", 0)) }}</span>
+                    <span title="Recall"><span class="text-muted text-xs">R</span> {{ "{:.1%}".format(m.get("recall", 0)) }}</span>
+                    <span title="F1" class="font-bold"><span class="text-muted text-xs">F1</span> {{ "{:.1%}".format(m.get("f1", 0)) }}</span>
+                </div>
+                {% else %}
+                <div class="flex items-center gap-4 text-sm tabular-nums">
+                    <span title="Output tok/s"><span class="text-muted text-xs">tok/s</span> {{ "{:.1f}".format(m.get("output_tps_p50", 0) | float) }}</span>
+                    <span title="Latency p50"><span class="text-muted text-xs">p50</span> {{ "{:.2f}s".format(m.get("median_task_duration", 0) | float) }}</span>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    </section>
+    {% endif %}
+
+        </div>
+        <!-- /Main content -->
+    </div>
+    <!-- /flex row -->
+
+
+    <!-- ── Answers (full width) ───────────────────────────────────── -->
+    {% if answers %}
+    <section id="answers" class="run-nav-section">
+    <div class="flex items-center gap-3 mt-8 mb-4">
+        <span class="material-icons text-accent text-xl">table_chart</span>
+        <h2 class="text-lg font-bold tracking-wide uppercase text-[var(--color-text-secondary)]">Answers</h2>
+        <div class="flex-1 border-t border-[var(--color-border)]"></div>
+    </div>
+
+    {% set w_num = 36 %}
+    {% set w_att = 72 %}
+    {% set w_q = 200 %}
+    {% set w_ctx = 120 %}
+    {% set w_ans = 130 %}
+    {% set w_model = 220 %}
+    {% if has_attachments %}
+    {% set l_att = w_num %}
+    {% set l_q = w_num + w_att %}
+    {% set l_ctx = w_num + w_att + w_q %}
+    {% set l_ans = w_num + w_att + w_q + w_ctx %}
+    {% else %}
+    {% set l_q = w_num %}
+    {% set l_ctx = w_num + w_q %}
+    {% set l_ans = w_num + w_q + w_ctx %}
+    {% endif %}
+    <div class="card mb-6" style="padding: 16px 0;">
+        <div style="padding: 0 16px;" class="flex justify-between items-start pb-3 mb-0 border-b border-[var(--color-border)]">
+            <div>
+                <h3 class="flex items-center gap-2.5 text-xl font-semibold text-accent">
+                    <span class="material-icons">question_answer</span>
+                    {{ answers|length }} Responses
+                </h3>
+                {% if test_pb and test_pb.type == 1 %}
+                {% set multi_model = models_ranked | length > 1 %}
+                {% if multi_model %}
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mt-2">
+                    <span class="text-xs text-muted font-medium uppercase tracking-wide">Model</span>
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="setModelFilter('')"
+                            class="model-filter-btn filter-btn active text-xs px-3 py-1 rounded-full border transition-colors"
+                            data-model="">All</button>
+                        {% for model_pb in models_ranked %}
+                        <button onclick="setModelFilter('{{ model_pb.id }}')"
+                            class="model-filter-btn filter-btn text-xs px-3 py-1 rounded-full border transition-colors"
+                            data-model="{{ model_pb.id }}">{{ model_pb.id }}</button>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mt-{% if multi_model %}3{% else %}2{% endif %}">
+                    <span class="text-xs {% if multi_model %}opacity-40{% endif %} text-muted font-medium uppercase tracking-wide" id="result-filter-label">Result</span>
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="setAnswerFilter('')" class="class-filter-btn filter-btn active text-xs px-3 py-1 rounded-full border transition-colors {% if multi_model %}opacity-40{% endif %}" data-filter="" {% if multi_model %}disabled{% endif %}>All</button>
+                        <button onclick="setAnswerFilter('TP')" class="class-filter-btn filter-btn text-xs px-3 py-1 rounded-full border transition-colors {% if multi_model %}opacity-40{% endif %}" data-filter="TP" title="True Positive" {% if multi_model %}disabled{% endif %}>TP</button>
+                        <button onclick="setAnswerFilter('TN')" class="class-filter-btn filter-btn text-xs px-3 py-1 rounded-full border transition-colors {% if multi_model %}opacity-40{% endif %}" data-filter="TN" title="True Negative" {% if multi_model %}disabled{% endif %}>TN</button>
+                        <button onclick="setAnswerFilter('FP')" class="class-filter-btn filter-btn text-xs px-3 py-1 rounded-full border transition-colors {% if multi_model %}opacity-40{% endif %}" data-filter="FP" title="False Positive" {% if multi_model %}disabled{% endif %}>FP</button>
+                        <button onclick="setAnswerFilter('FN')" class="class-filter-btn filter-btn text-xs px-3 py-1 rounded-full border transition-colors {% if multi_model %}opacity-40{% endif %}" data-filter="FN" title="False Negative" {% if multi_model %}disabled{% endif %}>FN</button>
+                    </div>
+                </div>
+                <p class="muted text-xs mt-1.5">TP = correct accept &bull; TN = correct reject &bull; FP = wrong accept &bull; FN = wrong reject.{% if multi_model %} Select a model to enable result filtering.{% endif %}</p>
+                {% endif %}
+            </div>
+            <span class="text-sm text-muted shrink-0 mt-1">{{ answers|length }} of {{ result_pb.sample_size }}</span>
+        </div>
+
+        {% if models_ranked | length > 1 %}
+        <div style="padding: 6px 16px;" class="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-[var(--color-border)]">
+            {% for model_pb in models_ranked %}
+            <span class="flex items-center gap-1.5 text-xs text-[var(--color-text-secondary)]">
+                <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:4px;font-size:10px;font-weight:700;background:var(--color-bg-secondary);color:var(--color-accent-secondary);border:1px solid var(--color-border)">{{ loop.index }}</span>
+                {{ model_pb.id }}
+            </span>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="answers-ss">
+            <table>
+                <thead>
+                    <tr>
+                        <th class="col-f" style="left:0;width:{{ w_num }}px;min-width:{{ w_num }}px;max-width:{{ w_num }}px">#</th>
+                        {% if has_attachments %}
+                        <th class="col-f" style="left:{{ l_att }}px;width:{{ w_att }}px;min-width:{{ w_att }}px;max-width:{{ w_att }}px;text-align:center">
+                            <span class="material-icons" style="font-size:14px">attach_file</span>
+                        </th>
+                        {% endif %}
+                        <th class="col-f" style="left:{{ l_q }}px;width:{{ w_q }}px;min-width:{{ w_q }}px;max-width:{{ w_q }}px">Question</th>
+                        <th class="col-f" style="left:{{ l_ctx }}px;width:{{ w_ctx }}px;min-width:{{ w_ctx }}px;max-width:{{ w_ctx }}px">Context</th>
+                        <th class="col-f col-fe" style="left:{{ l_ans }}px;width:{{ w_ans }}px;min-width:{{ w_ans }}px;max-width:{{ w_ans }}px">
+                            {% if test_pb and test_pb.type == 1 %}Expected{% else %}Consensus{% endif %}
+                        </th>
+                        {% for model_pb in models_ranked %}
+                        <th data-model-col="{{ model_pb.id }}" class="col-model" title="{{ model_pb.id }}">
+                            <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:4px;font-size:10px;font-weight:700;background:var(--color-bg-secondary);color:var(--color-accent-secondary);border:1px solid var(--color-border)">{{ loop.index }}</span>
+                        </th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody id="answers-tbody">
+                    {% for item_id, item_dict in answers.items() %}
+                    <tr>
+                        <td class="col-f" style="left:0;width:{{ w_num }}px;min-width:{{ w_num }}px;max-width:{{ w_num }}px">
+                            <span style="font-size:11px;color:var(--color-text-secondary);font-variant-numeric:tabular-nums">{{ loop.index }}</span>
+                        </td>
+
+                        {% if has_attachments %}
+                        <td class="col-f" style="left:{{ l_att }}px;width:{{ w_att }}px;min-width:{{ w_att }}px;max-width:{{ w_att }}px;text-align:center;padding:4px">
+                            {% set attachment_pb = attachments_meta.get(item_dict.get("item_pb").attachment_id) %}
+                            {% if attachment_pb %}
+                                {% if attachment_pb.modality == 2 %}
+                                <img src="{{ url_for('attachment_file', attachment_id=attachment_pb.id) }}"
+                                     alt="{{ attachment_pb.name }}"
+                                     style="max-height:48px;max-width:60px;object-fit:cover;border-radius:4px;cursor:pointer"
+                                     data-name="{{ attachment_pb.name }}" onclick="openAttachmentModal(this.src, this.dataset.name)"
+                                     title="{{ attachment_pb.name }}">
+                                {% elif attachment_pb.modality == 1 %}
+                                <span class="material-icons text-accent" style="font-size:20px" title="{{ attachment_pb.name }}">audiotrack</span>
+                                {% elif attachment_pb.modality == 3 %}
+                                <span class="material-icons text-accent" style="font-size:20px" title="{{ attachment_pb.name }}">videocam</span>
+                                {% else %}
+                                <span class="material-icons" style="font-size:20px;color:var(--color-text-secondary)" title="{{ attachment_pb.name }}">insert_drive_file</span>
+                                {% endif %}
+                            {% else %}
+                            <span style="color:var(--color-text-secondary);font-size:11px">—</span>
+                            {% endif %}
+                        </td>
+                        {% endif %}
+
+                        <td class="col-f" style="left:{{ l_q }}px;width:{{ w_q }}px;min-width:{{ w_q }}px;max-width:{{ w_q }}px">
+                            <div class="cell-c">{{ item_dict.get("item_pb").question }}</div>
+                        </td>
+
+                        <td class="col-f" style="left:{{ l_ctx }}px;width:{{ w_ctx }}px;min-width:{{ w_ctx }}px;max-width:{{ w_ctx }}px">
+                            <div class="cell-c" style="color:var(--color-text-secondary)">
+                                {% if item_dict.get("item_pb").context %}{{ item_dict.get("item_pb").context }}{% else %}<span style="opacity:0.4;font-style:italic">—</span>{% endif %}
+                            </div>
+                        </td>
+
+                        <td class="col-f col-fe ans-expected" style="left:{{ l_ans }}px;width:{{ w_ans }}px;min-width:{{ w_ans }}px;max-width:{{ w_ans }}px">
+                            <div class="cell-c" style="font-weight:600">
+                                {% if test_pb and test_pb.type == 1 %}{{ item_dict.get("item_pb").answer }}{% else %}{{ item_dict.get("top_answer") }}{% endif %}
+                            </div>
+                        </td>
+
+                        {% for model_pb in models_ranked %}
+                        {% set response = item_dict["responses"].get(model_pb.id, {}) %}
+                        {% set reasoning = response.get("reasoning", "No reasoning provided.") %}
+                        {% set raw_resp = response.get("raw_response", "") %}
+                        {% if test_pb and test_pb.type == 1 %}
+                        {% set is_correct = response.get("is_correct") %}
+                        {% set is_relevant = effective_relevance.get(item_id, item_dict.get("item_pb").is_relevant) %}
+                        {% if is_relevant and is_correct %}{% set cls = 'TP' %}
+                        {% elif not is_relevant and not is_correct %}{% set cls = 'FP' %}
+                        {% elif is_relevant and not is_correct %}{% set cls = 'FN' %}
+                        {% else %}{% set cls = 'TN' %}{% endif %}
+                        <td data-model-col="{{ model_pb.id }}" data-classification="{{ cls }}"
+                            class="col-model {{ 'ans-ok' if is_correct else 'ans-bad' }}">
+                            <div class="cell-c">
+                                <span style="font-weight:500">{{ response.get("answer") }}</span>
+                            </div>
+                            {% if result_pb.include_reasoning or raw_resp %}
+                            <div class="cell-actions">
+                                {% if result_pb.include_reasoning %}
+                                <button type="button" onclick="openReasoningModal(this.getAttribute('data-reasoning'))"
+                                    data-reasoning="{{ reasoning }}" title="Reasoning">
+                                    <span class="material-icons" style="font-size:15px">psychology</span>
+                                </button>
+                                {% endif %}
+                                {% if raw_resp %}
+                                <button type="button" onclick="openRawResponseModal(this.getAttribute('data-raw'))"
+                                    data-raw="{{ raw_resp }}" title="Raw Response">
+                                    <span class="material-icons" style="font-size:15px">code</span>
+                                </button>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </td>
+                        {% else %}
+                        {% set canonical_answer = item_dict.get("item_pb").answer %}
+                        {% if canonical_answer %}
+                        {% set is_correct = response.get("answer") == canonical_answer %}
+                        <td data-model-col="{{ model_pb.id }}" class="col-model {{ 'ans-ok' if is_correct else 'ans-bad' }}">
+                        {% else %}
+                        {% set is_consensus = response.get("answer") == item_dict.get("top_answer") %}
+                        <td data-model-col="{{ model_pb.id }}" class="col-model">
+                        {% endif %}
+                            <div class="cell-c">
+                                <span style="font-weight:500">{{ response.get("answer") }}</span>
+                            </div>
+                            {% if result_pb.include_reasoning or raw_resp %}
+                            <div class="cell-actions">
+                                {% if result_pb.include_reasoning %}
+                                <button type="button" onclick="openReasoningModal(this.getAttribute('data-reasoning'))"
+                                    data-reasoning="{{ reasoning }}" title="Reasoning">
+                                    <span class="material-icons" style="font-size:15px">psychology</span>
+                                </button>
+                                {% endif %}
+                                {% if raw_resp %}
+                                <button type="button" onclick="openRawResponseModal(this.getAttribute('data-raw'))"
+                                    data-raw="{{ raw_resp }}" title="Raw Response">
+                                    <span class="material-icons" style="font-size:15px">code</span>
+                                </button>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div style="padding: 12px 16px 0;" class="flex flex-col items-center gap-3">
+            {% if answers|length < result_pb.sample_size %}
+            <div class="flex flex-col items-center gap-2">
+                <p class="text-sm text-muted">
+                    Showing {{ answers|length }} of {{ result_pb.sample_size }} items.
+                </p>
+                <a href="{{ url_for('run_details', run_id=result_pb.id, num_items=result_pb.sample_size) }}"
+                    class="button-secondary min-w-[200px] flex justify-center items-center gap-2">
+                    <span class="material-icons text-[20px]">refresh</span>
+                    Show all responses
+                </a>
+            </div>
+            {% else %}
+            <span class="text-muted text-sm flex items-center gap-1">
+                <span class="material-icons text-[16px]">check_circle</span>
+                All {{ answers|length }} items loaded.
+            </span>
+            {% endif %}
+        </div>
+    </div>
+    </section>
+    {% endif %}
+
+    <!-- ── Analysis ───────────────────────────────────────────────── -->
+    <section id="analysis" class="run-nav-section">
+    {% if metrics_dict %}
+    <div class="flex items-center gap-3 mt-8 mb-4">
+        <span class="material-icons text-accent text-xl">analytics</span>
+        <h2 class="text-lg font-bold tracking-wide uppercase text-[var(--color-text-secondary)]">Analysis</h2>
+        <div class="flex-1 border-t border-[var(--color-border)]"></div>
+    </div>
+    {% endif %}
+
+    <!-- Models -->
+    <div id="models" class="card p-6 mb-6 run-nav-section">
+        <h3 class="flex items-center gap-2.5 text-xl font-semibold text-accent">
+            <span class="material-icons">memory</span>
+            Models
+        </h3>
+        <p class="muted text-sm mt-1 pb-3 mb-4 border-b border-[var(--color-border)]">
+            {% if test_pb and test_pb.type == 1 %}
+            Precision measures how often a positive prediction is correct. Recall measures how many actual positives were found. F1 is the harmonic mean of both, the headline quality score. Higher is always better for all three. ⭐ marks the best value across models.
+            {% else %}
+            Output tok/s estimates per-stream generation speed; Latency p50/p95 is the per-answer time-to-completion (lower is better); Throughput is the aggregate tokens-per-second across the whole run at this concurrency. Lower Errors/Refusals is better. ⭐ marks the best value across models.
+            {% endif %}
+        </p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {% for model_pb in models_ranked %}
+            <div class="border border-[var(--color-border)] rounded-lg overflow-hidden flex flex-row divide-x divide-[var(--color-border)]">
+                <div class="flex-shrink-0 w-32 p-4 flex flex-col items-center justify-center gap-2 bg-[var(--color-bg-secondary)] text-center">
+                    <div class="h-10 w-10 rounded-lg bg-[var(--color-bg-primary)] text-[var(--color-accent-secondary)] flex items-center justify-center font-bold text-lg ring-1 ring-inset ring-[var(--color-border)]">
+                        {{ loop.index }}
+                    </div>
+                    <p class="text-xs font-semibold break-all leading-tight text-[var(--color-text-secondary)]">{{ model_pb.id }}</p>
+                    {% set binfo = backends_by_id.get(model_pb.backend_id, {}) %}
+                    {% if binfo %}
+                    {% set bt = binfo.get("type", "") | lower %}
+                    {% if bt == "llama_cpp" %}
+                      {% set bi, bc = "memory",       "text-violet-600  bg-violet-50  border-violet-200  dark:bg-violet-950  dark:border-violet-800"  %}
+                    {% elif bt == "ollama" %}
+                      {% set bi, bc = "smart_toy",    "text-sky-600     bg-sky-50     border-sky-200     dark:bg-sky-950     dark:border-sky-800"     %}
+                    {% elif bt == "vllm" %}
+                      {% set bi, bc = "bolt",         "text-amber-600   bg-amber-50   border-amber-200   dark:bg-amber-950   dark:border-amber-800"   %}
+                    {% elif bt == "openai" %}
+                      {% set bi, bc = "auto_awesome", "text-emerald-600 bg-emerald-50 border-emerald-200 dark:bg-emerald-950 dark:border-emerald-800" %}
+                    {% elif bt == "openrouter" %}
+                      {% set bi, bc = "hub",          "text-rose-600    bg-rose-50    border-rose-200    dark:bg-rose-950    dark:border-rose-800"    %}
+                    {% elif bt == "debug_random" %}
+                      {% set bi, bc = "bug_report",   "text-gray-500    bg-gray-50    border-gray-200    dark:bg-gray-900    dark:border-gray-700"    %}
+                    {% else %}
+                      {% set bi, bc = "dns",          "text-[var(--color-text-secondary)] bg-[var(--color-highlight-shade1)] border-[var(--color-border)]" %}
+                    {% endif %}
+                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium border {{ bc }}" title="{{ binfo.get('name', '') }}">
+                        <span class="material-icons" style="font-size:10px">{{ bi }}</span>
+                        {{ binfo.get("name", "") | truncate(12, true, "…") }}
+                    </span>
+                    {% endif %}
+                </div>
+                {% if model_pb.id in metrics_dict.keys() %}
+                {% set m = metrics_dict[model_pb.id] %}
+                <dl class="flex-1 p-4 space-y-2.5 text-sm">
+                    {% if test_pb and test_pb.type == 1 %}
+                    <div class="flex items-center justify-between gap-2">
+                        <dt class="flex items-center gap-1.5 text-muted" title="Of all items flagged as relevant, what fraction were truly relevant.">
+                            <span class="material-icons text-[15px]">my_location</span>Precision
+                        </dt>
+                        <dd class="font-semibold tabular-nums">{{ "{:.2%}".format(m["precision"]) }}{% if m["precision"] == category_winners.get("precision") %} ⭐{% endif %}</dd>
+                    </div>
+                    <div class="flex items-center justify-between gap-2">
+                        <dt class="flex items-center gap-1.5 text-muted" title="Of all truly relevant items, what fraction were found.">
+                            <span class="material-icons text-[15px]">radar</span>Recall
+                        </dt>
+                        <dd class="font-semibold tabular-nums">{{ "{:.2%}".format(m["recall"]) }}{% if m["recall"] == category_winners.get("recall") %} ⭐{% endif %}</dd>
+                    </div>
+                    <div class="flex items-center justify-between gap-2">
+                        <dt class="flex items-center gap-1.5 text-muted" title="Harmonic mean of Precision and Recall. The primary quality headline.">
+                            <span class="material-icons text-[15px]">balance</span>F1
+                        </dt>
+                        <dd class="font-semibold tabular-nums">{{ "{:.2%}".format(m["f1"]) }}{% if m["f1"] == category_winners.get("f1") %} ⭐{% endif %}</dd>
+                    </div>
+                    {% endif %}
+                    <div class="flex items-center justify-between gap-2">
+                        <dt class="flex items-center gap-1.5 text-muted" title="Median per-answer output tokens/sec across this run. Approximates per-stream generation speed; for very short answers the denominator includes prefill, so this understates raw generation rate.">
+                            <span class="material-icons text-[15px]">speed</span>Output tok/s
+                        </dt>
+                        <dd class="font-semibold tabular-nums">{{ "{:.1f}".format(m.get("output_tps_p50", 0) | float) }}{% if (m.get("output_tps_p50", 0) | float) == (category_winners.get("output_tps") or 0) and (category_winners.get("output_tps") or 0) > 0 %} ⭐{% endif %}</dd>
+                    </div>
+                    <div class="flex items-center justify-between gap-2">
+                        <dt class="flex items-center gap-1.5 text-muted" title="Median end-to-end time per answer (seconds). Lower is better. Excludes queue-wait; includes prefill + generation.">
+                            <span class="material-icons text-[15px]">schedule</span>Latency p50
+                        </dt>
+                        <dd class="font-semibold tabular-nums">{{ "{:.2f}s".format(m["median_task_duration"] | float) }}{% if (m["median_task_duration"] | float) == category_winners.get("latency_p50") %} ⭐{% endif %}</dd>
+                    </div>
+                    <div class="flex items-center justify-between gap-2">
+                        <dt class="flex items-center gap-1.5 text-muted" title="95th-percentile per-answer latency (seconds). The tail you'll see ~1 request in 20. Watch this for SLO planning.">
+                            <span class="material-icons text-[15px]">trending_up</span>Latency p95
+                        </dt>
+                        <dd class="font-semibold tabular-nums">{{ "{:.2f}s".format(m.get("task_duration_p95", 0) | float) }}</dd>
+                    </div>
+                    <div class="flex items-center justify-between gap-2">
+                        <dt class="flex items-center gap-1.5 text-muted" title="Aggregate output tokens per second across the whole run at this run's concurrency. Useful for capacity planning; not a per-stream speed (see Output tok/s for that).">
+                            <span class="material-icons text-[15px]">bolt</span>Throughput
+                        </dt>
+                        <dd class="font-semibold tabular-nums">{{ "{:,.1f}".format((m["tokens_per_minute"] | float) / 60) }} tok/s{% if m["tokens_per_minute"] | int == category_winners.get("throughput") %} ⭐{% endif %}</dd>
+                    </div>
+                    <div class="flex items-center justify-between gap-2">
+                        <dt class="flex items-center gap-1.5 text-muted" title="Total tokens consumed (input + output) for this model.">
+                            <span class="material-icons text-[15px]">data_usage</span>Tokens
+                        </dt>
+                        <dd class="font-semibold tabular-nums">{{ "{:,}".format(m.get("total_tokens", 0) | int) }}</dd>
+                    </div>
+                    <div class="flex items-center justify-between gap-2">
+                        <dt class="flex items-center gap-1.5 text-muted" title="Total cost for this model across all sampled items.">
+                            <span class="material-icons text-[15px]">attach_money</span>Cost
+                        </dt>
+                        {% set cost = m.get("total_cost_usd", 0) | float %}
+                        <dd class="font-semibold tabular-nums">
+                            {%- if cost == 0 -%}
+                                FREE
+                            {%- elif cost < 0.001 -%}
+                                ${{ "%.6f" | format(cost) }}
+                            {%- else -%}
+                                ${{ "%.4f" | format(cost) }}
+                            {%- endif -%}
+                            {% if cost == category_winners.get("cost_min") and cost > 0 %} ⭐{% endif %}
+                        </dd>
+                    </div>
+                    <div class="flex items-center justify-between gap-2">
+                        <dt class="flex items-center gap-1.5 text-muted" title="Rate of errors or refused answers. Lower is better.">
+                            <span class="material-icons text-[15px]">block</span>Errors / Refusals
+                        </dt>
+                        <dd class="font-semibold tabular-nums">{{ "{:.2%}".format(m["refusal_error_rate"]) }}{% if m["refusal_error_rate"] == category_winners.get("refusals") %} ⭐{% endif %}</dd>
+                    </div>
+                </dl>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Leaderboard Chart -->
+    {% if metrics_dict|length > 1 and test_pb and test_pb.type == 1 %}
+    <div id="quality-leaderboard" class="card p-6 mb-6 run-nav-section">
+        <h3 class="flex items-center gap-2.5 text-xl font-semibold text-accent">
+            <span class="material-icons">leaderboard</span>
+            Quality Leaderboard
+        </h3>
+        <p class="muted text-sm mt-1 pb-3 mb-4 border-b border-[var(--color-border)]">
+            Higher Precision, Recall, and F1 are better. The dashed thresholds mark Low (&gt;0.70), OK (&gt;0.80), and High (&gt;0.95) quality bands. Lower Errors/Refusals is better.
+        </p>
+        {% if modality_metrics %}
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4">
+            <span class="text-xs text-muted font-medium uppercase tracking-wide">Modality</span>
+            <div class="flex flex-wrap gap-2">
+                <button onclick="setLeaderboardModality('all')"
+                    class="lb-mod-btn filter-btn active text-xs px-3 py-1 rounded-full border transition-colors"
+                    data-modality="all">All</button>
+                {% for mod_name in modality_metrics.keys()|sort %}
+                <button onclick="setLeaderboardModality('{{ mod_name }}')"
+                    class="lb-mod-btn filter-btn text-xs px-3 py-1 rounded-full border transition-colors"
+                    data-modality="{{ mod_name }}">{{ mod_name }}</button>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        <div id="leaderboard_chart_div" style="width: 100%; height: 750px;"></div>
+    </div>
+    {% endif %}
+
+    <!-- Confusion Matrix -->
+    {% if test_pb and test_pb.type == 1 and confusion_data %}
+    <div id="confusion-matrix" class="card p-6 mb-6 run-nav-section">
+        <h3 class="flex items-center gap-2.5 text-xl font-semibold text-accent">
+            <span class="material-icons">grid_on</span>
+            Confusion Matrix
+        </h3>
+        <p class="muted text-sm mt-1 pb-3 mb-4 border-b border-[var(--color-border)]">
+            The top-left (TP) and bottom-right (TN) cells are correct predictions, you want these high. The top-right (FN) and bottom-left (FP) cells are mistakes, you want these low. Counts cover every item in the run.
+        </p>
+        <div id="confusion_matrix_container" class="flex flex-wrap gap-10 justify-center py-2"></div>
+    </div>
+    {% endif %}
+
+    <!-- Execution Timeline -->
+    {% if metrics_dict|length > 1 %}
+    <div id="execution-timeline" class="card p-6 mb-4 run-nav-section">
+        <h3 class="flex items-center gap-2.5 text-xl font-semibold text-accent">
+            <span class="material-icons">schedule</span>
+            Execution Timeline
+        </h3>
+        <p class="muted text-sm mt-1 pb-3 mb-4 border-b border-[var(--color-border)]">
+            Each bar spans the model's start-to-finish wall-clock time for this run. Shorter bars and earlier start times indicate a faster, more responsive model.
+        </p>
+        <div id="timeline"></div>
+    </div>
+    {% endif %}
+
+
+    </section>
+
+</div>
+
+<!-- Attachment Image Modal -->
+<div id="attachment-modal"
+    class="fixed inset-0 z-50 hidden items-center justify-center bg-gray-900/80 backdrop-blur-sm transition-opacity"
+    aria-hidden="true">
+    <div class="relative w-full max-w-6xl m-4 flex flex-col max-h-[90vh]">
+        <div class="flex items-center justify-between mb-4">
+            <h3 id="attachment-modal-title" class="text-xl font-semibold text-white"></h3>
+            <button onclick="closeAttachmentModal()" class="text-white hover:text-gray-300 focus:outline-none">
+                <span class="material-icons text-3xl">close</span>
+            </button>
+        </div>
+        <div class="flex items-center justify-center overflow-auto">
+            <img id="attachment-modal-image" src="" alt="" class="max-w-full max-h-[80vh] object-contain">
+        </div>
+    </div>
+</div>
+
+<!-- Reasoning Modal -->
+<div id="reasoning-modal"
+    class="fixed inset-0 z-50 hidden items-center justify-center bg-gray-900/50 backdrop-blur-sm transition-opacity"
+    aria-hidden="true">
+
+    <div
+        class="relative w-full max-w-2xl transform rounded-lg bg-white p-6 shadow-xl transition-all dark:bg-gray-800 m-4 flex flex-col max-h-[85vh]">
+
+        <div class="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 pb-4 mb-4 shrink-0">
+            <h3 class="text-xl font-semibold text-accent flex items-center gap-2">
+                <span class="material-icons">psychology</span>
+                Model Reasoning
+            </h3>
+            <button onclick="closeReasoningModal()" class="text-gray-400 hover:text-gray-500 focus:outline-none">
+                <span class="material-icons">close</span>
+            </button>
+        </div>
+
+        <div class="overflow-y-auto pr-2 custom-scrollbar">
+            <p id="reasoning-modal-content"
+                class="whitespace-pre-wrap text-base text-gray-700 dark:text-gray-300 font-mono text-sm">
+            </p>
+        </div>
+
+        <div class="mt-6 flex justify-end shrink-0 pt-2 border-t border-gray-200 dark:border-gray-700">
+            <button type="button" onclick="closeReasoningModal()"
+                class="rounded-md bg-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-300 focus:outline-none dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
+                Close
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Raw Response Modal -->
+<div id="raw-response-modal"
+    class="fixed inset-0 z-50 hidden items-center justify-center bg-gray-900/50 backdrop-blur-sm transition-opacity"
+    aria-hidden="true">
+
+    <div
+        class="relative w-full max-w-2xl transform rounded-lg bg-white p-6 shadow-xl transition-all dark:bg-gray-800 m-4 flex flex-col max-h-[85vh]">
+
+        <div class="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 pb-4 mb-4 shrink-0">
+            <h3 class="text-xl font-semibold text-accent flex items-center gap-2">
+                <span class="material-icons">code</span>
+                Raw Response
+            </h3>
+            <button onclick="closeRawResponseModal()" class="text-gray-400 hover:text-gray-500 focus:outline-none">
+                <span class="material-icons">close</span>
+            </button>
+        </div>
+
+        <div class="overflow-y-auto pr-2 custom-scrollbar">
+            <p id="raw-response-modal-content"
+                class="whitespace-pre-wrap text-base text-gray-700 dark:text-gray-300 font-mono text-sm">
+            </p>
+        </div>
+
+        <div class="mt-6 flex justify-end shrink-0 pt-2 border-t border-gray-200 dark:border-gray-700">
+            <button type="button" onclick="closeRawResponseModal()"
+                class="rounded-md bg-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-300 focus:outline-none dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
+                Close
+            </button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script type="text/javascript">
+    async function deleteRun() {
+        if (!confirm('Delete this run and all its results? This cannot be undone.')) return;
+        const resp = await fetch('/runs/{{ result_pb.id }}/delete', {method: 'POST'});
+        const data = await resp.json();
+        if (data.success) {
+            window.location.href = '/runs';
+        } else {
+            alert(data.error || 'Failed to delete run');
+        }
+    }
+
+    // Cancel Run Function
+    function cancelRun(runId) {
+        if (!confirm('Are you sure you want to cancel this job? This action cannot be undone.')) {
+            return;
+        }
+
+        const button = document.getElementById('cancel-run-button');
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<span class="material-icons text-[20px]">hourglass_empty</span> Cancelling...';
+        }
+
+        fetch(`/runs/${runId}/cancel`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Job cancelled successfully. Reloading page...');
+                window.location.reload();
+            } else {
+                alert(`Failed to cancel job: ${data.error || 'Unknown error'}`);
+                if (button) {
+                    button.disabled = false;
+                    button.innerHTML = '<span class="material-icons text-[20px]">cancel</span> Cancel Job';
+                }
+            }
+        })
+        .catch(error => {
+            alert(`Error cancelling job: ${error.message}`);
+            if (button) {
+                button.disabled = false;
+                button.innerHTML = '<span class="material-icons text-[20px]">cancel</span> Cancel Job';
+            }
+        });
+    }
+
+    // Timestamp Logic
+    document.addEventListener("DOMContentLoaded", () => {
+        document.querySelectorAll("p[data-timestamp]").forEach(el => {
+            const ts = el.dataset.timestamp;
+            if (ts) {
+                const date = new Date(ts.replace(/"/g, ''));
+                if (!isNaN(date.getTime())) {
+                    el.textContent = date.toLocaleString();
+                }
+            }
+        });
+
+        // Dropdown Logic
+        const downloadButton = document.getElementById("download-button");
+        const downloadDropdown = document.getElementById("download-dropdown");
+        if (downloadButton && downloadDropdown) {
+            downloadButton.addEventListener("click", (event) => {
+                event.stopPropagation();
+                downloadDropdown.classList.toggle("hidden");
+                downloadButton.setAttribute(
+                    "aria-expanded",
+                    downloadDropdown.classList.contains("hidden") ? "false" : "true"
+                );
+            });
+            document.addEventListener("click", (event) => {
+                if (!downloadButton.contains(event.target) && !downloadDropdown.contains(event.target)) {
+                    downloadDropdown.classList.add("hidden");
+                    downloadButton.setAttribute("aria-expanded", "false");
+                }
+            });
+        }
+
+        // PDF download spinner
+        const pdfLink = document.getElementById("pdf-download-link");
+        const btnDefault = document.getElementById("download-button-default");
+        const btnLoading = document.getElementById("download-button-loading");
+        if (pdfLink && btnDefault && btnLoading) {
+            pdfLink.addEventListener("click", async (event) => {
+                event.preventDefault();
+                downloadDropdown.classList.add("hidden");
+                downloadButton.setAttribute("aria-expanded", "false");
+                btnDefault.classList.add("hidden");
+                btnLoading.classList.remove("hidden");
+                downloadButton.disabled = true;
+                try {
+                    const resp = await fetch(pdfLink.href);
+                    if (!resp.ok) throw new Error("Download failed");
+                    const blob = await resp.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = "mpac_report_{{ result_pb.id[:12] }}.pdf";
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                } catch (err) {
+                    console.error("PDF download error:", err);
+                    alert("Failed to generate PDF report. Please try again.");
+                } finally {
+                    btnDefault.classList.remove("hidden");
+                    btnLoading.classList.add("hidden");
+                    downloadButton.disabled = false;
+                }
+            });
+        }
+    });
+
+    // Attachment Modal Logic
+    function openAttachmentModal(src, name) {
+        const modal = document.getElementById('attachment-modal');
+        const image = document.getElementById('attachment-modal-image');
+        const title = document.getElementById('attachment-modal-title');
+        image.src = src;
+        image.alt = name;
+        title.textContent = name;
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeAttachmentModal() {
+        const modal = document.getElementById('attachment-modal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        document.body.style.overflow = '';
+    }
+
+    // Close attachment modal on click outside
+    document.getElementById('attachment-modal')?.addEventListener('click', function (e) {
+        if (e.target === this) {
+            closeAttachmentModal();
+        }
+    });
+
+    // Reasoning Modal Logic
+    function openReasoningModal(text) {
+        const modal = document.getElementById('reasoning-modal');
+        const content = document.getElementById('reasoning-modal-content');
+        content.textContent = text || "No reasoning details available.";
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeReasoningModal() {
+        const modal = document.getElementById('reasoning-modal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        document.body.style.overflow = '';
+    }
+
+    // Close on click outside
+    document.getElementById('reasoning-modal').addEventListener('click', function (e) {
+        if (e.target === this) {
+            closeReasoningModal();
+        }
+    });
+
+    // Raw Response Modal Logic
+    function openRawResponseModal(text) {
+        const modal = document.getElementById('raw-response-modal');
+        const content = document.getElementById('raw-response-modal-content');
+        content.textContent = text || "No raw response available.";
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeRawResponseModal() {
+        const modal = document.getElementById('raw-response-modal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        document.body.style.overflow = '';
+    }
+
+    document.getElementById('raw-response-modal').addEventListener('click', function (e) {
+        if (e.target === this) {
+            closeRawResponseModal();
+        }
+    });
+
+    // Close on Escape key
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+            closeReasoningModal();
+            closeAttachmentModal();
+            closeRawResponseModal();
+        }
+    });
+
+    // Charts
+    function getThemeColor(variableName) {
+        const root = document.documentElement;
+        const styles = getComputedStyle(root);
+        return styles.getPropertyValue(variableName).trim();
+    }
+
+    const metrics_json = {{ metrics_dict | tojson }};
+    var leaderboard_data = [
+        ['Model',
+         'Precision', {role: 'annotation'},
+         'Recall',    {role: 'annotation'},
+         'F1',        {role: 'annotation'},
+         'Refusals / Errors', {role: 'annotation'}]
+    ];
+    var timeline_data = [];
+
+    function fmtPct(v) { return (v * 100).toFixed(1) + '%'; }
+
+    Object.keys(metrics_json).forEach(responder_id => {
+        const model_metrics = metrics_json[responder_id];
+        leaderboard_data.push([
+            responder_id,
+            model_metrics.precision,    fmtPct(model_metrics.precision),
+            model_metrics.recall,       fmtPct(model_metrics.recall),
+            model_metrics.f1,           fmtPct(model_metrics.f1),
+            model_metrics.refusal_error_rate, fmtPct(model_metrics.refusal_error_rate)
+        ]);
+        timeline_data.push([
+            responder_id,
+            `Latency p50: ${model_metrics.median_task_duration.toFixed(2)}s · Throughput: ${(model_metrics.tokens_per_minute / 60).toFixed(1)} tok/s`,
+            new Date(model_metrics.created_at_utc),
+            new Date(model_metrics.completed_at_utc)
+        ]);
+    });
+
+    // --- Leaderboard ---
+    {% if metrics_dict|length > 1 and test_pb and test_pb.type == 1 %}
+    const modality_metrics_json = {{ modality_metrics | tojson }};
+    let activeModality = 'all';
+
+    google.charts.load('current', { packages: ['corechart', 'bar'] });
+    google.charts.setOnLoadCallback(drawLeaderboardChart);
+
+    function setLeaderboardModality(mod) {
+        activeModality = mod;
+        document.querySelectorAll('.lb-mod-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.modality === mod);
+        });
+        drawLeaderboardChart();
+    }
+
+    function buildLeaderboardData(metricsSource) {
+        const rows = [
+            ['Model',
+             'Precision', {role: 'annotation'},
+             'Recall',    {role: 'annotation'},
+             'F1',        {role: 'annotation'},
+             'Refusals / Errors', {role: 'annotation'}]
+        ];
+        Object.keys(metricsSource).forEach(modelId => {
+            const m = metricsSource[modelId];
+            rows.push([
+                modelId,
+                m.precision,    fmtPct(m.precision),
+                m.recall,       fmtPct(m.recall),
+                m.f1,           fmtPct(m.f1),
+                m.refusal_error_rate, fmtPct(m.refusal_error_rate),
+            ]);
+        });
+        return rows;
+    }
+
+    function drawLeaderboardChart() {
+        const primaryBg = getThemeColor('--color-bg-primary');
+        const textColor = getThemeColor('--color-text-secondary');
+        const markerColor = '#FF5722';
+
+        let chartData;
+        if (activeModality !== 'all' && modality_metrics_json[activeModality]) {
+            chartData = buildLeaderboardData(modality_metrics_json[activeModality]);
+        } else {
+            chartData = leaderboard_data;
+        }
+
+        const data = google.visualization.arrayToDataTable(chartData);
+        data.sort([{ column: 5, desc: true }]);
+
+        const titleSuffix = activeModality !== 'all' ? ' (' + activeModality + ')' : '';
+        const numModels = data.getNumberOfRows();
+        const chartHeight = Math.max(300, numModels * 50 + 80);
+        const chartElement = document.getElementById('leaderboard_chart_div');
+        chartElement.style.height = chartHeight + 'px';
+        chartElement.style.position = 'relative';
+
+        const options = {
+            title: 'Top Models by F1 Score' + titleSuffix,
+            titleTextStyle: { color: textColor },
+            colors: chartColors,
+            backgroundColor: primaryBg,
+            legend: { position: 'none' },
+            chartArea: { width: '75%', height: '80%', top: 40, left: 100 },
+            annotations: { textStyle: { fontSize: 11, color: textColor, auraColor: 'none' } },
+            fontSize: 11,
+            hAxis: {
+                format: 'percent',
+                viewWindow: { min: 0, max: 1 },
+                textStyle: { color: textColor },
+                baselineColor: textColor,
+                gridlines: { color: '#444' }
+            },
+            vAxis: {
+                title: 'Model',
+                textStyle: { color: textColor },
+            }
+        };
+
+        const chart = new google.visualization.BarChart(chartElement);
+        const markers = [
+            { value: 0.7, label: 'Low Quality' },
+            { value: 0.8, label: 'OK Quality' },
+            { value: 0.95, label: 'High Quality' }
+        ];
+
+        google.visualization.events.addListener(chart, 'ready', function () {
+            const cli = chart.getChartLayoutInterface();
+            const chartArea = cli.getChartAreaBoundingBox();
+            chartElement.querySelectorAll('.chart-marker').forEach(el => el.remove());
+            markers.forEach(function (marker) {
+                const xPos = cli.getXLocation(marker.value);
+                const line = document.createElement('div');
+                line.className = 'chart-marker';
+                line.style.cssText = `position:absolute;left:${xPos}px;top:${chartArea.top}px;height:${chartArea.height}px;width:1px;border-left:2px dashed ${markerColor};z-index:10`;
+                const label = document.createElement('div');
+                label.className = 'chart-marker';
+                label.textContent = marker.label;
+                label.style.cssText = `position:absolute;left:${xPos}px;top:${chartArea.top - 20}px;color:${markerColor};font-size:10px;font-weight:bold;transform:translateX(-50%);white-space:nowrap`;
+                chartElement.appendChild(line);
+                chartElement.appendChild(label);
+            });
+        });
+
+        chart.draw(data, options);
+    }
+
+    // --- Timeline ---
+    google.charts.load('current', { 'packages': ['timeline'] });
+    google.charts.setOnLoadCallback(drawTimeline);
+
+    function drawTimeline() {
+        const primaryBg = getThemeColor('--color-bg-primary');
+        const textColor = getThemeColor('--color-text-secondary');
+
+        var container = document.getElementById('timeline');
+        // Size the container to exactly fit its rows — avoids the fixed-400px gap
+        // with small datasets. Each row is ~41px; add ~60px for the header.
+        container.style.height = (timeline_data.length * 41 + 60) + 'px';
+        var chart = new google.visualization.Timeline(container);
+        var dataTable = new google.visualization.DataTable();
+
+        var options = {
+            backgroundColor: primaryBg,
+            colors: chartColors,
+            timeline: {
+                showBarLabels: false,
+                rowLabelStyle: { fontSize: 14, color: textColor },
+            },
+        };
+
+        dataTable.addColumn({ type: 'string', id: 'Model' });
+        dataTable.addColumn({ type: 'string', id: 'Median Task Time' });
+        dataTable.addColumn({ type: 'date', id: 'Start' });
+        dataTable.addColumn({ type: 'date', id: 'End' });
+        dataTable.addRows(timeline_data);
+
+        chart.draw(dataTable, options);
+    }
+
+    window.addEventListener('resize', () => {
+        if (typeof drawLeaderboardChart !== 'undefined') drawLeaderboardChart();
+        if (typeof drawTimeline !== 'undefined') drawTimeline();
+    });
+
+    const observer = new MutationObserver(function (mutations) {
+        mutations.forEach(function (mutation) {
+            if (mutation.type === "attributes") {
+                setTimeout(() => {
+                    if (typeof drawLeaderboardChart !== 'undefined') drawLeaderboardChart();
+                    if (typeof drawTimeline !== 'undefined') drawTimeline();
+                }, 250);
+            }
+        });
+    });
+
+    observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class', 'data-theme']
+    });
+    {% endif %}
+
+    // --- Answer & model filters ---
+    {% if models_ranked | length == 1 %}
+    let activeModelFilter = {{ models_ranked[0].id | tojson }};
+    {% else %}
+    let activeModelFilter = '';
+    {% endif %}
+    let activeClassFilter = '';
+
+    function applyFilters() {
+        document.querySelectorAll('#answers-tbody tr').forEach(row => {
+            if (!activeClassFilter || !activeModelFilter) {
+                row.style.display = '';
+                return;
+            }
+            let matched = false;
+            row.querySelectorAll('[data-model-col]').forEach(td => {
+                if (td.dataset.modelCol === activeModelFilter && td.dataset.classification === activeClassFilter) {
+                    matched = true;
+                }
+            });
+            row.style.display = matched ? '' : 'none';
+        });
+    }
+
+    function setModelFilter(modelId) {
+        activeModelFilter = modelId;
+        activeClassFilter = '';
+
+        // Show/hide model columns
+        document.querySelectorAll('[data-model-col]').forEach(el => {
+            el.style.display = (!modelId || el.dataset.modelCol === modelId) ? '' : 'none';
+        });
+
+        // Update model button active state
+        document.querySelectorAll('.model-filter-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.model === modelId);
+        });
+
+        // Enable/disable classification buttons and their label
+        const classButtons = document.querySelectorAll('.class-filter-btn');
+        const label = document.getElementById('result-filter-label');
+        classButtons.forEach(btn => {
+            btn.disabled = !modelId;
+            btn.classList.toggle('opacity-40', !modelId);
+            // Reset to "All" active
+            btn.classList.toggle('active', btn.dataset.filter === '');
+        });
+        if (label) label.classList.toggle('opacity-40', !modelId);
+
+        applyFilters();
+    }
+
+    function setAnswerFilter(classification) {
+        if (!activeModelFilter) return;
+        activeClassFilter = classification;
+        document.querySelectorAll('.class-filter-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.filter === classification);
+        });
+        applyFilters();
+    }
+
+    // --- Confusion Matrix ---
+    {% if test_pb and test_pb.type == 1 and confusion_data %}
+    const confusion_json = {{ confusion_data | tojson }};
+    google.charts.load('current', { packages: ['table'] });
+    google.charts.setOnLoadCallback(drawConfusionMatrices);
+
+    function drawConfusionMatrices() {
+        const container = document.getElementById('confusion_matrix_container');
+        if (!container) return;
+        container.innerHTML = '';
+        const textColor = getThemeColor('--color-text-secondary');
+        const primaryBg = getThemeColor('--color-bg-primary');
+        const multiModel = Object.keys(confusion_json).length > 1;
+
+        // good = true for TP/TN (top-left, bottom-right); false for FP/FN
+        function cellColor(intensity, good) {
+            if (good) {
+                // white -> deep green
+                const r = Math.round(240 + intensity * (22  - 240));
+                const g = Math.round(253 + intensity * (101 - 253));
+                const b = Math.round(244 + intensity * (72  - 244));
+                return { bg: `rgb(${r},${g},${b})`, text: intensity > 0.55 ? '#ffffff' : '#14532d' };
+            } else {
+                // white -> deep red
+                const r = Math.round(254 + intensity * (153 - 254));
+                const g = Math.round(242 + intensity * (27  - 242));
+                const b = Math.round(242 + intensity * (27  - 242));
+                return { bg: `rgb(${r},${g},${b})`, text: intensity > 0.55 ? '#ffffff' : '#7f1d1d' };
+            }
+        }
+
+        Object.entries(confusion_json).forEach(([modelId, counts]) => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'flex flex-col items-center gap-2';
+
+            if (multiModel) {
+                const label = document.createElement('span');
+                label.className = 'text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider text-center break-all max-w-[260px]';
+                label.textContent = modelId;
+                wrapper.appendChild(label);
+            }
+
+            const chartDiv = document.createElement('div');
+            chartDiv.style.width = '260px';
+            wrapper.appendChild(chartDiv);
+            container.appendChild(wrapper);
+
+            const data = new google.visualization.DataTable();
+            data.addColumn('string', '');
+            data.addColumn('number', 'Predicted +');
+            data.addColumn('number', 'Predicted \u2212');
+            data.addRows([
+                ['Actual +', counts.tp, counts.fn],
+                ['Actual \u2212', counts.fp, counts.tn],
+            ]);
+
+            const table = new google.visualization.Table(chartDiv);
+            // [ri][ci]: true = good cell (TP/TN), false = bad cell (FP/FN)
+            const cellGood   = [[true, false], [false, true]];
+            // Use separate max values per color group so green and red scale independently
+            const goodMax = Math.max(counts.tp, counts.tn, 1);
+            const badMax  = Math.max(counts.fp, counts.fn, 1);
+            const cellValues = [[counts.tp, counts.fn], [counts.fp, counts.tn]];
+
+            google.visualization.events.addListener(table, 'ready', function () {
+                const rows = chartDiv.querySelectorAll('tbody tr');
+                // TP/FN / FP/TN labels beneath each number
+                const cellLabels = [['TP', 'FN'], ['FP', 'TN']];
+                rows.forEach((row, ri) => {
+                    row.querySelectorAll('td').forEach((cell, ci) => {
+                        if (ci === 0) {
+                            cell.style.cssText = `font-weight:600; font-size:12px; color:${textColor}; padding:12px 14px; background:${primaryBg};`;
+                        } else {
+                            const good = cellGood[ri][ci - 1];
+                            const val  = cellValues[ri][ci - 1];
+                            const c    = cellColor(val / (good ? goodMax : badMax), good);
+                            const label = cellLabels[ri][ci - 1];
+                            const num = cell.textContent;
+                            cell.innerHTML = num + '<br><span style="font-size:11px;font-weight:500;opacity:0.85">' + label + '</span>';
+                            cell.style.cssText = `background-color:${c.bg}; color:${c.text}; font-weight:700; font-size:22px; text-align:center; padding:16px 20px; min-width:90px;`;
+                        }
+                    });
+                });
+                chartDiv.querySelectorAll('thead th').forEach(th => {
+                    th.style.cssText = `font-size:12px; color:${textColor}; text-align:center; padding:6px 14px; background:${primaryBg};`;
+                });
+            });
+
+            table.draw(data, { allowHtml: false, showRowNumber: false, width: '100%' });
+        });
+    }
+    {% endif %}
+
+    // On-page nav scroll-spy
+    (() => {
+        const tocLinks = document.querySelectorAll('#run-toc .toc-link');
+        const sections = document.querySelectorAll('.run-nav-section');
+        if (!tocLinks.length || !sections.length) return;
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    tocLinks.forEach(l => l.classList.remove('active'));
+                    const active = document.querySelector(`#run-toc a[href="#${entry.target.id}"]`);
+                    if (active) active.classList.add('active');
+                }
+            });
+        }, { rootMargin: '-10% 0px -80% 0px' });
+        sections.forEach(s => observer.observe(s));
+    })();
+</script>
+{% endblock %}

@@ -1,0 +1,668 @@
+syntax = "proto3";
+
+package pelidum.services.grpc.mpac;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// Core access control groups
+message Visibility {
+  // Represents escalating levels of visibility
+  enum VisibilityOptions {
+    VISIBILITY_UNSET = 0;
+    VISIBILITY_OWNER_ONLY = 1;
+    VISIBILITY_ORG_ONLY = 2;
+    VISIBILITY_SPECIFIED_USERS = 3;
+    VISIBILITY_PUBLIC = 4;
+    VISIBILITY_ADMIN = 5;
+  }
+
+  // The type of visibility / ACLs applied
+  VisibilityOptions type = 1;
+  // A list of users who are granted access explicitly
+  repeated string allowed_users = 2;
+}
+
+// Backends
+enum BackendType {
+  BACKEND_TYPE_UNSPECIFIED = 0;
+  VLLM = 1;
+  OLLAMA = 2;
+  OPENAI = 3;
+  OPENROUTER = 4;
+  DEBUG_RANDOM = 5;
+  LLAMA_CPP = 6;
+}
+
+message Backend {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  BackendType backend_type = 4;
+  string base_url = 5;
+  // Write-only: never returned in reads
+  string api_key = 6;
+  string owner = 7;
+  google.protobuf.Timestamp created_at_utc = 8;
+  google.protobuf.Timestamp modified_at_utc = 9;
+  // Reserved for future per-backend visibility/ACL control
+  Visibility visibility = 10;
+  // Whether this backend is available for inference. Admins see all; users see
+  // only enabled backends.
+  bool enabled = 11;
+  // True for self-hosted / local backends (llama.cpp, Ollama, local vLLM,
+  // etc.). Drives inference strategy: local → long timeout; remote → short
+  // timeout.
+  bool is_local = 12;
+  // Maximum number of concurrent inference requests for this backend.
+  // 0 = use the system default (local: 4, remote: 20).
+  int32 max_concurrency = 13;
+}
+
+// Benchmarks
+
+// Per-model result within a single head-to-head match.
+message BenchmarkMatchResponse {
+  string responder = 1;
+  string run_id = 2;
+  float precision = 3;
+  float recall = 4;
+  float f1 = 5;
+}
+
+// A single head-to-head match within a benchmark round.
+// A match with only one response is a BYE (that model advances without
+// playing).
+message BenchmarkMatch {
+  int64 round = 1;
+  int64 id = 2;
+  repeated BenchmarkMatchResponse responses = 3;
+  string winner = 4;
+}
+
+message Benchmark {
+  // The benchmark UID
+  string id = 1;
+  // The ID of the test being benchmarked
+  string test_id = 2;
+  // The user that requested the benchmark
+  string owner = 3;
+  // When the benchmark was initiated
+  google.protobuf.Timestamp created_at_utc = 4;
+  // When the benchmark was completed
+  google.protobuf.Timestamp completed_at_utc = 5;
+  // Retired: single run_id; benchmarks now use per-match runs in match_history.
+  reserved 6;
+  reserved "run_id";
+  // Retired: aggregate metrics; use per-match BenchmarkMatchResponse instead.
+  reserved 7;
+  reserved "metrics";
+  // Status of the benchmark
+  ResponseCode status = 8;
+  // Ordered list of all matches played across all rounds
+  repeated BenchmarkMatch match_history = 9;
+  // The overall winning model ID
+  string winner = 10;
+  // Total number of models entered into this benchmark tournament
+  int64 model_count = 11;
+  // Total cost in USD across all match runs in this benchmark
+  float total_cost_usd = 12;
+  // The models entered into this benchmark (stored for resume after instance
+  // recycling)
+  repeated Model models = 13;
+  // Sample size per match run
+  int64 sample_size = 14;
+  // Whether match runs request reasoning alongside each answer
+  bool include_reasoning = 15;
+}
+
+message BenchmarkRequest {
+  string test_id = 1;
+  repeated Model models = 2;
+  int64 sample_size = 3;
+  // Request reasoning alongside each answer in match runs
+  bool include_reasoning = 4;
+}
+
+message BenchmarkResponse {
+  string benchmark_id = 1;
+  // Retired: single responder tracking; progress is implicit in match_history.
+  reserved 2;
+  reserved "current_responder_id";
+  ResponseCode code = 3;
+  string reason = 4;
+  int64 current_round = 5;
+  int64 total_rounds = 6;
+  // Retired: aggregate metrics; use match_history instead.
+  reserved 7;
+  reserved "metrics";
+  // Current match history snapshot emitted after each completed match
+  repeated BenchmarkMatch match_history = 8;
+  string winner = 9;
+}
+
+// Model
+message Model {
+  message ModelPricing {
+    // The per-unit token input cost (~1k)
+    float input_token_cost = 1;
+    // The per-unit token output cost (~1k)
+    float output_token_cost = 2;
+    // The per-unit image token output cost
+    float image_token_cost = 3;
+    // The per-unit audio token output cost
+    float audio_token_cost = 4;
+  }
+
+  message ModelCapabilities {
+    // Self-described modality support
+    string modality = 1;
+    // Maximum context window length
+    int64 context_window_length = 2;
+    // Tokenizer used by the model
+    string tokenizer = 3;
+    // The model instruct type
+    string instruct = 4;
+  }
+
+  // TODO(pelidum-mike): Add repeated ModelWeight field, any can be optionally
+  // applied
+
+  // The model provider (e.g. OpenAI, Google, Anthropic)
+  string provider = 1;
+  // The model id (e.g. gpt-3.5-turbo)
+  string id = 2;
+  // The model name (e.g. GPT-3.5 Turbo)
+  string name = 3;
+  // The model temperature, between 0 and 1
+  float temperature = 4;
+  // A description of the model
+  string description = 5;
+  // The model's pricing information
+  ModelPricing pricing = 6;
+  // The model's capability metadata
+  ModelCapabilities capabilities = 7;
+  // The architecture / family that the model belongs to
+  string family = 8;
+  // The format of the model (e.g. GGUF)
+  string format = 9;
+  // An int64 representing training params
+  int64 parameters = 10;
+  // A string representing training params (e.g. 30B)
+  string parameters_label = 11;
+  // A string representing quantization strategy (e.g. AWQ)
+  string quantization = 12;
+  // A string representing any fine-tuning applied
+  string fine_tune = 13;
+  // A string representing the license, if any
+  string license = 14;
+  // The backend ID that serves this model
+  string backend_id = 15;
+}
+
+// Tests
+enum TestType {
+  // Unset
+  UNSPECIFIED = 0;
+  // Has ground truth / canonical answers
+  EVALUATION = 1;
+  // Used for blind classification / consensus, no ground truth
+  SURVEY = 2;
+}
+
+message Test {
+  // The test UUID
+  string id = 1;
+  // The user-provided display name
+  string name = 2;
+  // The user-provided description
+  string description = 3;
+  // Initial creation time
+  google.protobuf.Timestamp created_at_utc = 4;
+  // Last modified time
+  google.protobuf.Timestamp modified_at_utc = 5;
+  // Test visibility
+  Visibility visibility = 6;
+  // Test type
+  TestType type = 7;
+  // The number of items in the test
+  int64 item_count = 8;
+  // Metadata tags
+  repeated string labels = 9;
+  // Test provider
+  string provider = 10;
+  // Test owner
+  string owner = 11;
+}
+
+enum FileModality {
+  UNSPECIFIED_MODALITY = 0;
+  AUDIO = 1;
+  IMAGE = 2;
+  VIDEO = 3;
+  TEXT = 4;
+}
+
+message FileAttachment {
+  string id = 1;
+  string name = 2;
+  string extension = 3;
+  FileModality modality = 4;
+  bytes file = 5;
+  int64 file_size = 6;
+  Visibility visibility = 7;
+  string owner = 8;
+  string mime = 9;
+}
+
+message TestItem {
+  // Test item UUID
+  string id = 1;
+  // Test foreign key ID
+  string test_id = 2;
+  // Question text
+  string question = 3;
+  // Additional context appended to the question
+  string context = 4;
+  // Valid responses / options
+  repeated string choices = 5;
+  // Canonically correct answer. Required for Eval tests.
+  string answer = 6;
+  // Whether or not the item is a "positive" or "relevant" item (e.g. "yes" or
+  // "true"). Used for weighted metrics score calculations.
+  bool is_relevant = 7;
+  // File attachment ID, only one allowed per test item. Max size is 1 GB.
+  string attachment_id = 8;
+}
+
+message TestRun {
+  message TestRunMetrics {
+    // The responder UUID
+    string responder_id = 1;
+    // The calculated precision for this test run, accounts for false positives
+    double precision = 2;
+    // The calculated recall for this test run
+    double recall = 3;
+    // The calculated F1 for this test run, a weighted composite based on
+    // precision, recall, and the number of relevant / is_positive items in
+    // the sample
+    double f1 = 4;
+    // The plain language / string grade assigned designating overall test run
+    // quality
+    string simple_grade = 5;
+    // The number of positive / relevant items in the test run sample
+    int32 num_positives = 6;
+    // The number of items this responder got correct
+    int32 num_correct = 7;
+    // The total number of items given to the responder to answer
+    int32 total = 8;
+    // The calculated refusal / error rate where incompatible responses were
+    // returned
+    double refusal_error_rate = 9;
+    // The total number of refusals / errors where incompatible responses were
+    // returned
+    int32 num_refusals_errors = 10;
+    int64 tokens_per_minute = 11;
+    float median_task_duration = 12;
+    float startup_latency = 13;
+    map<string, float> modality_scores = 14;
+    google.protobuf.Timestamp created_at_utc = 15;
+    google.protobuf.Timestamp completed_at_utc = 16;
+    double total_cost_usd = 17;
+    int64 total_tokens = 18;
+    int32 true_positives = 19;
+    int32 true_negatives = 20;
+    int32 false_positives = 21;
+    int32 false_negatives = 22;
+    float task_duration_p95 = 23;
+    float task_duration_p99 = 24;
+    float output_tps_p50 = 25;
+    float output_tps_p95 = 26;
+  }
+
+  string id = 1;
+  string test_id = 2;
+  string owner = 3;
+  ResponseCode status = 4;
+  repeated Model models = 5;
+  bool include_reasoning = 6;
+  int64 sample_size = 7;
+  float total_cost_usd = 8;
+  int64 total_tokens = 9;
+  repeated TestRunMetrics metrics = 10;
+  google.protobuf.Timestamp created_at_utc = 11;
+  google.protobuf.Timestamp completed_at_utc = 12;
+  string backend_id = 13;
+}
+
+message TestRunAnswer {
+  string id = 1;
+  string run_id = 2;
+  string item_id = 3;
+  string model_id = 4;
+  string answer = 5;
+  string reasoning = 6;
+  int64 input_tokens = 7;
+  int64 output_tokens = 8;
+  float input_cost = 9;
+  float output_cost = 10;
+  bool is_correct = 11;
+  float task_duration = 12;
+  bool has_attachment = 13;
+  FileModality attachment_type = 14;
+  string raw_response = 15;
+}
+
+// Lightweight in-flight progress for a TestRun. Returned by GetRunProgress.
+message RunProgress {
+  // Number of completed answers per model_id.
+  map<string, int32> answer_counts = 1;
+}
+
+// Per-model TP/TN/FP/FN tallies for a TestRun.
+message TestRunConfusionMatrix {
+  message ModelCounts {
+    int32 true_positives = 1;
+    int32 true_negatives = 2;
+    int32 false_positives = 3;
+    int32 false_negatives = 4;
+  }
+  // Keyed by model_id.
+  map<string, ModelCounts> per_model = 1;
+}
+
+message TestRunRequest {
+  // The UUID of the test to run
+  string test_id = 1;
+  // The models used in this run
+  repeated Model models = 2;
+  // Any user or system-added labels for this run
+  repeated string labels = 3;
+  // Whether or not to enable reasoning in addition to answers
+  bool include_reasoning = 4;
+  // The sample size to use for this test run, e.g. 5 for sample of n=5
+  int64 sample_size = 5;
+  // The backend ID to use for this run
+  string backend_id = 6;
+}
+
+message TestRunReply {
+  string test_id = 1;
+  string current_responder_id = 2;
+  ResponseCode code = 3;
+  string reason = 4;
+  int64 current_round = 5;
+  int64 total_rounds = 6;
+  repeated TestRun.TestRunMetrics metrics = 7;
+  string run_id = 8;
+}
+
+// Users
+enum UserRole {
+  // Default unassigned / unknown
+  NO_ROLE = 0;
+  // A normal user with basic permissions
+  NORMAL = 1;
+  // A super-user with advanced permissions. Allows quota / user management.
+  ADMIN = 2;
+}
+
+message UserAPIKey {
+  // The UID, in this case an e-mail address
+  string id = 1;
+  // The API key name
+  string name = 2;
+  // The (UTF-8 encoded) API key string as a SHA256 hash for auth / comparison
+  string hash = 3;
+  // When the API key was minted
+  google.protobuf.Timestamp created_at_utc = 4;
+  // Whether or not the API key is active
+  bool active = 5;
+  // The API key display name
+  string display_name = 6;
+}
+
+message UserRateLimits {
+  // How many tokens per minute a user is allowed to utilize. 0 = unlimited.
+  int64 tokens_per_minute = 1;
+  // How much a user is allowed to spend in a given calendar day (UTC), in USD
+  // cents. 0 = unlimited.
+  int64 daily_spend = 2;
+  // How much a user is allowed to spend in a given calendar month (UTC), in USD
+  // cents. 0 = unlimited.
+  int64 monthly_spend = 3;
+}
+
+message UserSpend {
+  // Cumulative spend for the current UTC calendar day, in USD.
+  float daily_usd = 1;
+  // Cumulative spend for the current UTC calendar month, in USD.
+  float monthly_usd = 2;
+}
+
+message User {
+  // The UID, in this case an e-mail address
+  string id = 1;
+  // The user's given name, updated from OAuth to remain accurate over time
+  string name = 2;
+  // The user's profile picture, updated from OAuth to remain accurate over time
+  string avatar_url = 3;
+  // Whether or not the user has been verified by the admin
+  bool verified = 4;
+  // The organization or domain that the user belongs to, pulled from OAuth
+  string org_domain = 5;
+  // The user's admin-assigned MPAC system role
+  UserRole role = 6;
+  // When the user was created
+  google.protobuf.Timestamp created_at_utc = 7;
+  // When the user was last updated
+  google.protobuf.Timestamp modified_at_utc = 8;
+  // When the user was last seen by the system
+  google.protobuf.Timestamp last_login = 9;
+  // The user's API key, if any
+  UserAPIKey api_key = 10;
+  // The user's system rate limits, if any
+  UserRateLimits rate_limits = 11;
+  // The user's password hash, if any
+  string password_hash = 12;
+  // Current spend totals, populated live by GetUser (not persisted).
+  UserSpend spend = 13;
+}
+
+// Request methods
+enum ResponseCode {
+  UNKNOWN = 0;
+  SUCCESS = 1;
+  ERROR = 2;
+  IN_PROGRESS = 3;
+  CANCELLED = 4;
+}
+
+message StatusReply {
+  // Standard MPAC API response codes
+  ResponseCode code = 1;
+  // A string containing error or status messages, if any
+  string reason = 2;
+  // The ID of the object being operated on, if any
+  string id = 3;
+}
+
+message ListRequest {
+  // Optional parent object ID
+  string parent_id = 1;
+  // The number of objects to return
+  int64 limit = 2;
+  // Optional inclusive lower bound on the object's created_at timestamp.
+  google.protobuf.Timestamp created_after = 3;
+  // Optional exclusive upper bound on the object's created_at timestamp.
+  google.protobuf.Timestamp created_before = 4;
+}
+
+message ListReply {
+  // List of protobuf messages that match request criteria
+  repeated google.protobuf.Any objects = 1;
+}
+
+message GetRequest {
+  // The ID of the object being requested
+  string id = 1;
+}
+
+message DeleteRequest {
+  // The ID of the object being deleted
+  string id = 1;
+}
+
+message GetCreditsReply {
+  // The total credits added to the account, server-wide
+  float total_credits = 1;
+  // The amount of credits that have been consumed so far, server-wide
+  float credits_used = 2;
+  // The amount of credits that are remaining for use, server-wide
+  float credits_remaining = 3;
+  // The MPAC backend type, denoting whether upstream credits even apply
+  string backend_type = 4;
+}
+
+message LoginRequest {
+  // User ID
+  string user_id = 1;
+  // Password
+  string password = 2;
+}
+
+message BatchCreateTestItemsRequest { repeated TestItem items = 1; }
+message BatchCreateTestItemsReply {
+  repeated StatusReply results = 1;
+  int32 successful_count = 2;
+  int32 failed_count = 3;
+}
+
+message BatchGetAttachmentsRequest {
+  // The IDs of attachments to fetch
+  repeated string ids = 1;
+  // If true, omit file bytes from each response. Use when only metadata
+  // (name, modality, mime, file_size) is needed, e.g. for page renders where
+  // the browser loads file bytes lazily via a dedicated file-serve endpoint.
+  bool metadata_only = 2;
+}
+
+// Service definition
+service MPAC {
+  // Fetch a specific model from the MPAC server
+  rpc GetModel(GetRequest) returns (Model) {}
+  // Lists all available models that are visible to the MPAC server
+  rpc ListModels(ListRequest) returns (stream Model) {}
+
+  // Shows how many credits are available for a given backend
+  // (only applies to non-local backends; pass the backend ID as request.id)
+  rpc GetCredits(GetRequest) returns (GetCreditsReply);
+
+  // Creates a new backend configuration (admin only)
+  rpc CreateBackend(Backend) returns (StatusReply);
+  // Fetches a backend by ID (api_key is never returned)
+  rpc GetBackend(GetRequest) returns (Backend);
+  // Updates an existing backend (admin only; send empty api_key to keep
+  // existing)
+  rpc UpdateBackend(Backend) returns (StatusReply);
+  // Deletes a backend (admin only)
+  rpc DeleteBackend(DeleteRequest) returns (StatusReply);
+  // Lists all backends (api_key never returned)
+  rpc ListBackends(ListRequest) returns (stream Backend);
+
+  // Fetches a benchmark by a given ID
+  rpc GetBenchmark(GetRequest) returns (Benchmark) {}
+  // Given a list of models and an test ID, runs an elimination-style
+  // competition to find an overall winner by F1 score
+  rpc CreateBenchmark(BenchmarkRequest) returns (stream BenchmarkResponse) {}
+  // Updates a benchmark (e.g. to cancel it)
+  rpc UpdateBenchmark(Benchmark) returns (StatusReply) {}
+  // Deletes a benchmark by a given ID
+  rpc DeleteBenchmark(DeleteRequest) returns (StatusReply) {}
+  // Lists all available benchmarks
+  rpc ListBenchmarks(ListRequest) returns (stream Benchmark) {}
+
+  // Fetches an attachment based on the provided ID
+  rpc GetAttachment(GetRequest) returns (FileAttachment) {}
+  // Creates a new attachment based on the provided request
+  rpc CreateAttachment(FileAttachment) returns (StatusReply) {}
+  // Deletes an existing attachment based on the provided request
+  rpc DeleteAttachment(DeleteRequest) returns (StatusReply) {}
+  // Lists available attachments based on the provided request.
+  // If no query string is provided, all available attachments are returned.
+  rpc ListAttachments(ListRequest) returns (stream FileAttachment) {}
+  // Fetches multiple attachments by ID in one streaming call.
+  // Set metadata_only=true to omit file bytes, keeping memory flat when
+  // displaying pages with many attachments.
+  rpc BatchGetAttachments(BatchGetAttachmentsRequest)
+      returns (stream FileAttachment) {}
+
+  // Fetches a test based on the provided ID
+  rpc GetTest(GetRequest) returns (Test) {}
+  // Creates a new test based on the provided request
+  rpc CreateTest(Test) returns (StatusReply) {}
+  // Updates an existing test based on the provided request
+  rpc UpdateTest(Test) returns (StatusReply) {}
+  // Deletes an existing test based on the provided request
+  rpc DeleteTest(DeleteRequest) returns (StatusReply) {}
+  // Lists available tests based on the provided request.
+  // If no query string is provided, all available tests are returned.
+  rpc ListTests(ListRequest) returns (stream Test) {}
+
+  // Fetches a test item based on the provided ID
+  rpc GetTestItem(GetRequest) returns (TestItem) {}
+  // Creates a new test item based on the provided request
+  rpc CreateTestItem(TestItem) returns (StatusReply) {}
+  // Create multiple test items at once, batching for efficiency
+  rpc BatchCreateTestItems(BatchCreateTestItemsRequest)
+      returns (BatchCreateTestItemsReply) {}
+  // Updates an existing test item based on the provided request
+  rpc UpdateTestItem(TestItem) returns (StatusReply) {}
+  // Deletes an existing test item based on the provided request
+  rpc DeleteTestItem(DeleteRequest) returns (StatusReply) {}
+  // Lists available tests based on the provided request.
+  // If no query string is provided, all available tests are returned.
+  rpc ListTestItems(ListRequest) returns (stream TestItem) {}
+
+  // Fetches a test run based on the provided ID
+  rpc GetTestRun(GetRequest) returns (TestRun) {}
+  // Returns in-flight answer counts per model for a running TestRun.
+  // Cheap DB query (GROUP BY); safe to poll every few seconds.
+  rpc GetRunProgress(GetRequest) returns (RunProgress) {}
+  // Returns per-model TP/TN/FP/FN tallies for a TestRun
+  rpc GetTestRunConfusionMatrix(GetRequest) returns (TestRunConfusionMatrix) {}
+  // Creates a new test run based on the provided request
+  rpc CreateTestRun(TestRunRequest) returns (stream TestRunReply) {}
+  // Updates an existing test run based on the provided request
+  rpc UpdateTestRun(TestRun) returns (StatusReply) {}
+  // Deletes an existing test run based on the provided request
+  rpc DeleteTestRun(DeleteRequest) returns (StatusReply) {}
+  // Lists available test runs based on the provided request.
+  // If no query string is provided, all available test runs are returned.
+  rpc ListTestRuns(ListRequest) returns (stream TestRun) {}
+
+  // Fetches a test run answer based on the provided ID
+  rpc GetTestRunAnswer(GetRequest) returns (TestRunAnswer) {}
+  // Creates a new test run based on the provided request
+  rpc CreateTestRunAnswer(TestRunRequest) returns (StatusReply) {}
+  // Deletes an existing test run based on the provided request
+  rpc DeleteTestRunAnswer(DeleteRequest) returns (StatusReply) {}
+  // Lists available test runs based on the provided request.
+  // If no query string is provided, all available test runs are returned.
+  rpc ListTestRunAnswers(ListRequest) returns (stream TestRunAnswer) {}
+
+  // Fetches a user based on the provided ID
+  rpc GetUser(GetRequest) returns (User) {}
+  // Creates a new user based on the provided request
+  rpc CreateUser(User) returns (StatusReply) {}
+  // Updates an existing user based on the provided request
+  rpc UpdateUser(User) returns (StatusReply) {}
+  // Deletes an existing user based on the provided request
+  rpc DeleteUser(DeleteRequest) returns (StatusReply) {}
+  // Lists available users based on the provided request.
+  // If no query string is provided, all available users are returned.
+  rpc ListUsers(ListRequest) returns (stream User) {}
+  rpc LoginUser(LoginRequest) returns (User) {}
+  // Returns the current daily and monthly spend totals for a user (by user ID).
+}
