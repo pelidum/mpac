@@ -835,6 +835,96 @@ class TestThrottledAnswerTaskTimeout:
 
 
 # ---------------------------------------------------------------------------
+# Duplicate model instances within a single run
+# ---------------------------------------------------------------------------
+
+
+class _ResponderRecordingStub(_DoRunStub):
+    """Records created answers and tags them like real inference does."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.created_answers = []
+
+    async def answer_test_item(
+        self, item_pb, run_id, model_pb, backend, context, include_reasoning
+    ):
+        self._answer_call_count += 1
+        a = _make_answer()
+        a.id = f"ans-{self._answer_call_count}"
+        a.run_id = run_id
+        a.item_id = item_pb.id
+        a.model_id = model_pb.id
+        a.responder_id = model_pb.responder_id or model_pb.id
+        return a
+
+    async def _grpc_create(self, id, proto_obj, obj_type, overwrite=False):
+        if obj_type == "test_run_answers":
+            self.created_answers.append(proto_obj)
+
+
+def _make_dup_run_and_request():
+    """A survey run with the same model entered twice (m, m#2)."""
+    run_pb = service_pb2.TestRun()
+    run_pb.id = "run-dup"
+    run_pb.owner = "user@example.com"
+
+    request = service_pb2.TestRunRequest()
+    for responder_id in ("m", "m#2"):
+        model_pb = service_pb2.Model()
+        model_pb.id = "m"
+        model_pb.responder_id = responder_id
+        request.models.append(model_pb)
+    run_pb.models.extend(request.models)
+
+    test_pb = service_pb2.Test()
+    test_pb.id = "test-1"
+    test_pb.type = service_pb2.TestType.SURVEY  # non-eval: skips sklearn path
+
+    item_pb = service_pb2.TestItem()
+    item_pb.id = "item-1"
+    item_pb.test_id = "test-1"
+
+    return run_pb, test_pb, [item_pb], request
+
+
+class TestDuplicateModelInstances:
+    """The same model run twice in one run must stay distinguishable: two
+    metrics rows with distinct responder_ids but the same model_id, and two
+    answers tagged by responder_id."""
+
+    def test_two_instances_produce_distinct_metrics_and_answers(self):
+        stub = _ResponderRecordingStub()
+        run_pb, test_pb, items, request = _make_dup_run_and_request()
+        cancel_event = asyncio.Event()
+
+        asyncio.get_event_loop().run_until_complete(
+            stub._do_run_inference(run_pb, test_pb, items, request, cancel_event)
+        )
+
+        responder_ids = sorted(m.responder_id for m in run_pb.metrics)
+        assert responder_ids == ["m", "m#2"]
+        # Both instances resolve to the same real model for cross-run grouping.
+        assert {m.model_id for m in run_pb.metrics} == {"m"}
+        # Each instance produced its own answer, keyed by responder_id.
+        assert sorted(a.responder_id for a in stub.created_answers) == ["m", "m#2"]
+        assert {a.model_id for a in stub.created_answers} == {"m"}
+
+    def test_responder_key_falls_back_to_model_id(self):
+        """A model with no responder_id (legacy path) keys on its model id."""
+        stub = _ResponderRecordingStub()
+        run_pb, test_pb, items, request = _make_run_and_request()
+        cancel_event = asyncio.Event()
+
+        asyncio.get_event_loop().run_until_complete(
+            stub._do_run_inference(run_pb, test_pb, items, request, cancel_event)
+        )
+
+        assert [m.responder_id for m in run_pb.metrics] == ["model-1"]
+        assert [a.responder_id for a in stub.created_answers] == ["model-1"]
+
+
+# ---------------------------------------------------------------------------
 # GetTestRun — parent-Test visibility enforcement
 # ---------------------------------------------------------------------------
 #

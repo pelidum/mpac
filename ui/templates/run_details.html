@@ -475,9 +475,10 @@
                             class="model-filter-btn filter-btn active text-xs px-3 py-1 rounded-full border transition-colors"
                             data-model="">All</button>
                         {% for model_pb in models_ranked %}
-                        <button onclick="setModelFilter('{{ model_pb.id }}')"
+                        {% set rkey = model_pb.responder_id or model_pb.id %}
+                        <button onclick="setModelFilter('{{ rkey }}')"
                             class="model-filter-btn filter-btn text-xs px-3 py-1 rounded-full border transition-colors"
-                            data-model="{{ model_pb.id }}">{{ model_pb.id }}</button>
+                            data-model="{{ rkey }}">{{ rkey }}</button>
                         {% endfor %}
                     </div>
                 </div>
@@ -503,7 +504,7 @@
             {% for model_pb in models_ranked %}
             <span class="flex items-center gap-1.5 text-xs text-[var(--color-text-secondary)]">
                 <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:4px;font-size:10px;font-weight:700;background:var(--color-bg-secondary);color:var(--color-accent-secondary);border:1px solid var(--color-border)">{{ loop.index }}</span>
-                {{ model_pb.id }}
+                {{ model_pb.responder_id or model_pb.id }}
             </span>
             {% endfor %}
         </div>
@@ -525,7 +526,8 @@
                             {% if test_pb and test_pb.type == 1 %}Expected{% else %}Consensus{% endif %}
                         </th>
                         {% for model_pb in models_ranked %}
-                        <th data-model-col="{{ model_pb.id }}" class="col-model" title="{{ model_pb.id }}">
+                        {% set rkey = model_pb.responder_id or model_pb.id %}
+                        <th data-model-col="{{ rkey }}" class="col-model" title="{{ rkey }}">
                             <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:4px;font-size:10px;font-weight:700;background:var(--color-bg-secondary);color:var(--color-accent-secondary);border:1px solid var(--color-border)">{{ loop.index }}</span>
                         </th>
                         {% endfor %}
@@ -578,7 +580,8 @@
                         </td>
 
                         {% for model_pb in models_ranked %}
-                        {% set response = item_dict["responses"].get(model_pb.id, {}) %}
+                        {% set rkey = model_pb.responder_id or model_pb.id %}
+                        {% set response = item_dict["responses"].get(rkey, {}) %}
                         {% set reasoning = response.get("reasoning", "No reasoning provided.") %}
                         {% set raw_resp = response.get("raw_response", "") %}
                         {% if test_pb and test_pb.type == 1 %}
@@ -588,7 +591,7 @@
                         {% elif not is_relevant and not is_correct %}{% set cls = 'FP' %}
                         {% elif is_relevant and not is_correct %}{% set cls = 'FN' %}
                         {% else %}{% set cls = 'TN' %}{% endif %}
-                        <td data-model-col="{{ model_pb.id }}" data-classification="{{ cls }}"
+                        <td data-model-col="{{ rkey }}" data-classification="{{ cls }}"
                             class="col-model {{ 'ans-ok' if is_correct else 'ans-bad' }}">
                             <div class="cell-c">
                                 <span style="font-weight:500">{{ response.get("answer") }}</span>
@@ -614,10 +617,10 @@
                         {% set canonical_answer = item_dict.get("item_pb").answer %}
                         {% if canonical_answer %}
                         {% set is_correct = response.get("answer") == canonical_answer %}
-                        <td data-model-col="{{ model_pb.id }}" class="col-model {{ 'ans-ok' if is_correct else 'ans-bad' }}">
+                        <td data-model-col="{{ rkey }}" class="col-model {{ 'ans-ok' if is_correct else 'ans-bad' }}">
                         {% else %}
                         {% set is_consensus = response.get("answer") == item_dict.get("top_answer") %}
-                        <td data-model-col="{{ model_pb.id }}" class="col-model">
+                        <td data-model-col="{{ rkey }}" class="col-model">
                         {% endif %}
                             <div class="cell-c">
                                 <span style="font-weight:500">{{ response.get("answer") }}</span>
@@ -695,12 +698,13 @@
         </p>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             {% for model_pb in models_ranked %}
+            {% set rkey = model_pb.responder_id or model_pb.id %}
             <div class="border border-[var(--color-border)] rounded-lg overflow-hidden flex flex-row divide-x divide-[var(--color-border)]">
                 <div class="flex-shrink-0 w-32 p-4 flex flex-col items-center justify-center gap-2 bg-[var(--color-bg-secondary)] text-center">
                     <div class="h-10 w-10 rounded-lg bg-[var(--color-bg-primary)] text-[var(--color-accent-secondary)] flex items-center justify-center font-bold text-lg ring-1 ring-inset ring-[var(--color-border)]">
                         {{ loop.index }}
                     </div>
-                    <p class="text-xs font-semibold break-all leading-tight text-[var(--color-text-secondary)]">{{ model_pb.id }}</p>
+                    <p class="text-xs font-semibold break-all leading-tight text-[var(--color-text-secondary)]">{{ rkey }}</p>
                     {% set binfo = backends_by_id.get(model_pb.backend_id, {}) %}
                     {% if binfo %}
                     {% set bt = binfo.get("type", "") | lower %}
@@ -725,8 +729,8 @@
                     </span>
                     {% endif %}
                 </div>
-                {% if model_pb.id in metrics_dict.keys() %}
-                {% set m = metrics_dict[model_pb.id] %}
+                {% if rkey in metrics_dict.keys() %}
+                {% set m = metrics_dict[rkey] %}
                 <dl class="flex-1 p-4 space-y-2.5 text-sm">
                     {% if test_pb and test_pb.type == 1 %}
                     <div class="flex items-center justify-between gap-2">
@@ -1361,7 +1365,7 @@
 
     // --- Answer & model filters ---
     {% if models_ranked | length == 1 %}
-    let activeModelFilter = {{ models_ranked[0].id | tojson }};
+    let activeModelFilter = {{ (models_ranked[0].responder_id or models_ranked[0].id) | tojson }};
     {% else %}
     let activeModelFilter = '';
     {% endif %}

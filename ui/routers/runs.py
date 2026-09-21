@@ -226,7 +226,23 @@ async def run_submit(
             None,
             lambda: list(stub.ListModels(service_pb2.ListRequest(), metadata=metadata)),
         )
-        run_model_pbs = [m for m in model_pbs if m.id in data.get("models", [])]
+        # Preserve the client's order and repetition so the same model can be
+        # run multiple times in one run. Each instance gets a per-run
+        # responder_id: the first occurrence keeps the bare model id, later
+        # occurrences are suffixed (gpt-4o, gpt-4o#2, ...).
+        by_id = {m.id: m for m in model_pbs}
+        run_model_pbs: list = []
+        seen: dict[str, int] = {}
+        for mid in data.get("models", []):
+            src = by_id.get(mid)
+            if src is None:
+                continue
+            inst = service_pb2.Model()
+            inst.CopyFrom(src)
+            n = seen.get(mid, 0)
+            inst.responder_id = mid if n == 0 else f"{mid}#{n + 1}"
+            seen[mid] = n + 1
+            run_model_pbs.append(inst)
         run_request_pb = service_pb2.TestRunRequest(
             test_id=data.get("test_id"),
             models=run_model_pbs,
@@ -434,6 +450,7 @@ async def download_run_csv(
                 "correct_answer": item_pb.answer if item_pb else "",
                 "is_relevant": item_pb.is_relevant if item_pb else False,
                 "model_id": a.model_id,
+                "responder_id": a.responder_id or a.model_id,
                 "answer": a.answer,
                 "is_correct": a.is_correct,
                 "reasoning": a.reasoning,
@@ -826,7 +843,7 @@ async def _fetch_run_report_data(
     rank_order = {m.get("responder_id"): i for i, m in enumerate(ranked_models)}
     models_ranked = sorted(
         result_pb.models,
-        key=lambda m: rank_order.get(m.id, len(rank_order)),
+        key=lambda m: rank_order.get(m.responder_id or m.id, len(rank_order)),
     )
 
     def _parse_ts(ts):
@@ -879,11 +896,11 @@ async def _fetch_run_report_data(
 
     answers = {}
     for ad in answer_dicts:
-        model_id = ad.get("model_id")
+        responder_id = ad.get("responder_id") or ad.get("model_id")
         item_id = ad.get("item_id")
         if item_id not in answers:
             answers[item_id] = {"responses": {}, "top_answer": None}
-        answers[item_id]["responses"][model_id] = ad
+        answers[item_id]["responses"][responder_id] = ad
 
     for item_id, response_dict in answers.items():
         item_answers = [
@@ -962,8 +979,8 @@ async def _fetch_run_report_data(
                         metadata=metadata,
                     ),
                 )
-                for model_id, counts in cm_pb.per_model.items():
-                    confusion_data[model_id] = {
+                for responder_id, counts in cm_pb.per_model.items():
+                    confusion_data[responder_id] = {
                         "tp": counts.true_positives,
                         "tn": counts.true_negatives,
                         "fp": counts.false_positives,
@@ -1013,7 +1030,7 @@ async def _fetch_run_report_data(
                 mod_items = {iid for iid, m in item_modality.items() if m == modality}
                 modality_metrics[modality] = {}
                 for model_pb in result_pb.models:
-                    mid = model_pb.id
+                    mid = model_pb.responder_id or model_pb.id
                     tp = tn = fp = fn = total = refusals = 0
                     for iid in mod_items:
                         resp = answers.get(iid, {}).get("responses", {}).get(mid)

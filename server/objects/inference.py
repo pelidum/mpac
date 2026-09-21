@@ -70,6 +70,7 @@ class InferenceMixin:
         answer_pb.run_id = run_id
         answer_pb.item_id = item_pb.id
         answer_pb.model_id = model_pb.id
+        answer_pb.responder_id = model_pb.responder_id or model_pb.id
 
         if backend_type == "debug_random":
             answer_pb.reasoning = (

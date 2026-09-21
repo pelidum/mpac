@@ -199,6 +199,12 @@ message Model {
   string license = 14;
   // The backend ID that serves this model
   string backend_id = 15;
+  // Per-run responder instance id. Empty in the model registry; populated only
+  // on a run's copy of a model so the same model can appear multiple times in
+  // one run. First occurrence keeps the bare model id; later occurrences are
+  // suffixed (e.g. "gpt-4o", "gpt-4o#2"). Used to differentiate instances
+  // within a run; cross-run grouping still uses `id`.
+  string responder_id = 16;
 }
 
 // Tests
@@ -278,7 +284,9 @@ message TestItem {
 
 message TestRun {
   message TestRunMetrics {
-    // The responder UUID
+    // The per-run responder instance id these metrics belong to (see
+    // Model.responder_id). Equals model_id for single-instance runs and for
+    // runs created before multi-instance support.
     string responder_id = 1;
     // The calculated precision for this test run, accounts for false positives
     double precision = 2;
@@ -319,6 +327,10 @@ message TestRun {
     float task_duration_p99 = 24;
     float output_tps_p50 = 25;
     float output_tps_p95 = 26;
+    // The real model id behind this responder instance. Used for cross-run
+    // grouping (leaderboards, /metrics). Empty on metrics written before
+    // multi-instance support; readers fall back to responder_id.
+    string model_id = 27;
   }
 
   string id = 1;
@@ -352,11 +364,15 @@ message TestRunAnswer {
   bool has_attachment = 13;
   FileModality attachment_type = 14;
   string raw_response = 15;
+  // Per-run responder instance id (see Model.responder_id). Empty on answers
+  // written before multi-instance support; readers fall back to model_id.
+  string responder_id = 16;
 }
 
 // Lightweight in-flight progress for a TestRun. Returned by GetRunProgress.
 message RunProgress {
-  // Number of completed answers per model_id.
+  // Number of completed answers per responder_id (falls back to model_id for
+  // answers written before multi-instance support).
   map<string, int32> answer_counts = 1;
 }
 
@@ -368,7 +384,8 @@ message TestRunConfusionMatrix {
     int32 false_positives = 3;
     int32 false_negatives = 4;
   }
-  // Keyed by model_id.
+  // Keyed by responder_id (falls back to model_id for answers written before
+  // multi-instance support).
   map<string, ModelCounts> per_model = 1;
 }
 

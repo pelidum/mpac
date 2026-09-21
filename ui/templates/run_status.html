@@ -21,7 +21,7 @@
                 <div class="overflow-y-auto flex-1 p-6">
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {% for model_pb in models %}
-                        <div data-model-id="{{ model_pb.id }}"
+                        <div data-model-id="{{ model_pb.responder_id or model_pb.id }}"
                             class="bg-[var(--color-bg-primary)] p-4 rounded-lg border border-[var(--color-border)] shadow-sm hover:shadow-md transition-shadow flex items-center ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
                             <div class="w-1/5 flex-shrink-0 flex justify-center">
                                 <div class="h-12 w-12 rounded bg-[var(--color-bg-secondary)] text-[var(--color-accent-secondary)] flex items-center justify-center font-bold ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
@@ -42,7 +42,7 @@
                                     </div>
                                 </div>
                                 <p class="text-sm font-medium text-[var(--color-text-secondary)] truncate">
-                                    {{ model_pb.id }}
+                                    {{ model_pb.responder_id or model_pb.id }}
                                 </p>
                             </div>
                         </div>

@@ -161,7 +161,11 @@ async def home(
                         "recall": metrics_pb.recall,
                         "f1": metrics_pb.f1,
                         "refusal_error_rate": metrics_pb.refusal_error_rate,
-                        "responder": metrics_pb.responder_id,
+                        # Cross-run leaderboard groups by the real model, so
+                        # duplicate per-run responder instances don't fragment
+                        # it. Falls back to responder_id for pre-multi-instance
+                        # runs (where model_id is unset).
+                        "responder": metrics_pb.model_id or metrics_pb.responder_id,
                         "test_id": run_pb.test_id,
                         "test_name": test_pb.name if test_pb else run_pb.test_id,
                         "owner": run_pb.owner,

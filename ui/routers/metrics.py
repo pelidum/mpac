@@ -132,7 +132,7 @@ async def metrics(
         if metrics_dicts:
             median_metrics_df = duckdb.sql("""
                 SELECT
-                    responder_id,
+                    COALESCE(NULLIF(model_id, ''), responder_id) AS responder_id,
                     MEDIAN(f1::FLOAT) AS median_f1,
                     MEDIAN(TRY_CAST(CAST(modality_scores AS JSON)->>'TEXT' AS FLOAT)) AS median_text_f1,
                     MEDIAN(TRY_CAST(CAST(modality_scores AS JSON)->>'IMAGE' AS FLOAT)) AS median_image_f1,
@@ -174,7 +174,7 @@ async def metrics(
                 per_run_df = pd.DataFrame(per_run_metrics)
                 per_test_metrics_df = duckdb.sql("""
                     SELECT
-                        responder_id,
+                        COALESCE(NULLIF(model_id, ''), responder_id) AS responder_id,
                         test_id,
                         MEDIAN(f1::FLOAT) AS median_f1,
                         MEDIAN(tokens_per_minute::FLOAT) AS median_throughput,
