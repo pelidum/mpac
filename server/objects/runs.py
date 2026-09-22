@@ -14,11 +14,21 @@ from server import service_pb2
 from server.objects.backend_pool import get_backend_resources
 
 _CANCEL_EVENTS: dict = {}
+# SQL expression for a responder's per-run instance id, falling back to model_id
+# for answers written before multi-instance support.
+_RESPONDER_KEY_SQL = (
+    "COALESCE(NULLIF(proto_jsonb->>'responder_id', ''), proto_jsonb->>'model_id')"
+)
 _STALE_RUN_THRESHOLD_S = 300
 _COST_FLUSH_INTERVAL_S = 30
 _HEARTBEAT_INTERVAL_S = 30
 _HEARTBEAT_STALE_S = 120
 _CONN_ERROR_BREAKER_THRESHOLD = 5
+
+
+def _responder_key(model_pb) -> str:
+    """Per-run responder instance id, falling back to model id for old runs."""
+    return model_pb.responder_id or model_pb.id
 
 
 class RunsMixin:
@@ -39,7 +49,7 @@ class RunsMixin:
         try:
             async with self.db_pool.acquire() as conn:
                 rows = await conn.fetch(
-                    """SELECT proto_jsonb->>'model_id' AS model_id,
+                    f"""SELECT {_RESPONDER_KEY_SQL} AS responder_id,
                               COUNT(*)::int AS cnt
                        FROM test_run_answers
                        WHERE proto_jsonb->>'run_id' = $1
@@ -47,8 +57,8 @@ class RunsMixin:
                     request.id,
                 )
                 for row in rows:
-                    if row["model_id"]:
-                        rp.answer_counts[row["model_id"]] = row["cnt"]
+                    if row["responder_id"]:
+                        rp.answer_counts[row["responder_id"]] = row["cnt"]
         except Exception as e:
             logging.error(f"GetRunProgress failed for run {request.id}: {e}")
         return rp
@@ -70,7 +80,7 @@ class RunsMixin:
         try:
             async with self.db_pool.acquire() as conn:
                 rows = await conn.fetch(
-                    """SELECT a.proto_jsonb->>'model_id' AS model_id,
+                    f"""SELECT {_RESPONDER_KEY_SQL.replace("proto_jsonb", "a.proto_jsonb")} AS responder_id,
                               COUNT(*) FILTER (WHERE (i.proto_jsonb->>'is_relevant')::bool
                                                  AND (a.proto_jsonb->>'is_correct')::bool)::int AS tp,
                               COUNT(*) FILTER (WHERE NOT (i.proto_jsonb->>'is_relevant')::bool
@@ -86,9 +96,9 @@ class RunsMixin:
                     request.id,
                 )
                 for row in rows:
-                    if not row["model_id"]:
+                    if not row["responder_id"]:
                         continue
-                    counts = cm.per_model[row["model_id"]]
+                    counts = cm.per_model[row["responder_id"]]
                     counts.true_positives = row["tp"]
                     counts.true_negatives = row["tn"]
                     counts.false_positives = row["fp"]
@@ -268,6 +278,7 @@ class RunsMixin:
                 failed_pb.run_id = run_pb.id
                 failed_pb.item_id = sample_pb.id
                 failed_pb.model_id = model_pb.id
+                failed_pb.responder_id = _responder_key(model_pb)
                 failed_pb.reasoning = (
                     "Backend at capacity - request waited too long for a slot"
                 )
@@ -296,6 +307,7 @@ class RunsMixin:
                 if cancel_event.is_set():
                     raise asyncio.CancelledError("Run cancelled")
 
+                responder_key = _responder_key(model_pb)
                 backend_pb = await _get_backend(
                     model_pb.backend_id or run_pb.backend_id
                 )
@@ -303,7 +315,8 @@ class RunsMixin:
                 items_to_run = [
                     s
                     for s in sample_item_pbs
-                    if not completed_pairs or (model_pb.id, s.id) not in completed_pairs
+                    if not completed_pairs
+                    or (responder_key, s.id) not in completed_pairs
                 ]
                 model_tasks = [
                     asyncio.ensure_future(
@@ -315,11 +328,11 @@ class RunsMixin:
                 if completed_pairs:
                     async with self.db_pool.acquire() as conn:
                         prior_rows = await conn.fetch(
-                            """SELECT proto_bytes FROM test_run_answers
+                            f"""SELECT proto_bytes FROM test_run_answers
                                WHERE proto_jsonb->>'run_id' = $1
-                                 AND proto_jsonb->>'model_id' = $2""",
+                                 AND {_RESPONDER_KEY_SQL} = $2""",
                             run_pb.id,
-                            model_pb.id,
+                            responder_key,
                         )
                     for pr in prior_rows:
                         a = service_pb2.TestRunAnswer()
@@ -415,6 +428,7 @@ class RunsMixin:
                         skipped_pb.run_id = run_pb.id
                         skipped_pb.item_id = sample_pb.id
                         skipped_pb.model_id = model_pb.id
+                        skipped_pb.responder_id = responder_key
                         skipped_pb.reasoning = (
                             "Skipped - backend unreachable (circuit breaker open "
                             "after repeated connection errors)"
@@ -527,7 +541,8 @@ class RunsMixin:
                     total_cost += model_answer.input_cost + model_answer.output_cost
 
                 metrics_pb = service_pb2.TestRun.TestRunMetrics()
-                metrics_pb.responder_id = model_pb.id
+                metrics_pb.responder_id = responder_key
+                metrics_pb.model_id = model_pb.id
 
                 if test_pb.type == 1:
                     metrics_pb.simple_grade = self.calculate_grade(
@@ -692,8 +707,9 @@ class RunsMixin:
             return
 
         already_computed = {m.responder_id for m in run_pb.metrics}
-        all_model_ids = {m.id for m in run_pb.models}
-        missing = all_model_ids - already_computed
+        responder_to_model = {_responder_key(m): m.id for m in run_pb.models}
+        all_responder_ids = set(responder_to_model)
+        missing = all_responder_ids - already_computed
         if not missing:
             return
 
@@ -712,12 +728,13 @@ class RunsMixin:
         for row in rows:
             answer_pb = service_pb2.TestRunAnswer()
             answer_pb.ParseFromString(row["proto_bytes"])
-            if answer_pb.model_id in missing:
-                answers_by_model.setdefault(answer_pb.model_id, []).append(answer_pb)
+            responder_key = answer_pb.responder_id or answer_pb.model_id
+            if responder_key in missing:
+                answers_by_model.setdefault(responder_key, []).append(answer_pb)
 
         sample_items_by_id = {s.id: s for s in sample_item_pbs}
 
-        for model_id, model_answers in answers_by_model.items():
+        for responder_key, model_answers in answers_by_model.items():
             if not model_answers:
                 continue
             try:
@@ -737,7 +754,10 @@ class RunsMixin:
                     responder_answers.append(item_dict["response"].answer)
 
                 metrics_pb = service_pb2.TestRun.TestRunMetrics()
-                metrics_pb.responder_id = model_id
+                metrics_pb.responder_id = responder_key
+                metrics_pb.model_id = responder_to_model.get(
+                    responder_key, responder_key
+                )
                 metrics_pb.total = len(answer_map)
                 metrics_pb.num_correct = len(
                     [d for d in answer_map.values() if d["response"].is_correct]
@@ -765,12 +785,12 @@ class RunsMixin:
                 )
                 run_pb.metrics.append(metrics_pb)
                 logging.info(
-                    f"Run {run_pb.id}: salvaged partial metrics for {model_id} "
+                    f"Run {run_pb.id}: salvaged partial metrics for {responder_key} "
                     f"({len(answer_map)} of {len(sample_item_pbs)} items)"
                 )
             except Exception as e:
                 logging.warning(
-                    f"Failed to compute partial metrics for {model_id}: {e}"
+                    f"Failed to compute partial metrics for {responder_key}: {e}"
                 )
 
     async def CreateTestRun(
@@ -917,14 +937,14 @@ class RunsMixin:
             try:
                 async with self.db_pool.acquire() as conn:
                     answer_rows = await conn.fetch(
-                        """SELECT proto_jsonb->>'item_id' AS item_id,
-                                  proto_jsonb->>'model_id' AS model_id
+                        f"""SELECT proto_jsonb->>'item_id' AS item_id,
+                                  {_RESPONDER_KEY_SQL} AS responder_id
                            FROM test_run_answers
                            WHERE proto_jsonb->>'run_id' = $1""",
                         run_pb.id,
                     )
                 for r in answer_rows:
-                    completed_pairs.add((r["model_id"], r["item_id"]))
+                    completed_pairs.add((r["responder_id"], r["item_id"]))
             except Exception as e:
                 logging.error(f"Failed to load completed answers for {run_pb.id}: {e}")
                 continue

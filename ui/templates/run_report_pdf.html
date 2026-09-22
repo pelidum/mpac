@@ -1276,13 +1276,14 @@
   </p>
 
   {% for model_pb in models_ranked %}
-  {% if model_pb.id in metrics_dict.keys() %}
-  {% set m = metrics_dict[model_pb.id] %}
+  {% set rkey = model_pb.responder_id or model_pb.id %}
+  {% if rkey in metrics_dict.keys() %}
+  {% set m = metrics_dict[rkey] %}
   <div class="model-card">
     <div class="model-card-header">
       <div class="model-card-rank">{{ loop.index }}</div>
       <div>
-        <div class="model-card-name">{{ model_pb.id }}</div>
+        <div class="model-card-name">{{ rkey }}</div>
         {% set binfo = backends_by_id.get(model_pb.backend_id, {}) %}
         {% if binfo %}<div class="model-card-backend">{{ binfo.get("name", "") }}</div>{% endif %}
       </div>
@@ -1386,7 +1387,7 @@
   <div class="model-legend">
     {% for model_pb in models_ranked %}
     <span class="model-legend-item">
-      <span class="model-legend-num">{{ loop.index }}</span>{{ model_pb.id }}
+      <span class="model-legend-num">{{ loop.index }}</span>{{ model_pb.responder_id or model_pb.id }}
     </span>
     {% endfor %}
   </div>
@@ -1434,7 +1435,7 @@
         <td>{% if item_pb_local.context %}{{ item_pb_local.context|truncate(150) }}{% else %}<span style="color:#999;font-style:italic">-</span>{% endif %}</td>
         <td class="col-expected">{% if is_eval %}{{ item_pb_local.answer }}{% else %}{{ item_dict.get("top_answer", "-") }}{% endif %}</td>
         {% for model_pb in models_ranked %}
-        {% set resp = item_dict.get("responses", {}).get(model_pb.id, {}) %}
+        {% set resp = item_dict.get("responses", {}).get(model_pb.responder_id or model_pb.id, {}) %}
         {% if is_eval %}
         <td class="{{ 'ans-ok' if resp.get('is_correct') else 'ans-bad' }}">{{ resp.get("answer", "-") }}</td>
         {% else %}
@@ -1460,7 +1461,7 @@
   </p>
 
   {% for model_pb in models_ranked %}
-  {% set model_id = model_pb.id %}
+  {% set model_id = model_pb.responder_id or model_pb.id %}
   {% set ns = namespace(fp_total=0, fn_total=0, fp_items=[], fn_items=[]) %}
   {% for item_id, item_dict in answers.items() %}
     {% set resp = item_dict.get("responses", {}).get(model_id, {}) %}
