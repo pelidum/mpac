@@ -184,5 +184,133 @@ async def test_download_pdf_success(client, mock_stub):
     assert r.content[:4] == b"%PDF"
 
 
+# ---------------------------------------------------------------------------
+# Export consensus (CSV wide matrix + JSON additive block)
+# ---------------------------------------------------------------------------
+
+
+def _survey_run_fixtures():
+    """A survey run with gpt-4o entered twice plus claude and llama.
+    item-1 votes yes/no/yes/yes → consensus "yes", agreement 0.75.
+    """
+    run_pb = service_pb2.TestRun(
+        id="run-consensus-1",
+        test_id="test-1",
+        owner="user@example.com",
+        status=1,
+        sample_size=1,
+        models=[
+            service_pb2.Model(id="gpt-4o", responder_id="gpt-4o", backend_id="be-1"),
+            service_pb2.Model(id="gpt-4o", responder_id="gpt-4o#2", backend_id="be-1"),
+            service_pb2.Model(id="claude", responder_id="claude", backend_id="be-1"),
+            service_pb2.Model(id="llama", responder_id="llama", backend_id="be-1"),
+        ],
+    )
+    test_pb = service_pb2.Test(id="test-1", name="Survey", type=2, item_count=1)
+    item1 = service_pb2.TestItem(id="item-1", question="Is the sky blue?")
+    answer_pbs = [
+        service_pb2.TestRunAnswer(
+            item_id="item-1", model_id="gpt-4o", responder_id="gpt-4o", answer="yes"
+        ),
+        service_pb2.TestRunAnswer(
+            item_id="item-1", model_id="gpt-4o", responder_id="gpt-4o#2", answer="no"
+        ),
+        service_pb2.TestRunAnswer(
+            item_id="item-1", model_id="claude", responder_id="claude", answer="yes"
+        ),
+        service_pb2.TestRunAnswer(
+            item_id="item-1", model_id="llama", responder_id="llama", answer="yes"
+        ),
+    ]
+    return run_pb, test_pb, [item1], answer_pbs
+
+
+def _wire_export_stub(mock_stub, run_pb, test_pb, item_pbs, answer_pbs):
+    mock_stub.GetTestRun.return_value = run_pb
+    mock_stub.GetTest.return_value = test_pb
+    mock_stub.ListTestRunAnswers.return_value = iter(answer_pbs)
+    mock_stub.ListTestItems.return_value = iter(item_pbs)
+
+
+@pytest.mark.asyncio
+async def test_download_csv_consensus_matrix(client, mock_stub):
+    import csv
+    import io
+
+    run_pb, test_pb, items, answers = _survey_run_fixtures()
+    _wire_export_stub(mock_stub, run_pb, test_pb, items, answers)
+
+    r = await client.get("/runs/run-consensus-1/download/csv")
+    assert r.status_code == 200
+    assert "text/csv" in r.headers["content-type"]
+
+    reader = csv.DictReader(io.StringIO(r.text))
+    fields = reader.fieldnames
+    # The duplicated model yields two distinct responder columns.
+    assert "gpt-4o" in fields and "gpt-4o#2" in fields
+    assert "claude" in fields and "llama" in fields
+    assert "consensus" in fields and "agreement" in fields
+
+    rows = list(reader)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["item_id"] == "item-1"
+    assert row["gpt-4o"] == "yes"
+    assert row["gpt-4o#2"] == "no"
+    assert row["claude"] == "yes"
+    assert row["consensus"] == "yes"
+    assert float(row["agreement"]) == 0.75
+    assert row["num_responders"] == "4"
+    # Survey: no ground truth to compare against.
+    assert row["consensus_correct"] == ""
+
+
+@pytest.mark.asyncio
+async def test_download_json_consensus_block(client, mock_stub):
+    import json
+
+    run_pb, test_pb, items, answers = _survey_run_fixtures()
+    _wire_export_stub(mock_stub, run_pb, test_pb, items, answers)
+
+    r = await client.get("/runs/run-consensus-1/download/json")
+    assert r.status_code == 200
+    data = json.loads(r.text)
+
+    # items[] stays flat and back-compatible, now carrying responder_id.
+    assert isinstance(data["items"], list)
+    assert len(data["items"]) == 4
+    assert data["items"][0]["responder_id"] == "gpt-4o"
+
+    consensus = data["consensus_by_item"]
+    assert len(consensus) == 1
+    entry = consensus[0]
+    assert entry["item_id"] == "item-1"
+    assert entry["consensus_answer"] == "yes"
+    assert entry["agreement"] == 0.75
+    assert entry["num_responders"] == 4
+    assert entry["vote_counts"] == {"yes": 3, "no": 1}
+    assert entry["consensus_correct"] is None  # survey → no ground truth
+
+
+def test_compute_item_consensus_unit():
+    from ui.routers.runs import _compute_item_consensus
+
+    unanimous = _compute_item_consensus({"a": "yes", "b": "yes"})
+    assert unanimous["consensus_answer"] == "yes"
+    assert unanimous["agreement"] == 1.0
+    assert unanimous["num_responders"] == 2
+
+    # Blank / refusal answers are excluded from the vote.
+    partial = _compute_item_consensus({"a": "yes", "b": "", "c": "no", "d": "yes"})
+    assert partial["consensus_answer"] == "yes"
+    assert partial["num_responders"] == 3
+    assert abs(partial["agreement"] - 2 / 3) < 1e-9
+
+    empty = _compute_item_consensus({"a": "", "b": None})
+    assert empty["consensus_answer"] is None
+    assert empty["agreement"] == 0.0
+    assert empty["num_responders"] == 0
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

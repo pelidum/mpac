@@ -38,6 +38,55 @@ import jwt as pyjwt
 router = APIRouter()
 
 
+def _responder_key(model_pb) -> str:
+    """Per-run responder instance id, falling back to model id for old runs."""
+    return model_pb.responder_id or model_pb.id
+
+
+def _compute_item_consensus(answers_by_responder: dict) -> dict:
+    """Majority vote over one item's responder answers.
+
+    Blank/empty answers (refusals/errors) are excluded from the vote.
+    `agreement` is the fraction of voting responders who picked the majority
+    answer; ties break to the first answer seen.
+    """
+    votes = [a for a in answers_by_responder.values() if a]
+    counts = Counter(votes)
+    if not counts:
+        return {
+            "consensus_answer": None,
+            "agreement": 0.0,
+            "vote_counts": {},
+            "num_responders": 0,
+        }
+    top_answer, top_count = counts.most_common(1)[0]
+    return {
+        "consensus_answer": top_answer,
+        "agreement": top_count / len(votes),
+        "vote_counts": dict(counts),
+        "num_responders": len(votes),
+    }
+
+
+def _consensus_label(score: float) -> str:
+    """Human label for an agreement fraction.
+
+    Mirrors the threshold ladder in the backend's
+    DbMixin.calculate_confidence (server/objects/db.py); kept in sync by hand
+    because that method lives on the gRPC service, not importable here.
+    """
+    if score == 1:
+        return "⭐⭐⭐⭐⭐ Unanimous consensus"
+    elif score >= 0.75:
+        return "⭐⭐⭐⭐ Strong consensus"
+    elif score >= 0.6:
+        return "⭐⭐⭐ Majority consensus"
+    elif score >= 0.4:
+        return "⭐⭐ Weak consensus"
+    else:
+        return "⭐ No consensus"
+
+
 @router.get("/runs")
 async def runs(
     request: Request,
@@ -439,30 +488,61 @@ async def download_run_csv(
         )
         items_by_id = {item.id: item for item in test_item_pbs}
 
-        rows = []
+        # Wide consensus matrix: one row per item, one column per responder
+        # instance, plus per-item consensus. Duplicate model instances get
+        # distinct columns because responder keys are unique per run.
+        responder_keys = [_responder_key(m) for m in run_pb.models]
+        by_item: dict = {}
+        item_order: list = []
         for a in answer_pbs:
-            item_pb = items_by_id.get(a.item_id)
+            if a.item_id not in by_item:
+                by_item[a.item_id] = {}
+                item_order.append(a.item_id)
+            by_item[a.item_id][a.responder_id or a.model_id] = a.answer
+
+        base_cols = ["item_id", "question", "context", "correct_answer", "is_relevant"]
+        trailing_cols = [
+            "consensus",
+            "agreement",
+            "consensus_label",
+            "num_responders",
+            "vote_distribution",
+            "consensus_correct",
+        ]
+        columns = base_cols + responder_keys + trailing_cols
+
+        rows = []
+        for item_id in item_order:
+            item_pb = items_by_id.get(item_id)
+            responses = by_item[item_id]
+            cons = _compute_item_consensus(responses)
+            correct_answer = item_pb.answer if item_pb else ""
+            consensus_answer = cons["consensus_answer"]
             row = {
-                "item_id": a.item_id,
+                "item_id": item_id,
                 "question": item_pb.question if item_pb else "",
                 "context": item_pb.context if item_pb else "",
-                "choices": list(item_pb.choices) if item_pb else [],
-                "correct_answer": item_pb.answer if item_pb else "",
+                "correct_answer": correct_answer,
                 "is_relevant": item_pb.is_relevant if item_pb else False,
-                "model_id": a.model_id,
-                "responder_id": a.responder_id or a.model_id,
-                "answer": a.answer,
-                "is_correct": a.is_correct,
-                "reasoning": a.reasoning,
-                "input_tokens": a.input_tokens,
-                "output_tokens": a.output_tokens,
-                "input_cost": a.input_cost,
-                "output_cost": a.output_cost,
-                "task_duration": a.task_duration,
+                "consensus": consensus_answer,
+                "agreement": round(cons["agreement"], 4),
+                "consensus_label": _consensus_label(cons["agreement"]),
+                "num_responders": cons["num_responders"],
+                "vote_distribution": "|".join(
+                    f"{ans}:{n}" for ans, n in cons["vote_counts"].items()
+                ),
+                # Ground truth only exists for evals; blank for surveys.
+                "consensus_correct": (
+                    consensus_answer == correct_answer
+                    if correct_answer and consensus_answer is not None
+                    else ""
+                ),
             }
+            for rk in responder_keys:
+                row[rk] = responses.get(rk, "")
             rows.append(row)
 
-        csv_data = pd.DataFrame(rows).to_csv(index=False)
+        csv_data = pd.DataFrame(rows, columns=columns).to_csv(index=False)
         return StreamingResponse(
             iter([csv_data]),
             media_type="text/csv",
@@ -544,6 +624,39 @@ async def download_run_json(
             items.append(row)
 
         run_dict["items"] = items
+
+        # Additive per-item consensus block (leaves items[] untouched).
+        by_item: dict = {}
+        item_order: list = []
+        for a in answer_pbs:
+            if a.item_id not in by_item:
+                by_item[a.item_id] = {}
+                item_order.append(a.item_id)
+            by_item[a.item_id][a.responder_id or a.model_id] = a.answer
+
+        consensus_by_item = []
+        for item_id in item_order:
+            item_pb = items_by_id.get(item_id)
+            cons = _compute_item_consensus(by_item[item_id])
+            correct_answer = item_pb.answer if item_pb else ""
+            consensus_answer = cons["consensus_answer"]
+            consensus_by_item.append(
+                {
+                    "item_id": item_id,
+                    "question": item_pb.question if item_pb else "",
+                    "correct_answer": correct_answer,
+                    **cons,
+                    "consensus_label": _consensus_label(cons["agreement"]),
+                    # Ground truth only exists for evals; None for surveys.
+                    "consensus_correct": (
+                        consensus_answer == correct_answer
+                        if correct_answer and consensus_answer is not None
+                        else None
+                    ),
+                }
+            )
+        run_dict["consensus_by_item"] = consensus_by_item
+
         json_data = json.dumps(run_dict, indent=2, default=str)
         return StreamingResponse(
             iter([json_data]),
@@ -903,12 +1016,13 @@ async def _fetch_run_report_data(
         answers[item_id]["responses"][responder_id] = ad
 
     for item_id, response_dict in answers.items():
-        item_answers = [
-            x.get("answer") for x in response_dict.get("responses").values() if x
-        ]
-        counts = Counter(item_answers)
-        top = counts.most_common(1)
-        answers[item_id]["top_answer"] = top[0][0] if top else None
+        answers_by_responder = {
+            rk: (ad.get("answer") if ad else None)
+            for rk, ad in response_dict.get("responses").items()
+        }
+        cons = _compute_item_consensus(answers_by_responder)
+        answers[item_id]["top_answer"] = cons["consensus_answer"]
+        answers[item_id]["agreement"] = cons["agreement"]
 
     for item_id in answers:
         item_pb = await loop.run_in_executor(
