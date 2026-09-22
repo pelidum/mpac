@@ -1,0 +1,12 @@
+# Terraform — never commit variable files, state, or generated secrets.
+*.tfvars
+!*.tfvars.example
+
+*.tfstate
+*.tfstate.*
+
+.terraform/
+.terraform.lock.hcl
+
+# Auto-generated self-signed certificates
+generated/
