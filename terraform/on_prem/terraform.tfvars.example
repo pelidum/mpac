@@ -1,0 +1,65 @@
+# MPAC On-Prem Configuration
+#
+# Copy this file to terraform.tfvars and fill in your values:
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# NEVER commit terraform.tfvars to version control — it contains secrets.
+# (It is already covered by .gitignore.)
+#
+# Alternatively, set secrets via environment variables instead of this file:
+#   export TF_VAR_postgres_password="your-secure-password"
+#   export TF_VAR_mpac_jwt_secret="your-random-secret"
+
+# Project configuration
+project_name = "mpac"
+
+# PostgreSQL
+postgres_version     = "16"
+postgres_user        = "postgres"
+postgres_password    = "CHANGE_ME"
+postgres_db          = "mpac"
+postgres_data_path   = "/var/lib/mpac/postgres"
+postgres_backup_path = "/var/lib/mpac/backups"
+
+# Shared secret (HS256 JWT secret shared between server and UI)
+mpac_jwt_secret = "CHANGE_ME"
+
+# TLS
+#
+# By default MPAC generates a self-signed certificate automatically — no action
+# needed. tls_domain sets the certificate's common name / DNS SAN.
+tls_domain = "localhost"
+#
+# To bring your own certificate instead, set both paths (generation is skipped):
+# tls_cert_path = "/path/to/your/cert.pem"
+# tls_key_path  = "/path/to/your/key.pem"
+
+# MPAC Server (images published to GitHub Container Registry)
+server_image        = "ghcr.io/pelidum/mpac_server:latest"
+server_port         = 50051
+server_host         = "0.0.0.0"
+server_db_pool_size = 100
+
+# Bootstrap admin (first deploy only; ignored once an admin exists — safe to leave set)
+server_admin_onboarding_id       = "admin@example.com"
+server_admin_onboarding_password = "CHANGE_ME"
+
+# MPAC UI
+ui_image = "ghcr.io/pelidum/mpac_ui:latest"
+ui_port  = 8080
+ui_debug = false
+# The UI reaches the server plaintext over the private network (Envoy terminates
+# TLS for external traffic). Leave true for on-prem; set false only if the server
+# is fronted by a TLS endpoint the UI can verify.
+ui_grpc_insecure = true
+
+# Google OAuth (optional — leave empty for password-only auth)
+# google_oauth_client_id     = ""
+# google_oauth_client_secret = ""
+
+# Envoy Proxy
+envoy_image      = "envoyproxy/envoy:v1.29-latest"
+envoy_http_port  = 80
+envoy_https_port = 443
+envoy_grpc_port  = 50051
+envoy_bind_ip    = "0.0.0.0"

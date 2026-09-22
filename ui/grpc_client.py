@@ -5,6 +5,11 @@ import grpc
 from server import service_pb2_grpc
 
 MPAC_DEBUG = os.getenv("MPAC_DEBUG", "false").lower() == "true"
+# Use a plaintext (insecure) gRPC channel to the backend, independent of
+# MPAC_DEBUG. On-prem deployments terminate TLS at a front proxy (Envoy) and the
+# UI reaches the server plaintext over a private network; this flag lets those
+# deployments keep full HTTPS/secure-cookie behavior without forcing debug mode.
+MPAC_GRPC_INSECURE = os.getenv("MPAC_GRPC_INSECURE", "false").lower() == "true"
 MPAC_HOST = os.getenv("MPAC_HOST", "0.0.0.0")
 MPAC_PORT = os.getenv("MPAC_PORT", "50051")
 MPAC_JWT_SECRET = os.getenv(
@@ -19,7 +24,7 @@ _GRPC_OPTIONS = [
     ("grpc.max_receive_message_length", _MAX_MESSAGE_SIZE),
 ]
 
-if MPAC_DEBUG:
+if MPAC_DEBUG or MPAC_GRPC_INSECURE:
     _channel = grpc.insecure_channel(f"{MPAC_HOST}:{MPAC_PORT}", options=_GRPC_OPTIONS)
 else:
     _channel = grpc.secure_channel(

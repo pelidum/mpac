@@ -64,9 +64,16 @@ FastAPI web frontend for MPAC. Server-side rendered with Jinja2 templates.
 The UI imports the generated gRPC stubs from the backend (`from server import service_pb2`)
 and depends on the `//server:service_py_proto` and `//server:mpac_proto_json` Bazel targets.
 
-### Deployment / infrastructure
+### Deployment (`terraform/`)
 
-Terraform/IaC has **not** yet been migrated into this repo. It is planned as a follow-up.
+Infrastructure-as-code for self-hosting MPAC.
+
+- `terraform/on_prem/` — single-machine Docker deployment (PostgreSQL, gRPC server, FastAPI
+  UI, Envoy TLS proxy). Designed for a one-command `terraform init && terraform apply`: it
+  pulls the public GHCR images (`ghcr.io/pelidum/mpac_server`, `ghcr.io/pelidum/mpac_ui`),
+  generates a self-signed TLS cert in pure Terraform (with a bring-your-own override), and
+  wires the containers together. Copy `terraform.tfvars.example` → `terraform.tfvars` first.
+  Uses the `kreuzwerker/docker`, `hashicorp/tls`, and `hashicorp/local` providers.
 
 ## Database
 
