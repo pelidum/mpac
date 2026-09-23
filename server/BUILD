@@ -101,7 +101,6 @@ py_test(
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_grpc",
     ],
 )
 
