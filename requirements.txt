@@ -15,7 +15,7 @@ grpcio-health-checking==1.72.0
 grpcio-reflection==1.72.0
 h11==0.16.0
 httpx==0.28.1
-huggingface-hub==0.36.0
+huggingface-hub==1.32.0
 idna==3.15
 itsdangerous==2.2.0
 Jinja2==3.1.6
