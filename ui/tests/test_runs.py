@@ -185,6 +185,136 @@ async def test_download_pdf_success(client, mock_stub):
 
 
 # ---------------------------------------------------------------------------
+# PDF answers cap scales with the model count (guards against OOM on large runs)
+# ---------------------------------------------------------------------------
+
+
+def _wire_pdf_run(mock_stub, n_models: int, sample_size: int):
+    """Wire mock_stub for a PDF download of an eval run with ``n_models`` models."""
+    run_pb = service_pb2.TestRun(
+        id="run-cap",
+        test_id="test-1",
+        owner="user@example.com",
+        status=1,
+        sample_size=sample_size,
+        models=[
+            service_pb2.Model(id=f"m{i}", responder_id=f"m{i}", backend_id="be-1")
+            for i in range(n_models)
+        ],
+    )
+    test_pb = service_pb2.Test(id="test-1", name="T", type=1, item_count=sample_size)
+    item = service_pb2.TestItem(
+        id="item-1", question="q?", answer="a", is_relevant=True
+    )
+    mock_stub.GetTestRun.return_value = run_pb
+    mock_stub.GetTest.return_value = test_pb
+    mock_stub.ListTestRunAnswers.return_value = iter(
+        [service_pb2.TestRunAnswer(item_id="item-1", model_id="m0", answer="a")]
+    )
+    mock_stub.GetTestItem.side_effect = lambda req, **kw: item
+    mock_stub.BatchGetAttachments.return_value = iter([])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "n_models, sample_size, expected_limit",
+    [
+        # Few models: capped at the flat item ceiling (PDF_MAX_ANSWER_ITEMS=500).
+        (2, 5000, 500),
+        # Many models: cell budget (2000) / models shrinks the row count.
+        (50, 5000, 40),
+        # Very wide runs still keep the minimum floor (PDF_MIN_ANSWER_ITEMS=25).
+        (2000, 5000, 25),
+        # Never fetch more items than the run actually has.
+        (2, 40, 40),
+    ],
+)
+async def test_download_pdf_answer_cap_scales_with_models(
+    client, mock_stub, n_models, sample_size, expected_limit
+):
+    _wire_pdf_run(mock_stub, n_models=n_models, sample_size=sample_size)
+
+    r = await client.get("/runs/run-cap/download/pdf")
+    assert r.status_code == 200
+
+    list_req = mock_stub.ListTestRunAnswers.call_args.args[0]
+    assert list_req.limit == expected_limit
+
+
+@pytest.mark.asyncio
+async def test_pdf_error_analysis_totals_are_full_run(mock_stub):
+    """FP/FN totals in Error Analysis reflect the full run (confusion matrix),
+    not the truncated answers sample, even when the answers table is capped."""
+    run_pb = service_pb2.TestRun(
+        id="run-ea",
+        test_id="test-1",
+        owner="user@example.com",
+        status=1,
+        sample_size=50,  # full run has 50 items ...
+        models=[
+            service_pb2.Model(id="model-a", responder_id="model-a", backend_id="be-1")
+        ],
+        metrics=[
+            service_pb2.TestRun.TestRunMetrics(
+                responder_id="model-a",
+                precision=0.9,
+                recall=0.5,
+                f1=0.6,
+                true_positives=40,
+                true_negatives=8,
+                false_positives=5,
+                false_negatives=47,
+            )
+        ],
+    )
+    test_pb = service_pb2.Test(id="test-1", name="T", type=1, item_count=50)
+    item = service_pb2.TestItem(
+        id="item-1", question="q?", answer="yes", is_relevant=True
+    )
+    # ... but only ONE item's answers are returned, so the sample is truncated.
+    answer_pbs = [
+        service_pb2.TestRunAnswer(
+            item_id="item-1",
+            model_id="model-a",
+            responder_id="model-a",
+            answer="no",
+            is_correct=False,  # relevant + wrong => false negative
+        )
+    ]
+    mock_stub.GetTestRun.return_value = run_pb
+    mock_stub.GetTest.return_value = test_pb
+    mock_stub.ListTestRunAnswers.return_value = iter(answer_pbs)
+    mock_stub.GetTestItem.side_effect = lambda req, **kw: item
+    mock_stub.BatchGetAttachments.return_value = iter([])
+
+    from ui.routers.runs import (
+        PDF_MAX_ANSWER_CELLS,
+        PDF_MAX_EMBEDDED_IMAGES,
+        _fetch_run_report_data,
+    )
+
+    with mock.patch("ui.grpc_client._stub", mock_stub):
+        ctx = await _fetch_run_report_data(
+            "run-ea",
+            None,
+            num_items=0,
+            max_answer_cells=PDF_MAX_ANSWER_CELLS,
+            max_images=PDF_MAX_EMBEDDED_IMAGES,
+        )
+
+    assert ctx["answers_truncated"] is True
+    assert ctx["answers_shown"] == 1
+    assert ctx["answers_total"] == 50
+
+    from ui.server import templates
+
+    html = templates.get_template("run_report_pdf.html").render(ctx)
+    # Totals are full-run (47 FN, 5 FP), while only what's in the sample is shown.
+    assert "False Negatives — showing 1 of 47" in html
+    assert "False Positives — showing 0 of 5" in html
+
+
+# ---------------------------------------------------------------------------
 # Export consensus (CSV wide matrix + JSON additive block)
 # ---------------------------------------------------------------------------
 
