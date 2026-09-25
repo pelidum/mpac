@@ -37,6 +37,11 @@ import jwt as pyjwt
 
 router = APIRouter()
 
+PDF_MAX_ANSWER_CELLS = 2000
+PDF_MIN_ANSWER_ITEMS = 25
+PDF_MAX_ANSWER_ITEMS = 500
+PDF_MAX_EMBEDDED_IMAGES = 100
+
 
 def _responder_key(model_pb) -> str:
     """Per-run responder instance id, falling back to model id for old runs."""
@@ -684,7 +689,13 @@ async def download_run_pdf(
     from ui.server import templates
 
     try:
-        ctx = await _fetch_run_report_data(run_id, jwt_token, num_items=0)
+        ctx = await _fetch_run_report_data(
+            run_id,
+            jwt_token,
+            num_items=0,
+            max_answer_cells=PDF_MAX_ANSWER_CELLS,
+            max_images=PDF_MAX_EMBEDDED_IMAGES,
+        )
     except Exception as e:
         logging.error(f"PDF download data fetch failed: {e}")
         return JSONResponse({"error": "not found"}, status_code=404)
@@ -893,7 +904,11 @@ def _resize_image_for_pdf(image_bytes: bytes, max_width: int = 400) -> bytes:
 
 
 async def _fetch_run_report_data(
-    run_id: str, jwt_token: str | None, num_items: int = 100
+    run_id: str,
+    jwt_token: str | None,
+    num_items: int = 100,
+    max_answer_cells: int | None = None,
+    max_images: int | None = None,
 ) -> dict:
     stub = get_mpac_stub()
     metadata = get_grpc_metadata(jwt_token)
@@ -988,7 +1003,15 @@ async def _fetch_run_report_data(
             x["timeline_start_pct"] = 0.0
             x["timeline_duration_pct"] = 0.0
 
-    effective_limit = num_items if num_items > 0 else (result_pb.sample_size or 100)
+    run_total_items = result_pb.sample_size or 0
+    if max_answer_cells is not None:
+        n_models = max(1, len(result_pb.models))
+        cell_cap = max(PDF_MIN_ANSWER_ITEMS, max_answer_cells // n_models)
+        effective_limit = min(PDF_MAX_ANSWER_ITEMS, cell_cap)
+        if run_total_items:
+            effective_limit = min(effective_limit, run_total_items)
+    else:
+        effective_limit = num_items if num_items > 0 else (run_total_items or 100)
     answer_pbs = await loop.run_in_executor(
         None,
         lambda: list(
@@ -1171,11 +1194,20 @@ async def _fetch_run_report_data(
                         "refusal_error_rate": refusals / total if total else 0,
                     }
 
-    attachment_ids_to_embed = {
-        answers[iid]["item_pb"].attachment_id
-        for iid in answers
-        if answers[iid].get("item_pb") and answers[iid]["item_pb"].attachment_id
-    }
+    attachment_ids_to_embed = []
+    _seen_attachment_ids = set()
+    for iid in answers:
+        item_pb_local = answers[iid].get("item_pb")
+        aid = item_pb_local.attachment_id if item_pb_local else None
+        if aid and aid not in _seen_attachment_ids:
+            _seen_attachment_ids.add(aid)
+            attachment_ids_to_embed.append(aid)
+
+    images_truncated = False
+    if max_images is not None and len(attachment_ids_to_embed) > max_images:
+        attachment_ids_to_embed = attachment_ids_to_embed[:max_images]
+        images_truncated = True
+
     if has_attachments:
         for attachment_id in attachment_ids_to_embed:
             try:
@@ -1212,9 +1244,20 @@ async def _fetch_run_report_data(
     except Exception:
         run_backends_by_id = {}
 
+    answers_shown = len(answers)
+    answers_total = run_total_items or answers_shown
+    answers_truncated = bool(
+        max_answer_cells is not None and answers_total > answers_shown
+    )
+
     return {
         "result_pb": result_pb,
         "test_pb": test_pb,
+        "answers_truncated": answers_truncated,
+        "answers_shown": answers_shown,
+        "answers_total": answers_total,
+        "images_truncated": images_truncated,
+        "images_shown": len(attachment_data_uris),
         "metrics_dict": metrics_dict,
         "category_winners": category_winners,
         "has_modality_scores": has_modality_scores,

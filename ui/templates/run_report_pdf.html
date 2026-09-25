@@ -1381,7 +1381,15 @@
     {% else %}
     The consensus answer is determined by weighting model responses against historical F1 task performance.
     {% endif %}
+    {% if answers_truncated %}
+    Showing the first {{ answers_shown }} of {{ answers_total }} items to keep the report a manageable size &mdash;
+    download the CSV or JSON export for the complete data set.
+    {% else %}
     {{ answers|length }} total items.
+    {% endif %}
+    {% if images_truncated %}
+    Image previews are embedded for the first {{ images_shown }} attachments only.
+    {% endif %}
   </p>
 
   <div class="model-legend">
@@ -1458,32 +1466,41 @@
   <p class="section-desc">
     Up to {{ max_errors_per_cat }} False Positive and False Negative examples per model, showing the model's
     parsed answer, reasoning, and raw response to help diagnose classification errors.
+    False Positive and False Negative totals reflect the full run.
+    {% if answers_truncated %}
+    Because only the first {{ answers_shown }} of {{ answers_total }} items are included above, fewer than the
+    full count of examples may be shown for each category.
+    {% endif %}
   </p>
 
   {% for model_pb in models_ranked %}
   {% set model_id = model_pb.responder_id or model_pb.id %}
-  {% set ns = namespace(fp_total=0, fn_total=0, fp_items=[], fn_items=[]) %}
+  {% set ns = namespace(fp_seen=0, fn_seen=0, fp_items=[], fn_items=[]) %}
   {% for item_id, item_dict in answers.items() %}
     {% set resp = item_dict.get("responses", {}).get(model_id, {}) %}
     {% set cat = resp.get("category", "") %}
     {% if cat == "fp" %}
-      {% set ns.fp_total = ns.fp_total + 1 %}
+      {% set ns.fp_seen = ns.fp_seen + 1 %}
       {% if ns.fp_items|length < max_errors_per_cat %}
       {% set _ = ns.fp_items.append({"item_id": item_id, "item_dict": item_dict, "resp": resp}) %}
       {% endif %}
     {% elif cat == "fn" %}
-      {% set ns.fn_total = ns.fn_total + 1 %}
+      {% set ns.fn_seen = ns.fn_seen + 1 %}
       {% if ns.fn_items|length < max_errors_per_cat %}
       {% set _ = ns.fn_items.append({"item_id": item_id, "item_dict": item_dict, "resp": resp}) %}
       {% endif %}
     {% endif %}
   {% endfor %}
 
-  {% if ns.fn_total or ns.fp_total %}
+  {% set cm = confusion_data.get(model_id) %}
+  {% set fp_total = cm.fp if cm else ns.fp_seen %}
+  {% set fn_total = cm.fn if cm else ns.fn_seen %}
+
+  {% if fn_total or fp_total %}
   <div class="error-model-header">{{ model_id }}</div>
 
-  {% if ns.fn_items %}
-  <div class="error-cat-label">False Negatives — showing {{ ns.fn_items|length }} of {{ ns.fn_total }}</div>
+  {% if fn_total %}
+  <div class="error-cat-label">False Negatives — showing {{ ns.fn_items|length }} of {{ fn_total }}</div>
   {% for ex in ns.fn_items %}
   {% set item_pb_local = ex.item_dict.get("item_pb") %}
   <div class="error-item">
@@ -1505,8 +1522,8 @@
   {% endfor %}
   {% endif %}
 
-  {% if ns.fp_items %}
-  <div class="error-cat-label">False Positives — showing {{ ns.fp_items|length }} of {{ ns.fp_total }}</div>
+  {% if fp_total %}
+  <div class="error-cat-label">False Positives — showing {{ ns.fp_items|length }} of {{ fp_total }}</div>
   {% for ex in ns.fp_items %}
   {% set item_pb_local = ex.item_dict.get("item_pb") %}
   <div class="error-item">
