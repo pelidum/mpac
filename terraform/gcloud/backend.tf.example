@@ -1,0 +1,17 @@
+# Remote state in GCS (optional, recommended for anything long-lived)
+#
+# 1. Set create_state_bucket = true in terraform.tfvars and `terraform apply`.
+# 2. Copy this file to backend.tf and set bucket to the `state_backend_config`
+#    output (or run `terraform output -raw state_backend_config > backend.tf`).
+# 3. Run `terraform init -migrate-state` and answer "yes" to copy local state
+#    into the bucket. Then delete the local terraform.tfstate* files.
+#
+# State contains generated secrets (database password, JWT secret). Only grant
+# access to the bucket to people who may deploy.
+
+terraform {
+  backend "gcs" {
+    bucket = "YOUR_STATE_BUCKET"
+    prefix = "mpac"
+  }
+}

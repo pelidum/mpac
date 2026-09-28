@@ -1,0 +1,46 @@
+# MPAC Google Cloud Configuration
+#
+# Copy this file to terraform.tfvars and fill in your values:
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# NEVER commit terraform.tfvars to version control; it may contain secrets.
+# (It is already covered by .gitignore.)
+#
+# Only project_id and region are required. Everything else has safe, low-cost
+# defaults (see variables.tf for the full list).
+
+# Project
+project_id = "your-gcp-project-id"
+region     = "us-central1"
+
+# First admin user, created on first boot. Log in with these to invite others.
+# The password is stored write-only in Secret Manager.
+server_admin_onboarding_id       = "admin@example.com"
+server_admin_onboarding_password = "CHANGE_ME"
+
+# Database password and JWT secret are generated automatically. To supply your
+# own, set them here or via environment variables:
+#   export TF_VAR_postgres_password="..."
+#   export TF_VAR_mpac_jwt_secret="..."
+# postgres_password = ""
+# mpac_jwt_secret   = ""
+
+# Google sign-in (optional). Add "<ui_url>/callback/google" as an authorized
+# redirect URI on the OAuth client after the first apply.
+# google_oauth_client_id     = ""
+# google_oauth_client_secret = ""
+
+# Public access (see README "Domain Restricted Sharing").
+# public_access_mode = "invoker_iam_disabled"   # or "allusers"
+# drs_tag_value      = ""                       # allusers mode only, e.g. "tagValues/123456789"
+
+# Alerts & cost guardrails (optional)
+# alert_email        = "ops@example.com"
+# billing_account_id = "XXXXXX-XXXXXX-XXXXXX"
+# monthly_budget_usd = 30
+
+# Remote state (optional; see backend.tf.example)
+# create_state_bucket = true
+
+# Set false and apply before `terraform destroy`.
+# deletion_protection = true

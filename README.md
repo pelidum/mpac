@@ -108,10 +108,14 @@ bazel run //:requirements.update
 
 ## Deployment
 
-An on-premises Docker deployment (behind an Envoy TLS proxy) is documented in
-the [technical guide](docs/mpac_guide.md#11-deployment-on-premises-docker-admin).
-The Terraform/IaC configurations are out of scope for this repository for now
-and will be migrated in a follow-up.
+Self-hosting configurations live under [`terraform/`](terraform/), and each is a single
+`terraform apply` after filling in a `terraform.tfvars`:
+
+- [`terraform/on_prem/`](terraform/on_prem/): a single machine running Docker (PostgreSQL,
+  server, UI, Envoy TLS proxy). Also covered in the
+  [technical guide](docs/mpac_guide.md#11-deployment-on-premises-docker-admin).
+- [`terraform/gcloud/`](terraform/gcloud/): Google Cloud (Cloud Run + Cloud SQL). Scales to
+  zero, roughly $13–15/month for light use.
 
 ## License
 

@@ -74,6 +74,16 @@ Infrastructure-as-code for self-hosting MPAC.
   generates a self-signed TLS cert in pure Terraform (with a bring-your-own override), and
   wires the containers together. Copy `terraform.tfvars.example` → `terraform.tfvars` first.
   Uses the `kreuzwerker/docker`, `hashicorp/tls`, and `hashicorp/local` providers.
+- `terraform/gcloud/` — Google Cloud deployment (Cloud Run server + UI, Cloud SQL PostgreSQL 16,
+  Secret Manager). A single flat root driven by `terraform.tfvars` (only `project_id` and
+  `region` required). It enables its own APIs and generates the DB password and JWT secret.
+  Deliberate choices, each documented in comments, that should not be "fixed":
+  `edition = "ENTERPRISE"` (PG16+ defaults to Enterprise Plus, which has no db-f1-micro);
+  Cloud SQL public IP with no authorized networks + client-cert-only (avoids VPC cost);
+  server `cpu_idle = false` (background inference); both services public with app-layer auth;
+  `public_access_mode` (`invoker_iam_disabled` default vs `allusers` + `drs_tag_value`) to
+  work under Domain Restricted Sharing. Offline tests with mocked providers:
+  `terraform init -backend=false && terraform test` in `terraform/gcloud/`.
 
 ## Database
 
