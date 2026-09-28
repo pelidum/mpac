@@ -31,6 +31,12 @@ _DENYLIST_MAX_SIZE = 10000
 GOOGLE_OAUTH_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
 GOOGLE_OAUTH_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
 
+
+def google_oauth_enabled() -> bool:
+    """Google sign-in is optional; it's offered only when a client is configured."""
+    return bool(GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET)
+
+
 _starlette_config = Config(
     environ={
         "GOOGLE_CLIENT_ID": GOOGLE_OAUTH_CLIENT_ID or "",
@@ -293,6 +299,9 @@ async def login_password_post(request: Request):
 async def authorize(provider: str, request: Request):
     if provider != "google":
         return Response(f"Unknown OAuth provider: {provider}", status_code=400)
+    if not google_oauth_enabled():
+        # Without a client, Google would only show an invalid_client error.
+        return RedirectResponse(url="/login", status_code=303)
 
     next_url = request.query_params.get("next", "")
     if next_url:

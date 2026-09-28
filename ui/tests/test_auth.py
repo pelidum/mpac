@@ -87,6 +87,36 @@ async def test_login_page_accessible_without_auth(anon_client):
 
 
 @pytest.mark.asyncio
+async def test_login_page_shows_google_only_when_configured(anon_client):
+    with (
+        mock.patch("ui.auth.GOOGLE_OAUTH_CLIENT_ID", None),
+        mock.patch("ui.auth.GOOGLE_OAUTH_CLIENT_SECRET", None),
+    ):
+        r = await anon_client.get("/login")
+        assert r.status_code == 200
+        assert "Login with Google" not in r.text
+        assert "Login with Password" in r.text
+
+    with (
+        mock.patch("ui.auth.GOOGLE_OAUTH_CLIENT_ID", "client-id"),
+        mock.patch("ui.auth.GOOGLE_OAUTH_CLIENT_SECRET", "client-secret"),
+    ):
+        r = await anon_client.get("/login")
+        assert "Login with Google" in r.text
+
+
+@pytest.mark.asyncio
+async def test_google_authorize_redirects_to_login_when_unconfigured(anon_client):
+    with (
+        mock.patch("ui.auth.GOOGLE_OAUTH_CLIENT_ID", None),
+        mock.patch("ui.auth.GOOGLE_OAUTH_CLIENT_SECRET", None),
+    ):
+        r = await anon_client.get("/authorize/google", follow_redirects=False)
+        assert r.status_code == 303
+        assert r.headers["location"] == "/login"
+
+
+@pytest.mark.asyncio
 async def test_logout_clears_cookie(client):
     r = await client.get("/logout", follow_redirects=False)
     assert r.status_code == 200

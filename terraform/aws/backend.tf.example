@@ -1,0 +1,20 @@
+# Remote state in S3 (optional, recommended for anything long-lived)
+#
+# 1. Set create_state_bucket = true in terraform.tfvars and `terraform apply`.
+# 2. Run `terraform output -raw state_backend_config > backend.tf`
+#    (or copy this file to backend.tf and fill in the bucket name).
+# 3. Run `terraform init -migrate-state` and answer "yes" to copy local state
+#    into the bucket. Then delete the local terraform.tfstate* files.
+#
+# No secrets are stored in state except the self-signed TLS key (when used).
+# Still, only give people who may deploy access to the bucket.
+
+terraform {
+  backend "s3" {
+    bucket       = "YOUR_STATE_BUCKET"
+    key          = "mpac/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+  }
+}

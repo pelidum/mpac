@@ -172,10 +172,12 @@
 
     <div class="btn-stack">
 
+      {% if google_oauth_enabled() %}
       <a href="{{ url_for('authorize', provider='google') }}{% if next_url|default('') %}?next={{ next_url }}{% endif %}" class="btn-provider btn-google">
         <i class="fab fa-google"></i>
         <span>Login with Google</span>
       </a>
+      {% endif %}
 
       <a href="{{ url_for('login_password') }}{% if next_url|default('') %}?next={{ next_url }}{% endif %}" class="btn-provider btn-password">
         <i class="fas fa-key"></i>

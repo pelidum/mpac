@@ -1,0 +1,9 @@
+# Terraform — never commit variable files or state.
+*.tfvars
+!*.tfvars.example
+
+*.tfstate
+*.tfstate.*
+
+.terraform/
+.terraform.lock.hcl
