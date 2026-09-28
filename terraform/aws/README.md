@@ -107,7 +107,7 @@ grpcurl -cacert mpac.crt "$(terraform output -raw grpc_endpoint)" grpc.health.v1
 ```
 
 The self-signed certificate is tied to the ALB hostname, which never changes unless the load
-balancer is replaced. Use a real domain for anything beyond evaluation, and for Google sign-in.
+balancer is replaced. Use a real domain for anything beyond evaluation.
 
 ## Configuration
 
@@ -119,7 +119,7 @@ used settings:
 | `server_admin_onboarding_id` / `_password` | `""` | First admin user, created on first boot |
 | `domain_name`, `route53_zone_id`, `acm_certificate_arn` | `""` | See [TLS](#tls) |
 | `allowed_ingress_cidrs` | `["0.0.0.0/0"]` | Restrict who can reach the ALB (e.g. office/VPN ranges) |
-| `google_oauth_client_id` / `_secret` | `""` | "Sign in with Google". Redirect URI: `<ui_url>/callback/google` |
+| `google_oauth_client_id` / `_secret` | `""` | "Sign in with Google". See [Google sign-in](../DEPLOYMENT.md#google-sign-in-optional); redirect URI: `terraform output google_oauth_redirect_uri` |
 | `use_spot` | `false` | Fargate Spot (~70% cheaper compute, brief outages possible) |
 | `task_cpu` / `task_memory` | `512` / `2048` | Task size, shared by server and UI |
 | `alert_email` | `""` | Alarms (auth/error spikes, unhealthy targets, 5xx, low DB storage) and budget |

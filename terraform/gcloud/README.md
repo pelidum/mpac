@@ -83,7 +83,7 @@ else. Commonly used settings:
 | Variable | Default | Purpose |
 |---|---|---|
 | `server_admin_onboarding_id` / `_password` | `""` | First admin user, created on first boot |
-| `google_oauth_client_id` / `_secret` | `""` | "Sign in with Google". Redirect URI: `<ui_url>/callback/google` |
+| `google_oauth_client_id` / `_secret` | `""` | "Sign in with Google". See [Google sign-in](../DEPLOYMENT.md#google-sign-in-optional); redirect URI: `terraform output google_oauth_redirect_uri` |
 | `postgres_password`, `mpac_jwt_secret` | generated | Supply your own if you prefer |
 | `public_access_mode` | `invoker_iam_disabled` | See [Domain Restricted Sharing](#domain-restricted-sharing) |
 | `alert_email` | `""` | Alerts on auth-failure/error spikes and UI downtime |

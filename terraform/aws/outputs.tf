@@ -8,6 +8,11 @@ output "grpc_endpoint" {
   description = "MPAC gRPC server (TLS)."
 }
 
+output "google_oauth_redirect_uri" {
+  value       = "https://${local.endpoint_host}/callback/google"
+  description = "Authorized redirect URI to add to your Google OAuth client (see ../DEPLOYMENT.md#google-sign-in-optional)."
+}
+
 output "alb_dns_name" {
   value       = aws_lb.main.dns_name
   description = "Load balancer hostname. Point your DNS here when using acm_certificate_arn."

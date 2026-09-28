@@ -257,7 +257,7 @@ MPAC supports three authentication methods.
 
 **Password login.** Users enter their email and password on the `/login/password` page. The server verifies the password with a scrypt hash. The server uses a constant-time comparison against a dummy hash for unknown users. This prevents timing attacks that reveal valid accounts.
 
-**Google OAuth.** Users click "Sign in with Google" on the login page. The system redirects to Google with the OpenID Connect scope. On callback, the system verifies that the user exists in MPAC and updates their profile (name, avatar, organization domain).
+**Google OAuth (optional).** Users click "Login with Google" on the login page. The button appears only when the UI has a Google OAuth client configured (`GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`); see [Google sign-in](../terraform/DEPLOYMENT.md#google-sign-in-optional) for setup. The system redirects to Google with the OpenID Connect scope. On callback, the system verifies that the user exists in MPAC and updates their profile (name, avatar, organization domain). Google sign-in doesn't create accounts: an admin must invite the user first.
 
 **API key.** gRPC clients pass an `x-api-key` header. The server hashes the key with SHA-256 and looks up the hash in the database. Results are cached for 60 seconds.
 
@@ -1023,8 +1023,8 @@ The server container maps `localhost` and `host.docker.internal` to the host gat
 | `ui_port` | `8080` | No | Internal UI port |
 | `ui_debug` | `false` | No | Enable debug mode |
 | `ui_system_user` | `system@mpac.internal` | No | Background task identity |
-| `google_oauth_client_id` | (required) | No | Google OAuth client ID |
-| `google_oauth_client_secret` | (required) | Yes | Google OAuth client secret |
+| `google_oauth_client_id` | `""` | No | Google OAuth client ID (optional; enables "Login with Google") |
+| `google_oauth_client_secret` | `""` | Yes | Google OAuth client secret (optional) |
 | `envoy_image` | `envoyproxy/envoy:v1.29-latest` | No | Envoy container image |
 | `envoy_http_port` | `80` | No | External HTTP port |
 | `envoy_https_port` | `443` | No | External HTTPS port |
@@ -1305,8 +1305,8 @@ A third workflow (`ruff.yml`) runs the Ruff linter on all pull requests.
 | `MPAC_HOST` | UI | gRPC server hostname (default: `0.0.0.0`) |
 | `MPAC_PORT` | UI | gRPC server port (default: `50051`) |
 | `MPAC_SYSTEM_USER` | UI | System identity for background tasks (default: `system@mpac.internal`) |
-| `GOOGLE_CLIENT_ID` | UI | Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | UI | Google OAuth client secret |
+| `GOOGLE_OAUTH_CLIENT_ID` | UI | Google OAuth client ID. "Login with Google" is shown only when this and the secret are set |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | UI | Google OAuth client secret |
 
 ## Appendix B: Terraform Variables
 

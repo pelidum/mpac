@@ -53,7 +53,9 @@ ui_debug = false
 # is fronted by a TLS endpoint the UI can verify.
 ui_grpc_insecure = true
 
-# Google OAuth (optional — leave empty for password-only auth)
+# Google OAuth (optional — leave empty for password-only auth).
+# Setup guide: ../DEPLOYMENT.md#google-sign-in-optional
+# Redirect URI for the OAuth client: terraform output google_oauth_redirect_uri
 # google_oauth_client_id     = ""
 # google_oauth_client_secret = ""
 

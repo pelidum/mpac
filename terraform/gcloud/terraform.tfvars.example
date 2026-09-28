@@ -25,8 +25,8 @@ server_admin_onboarding_password = "CHANGE_ME"
 # postgres_password = ""
 # mpac_jwt_secret   = ""
 
-# Google sign-in (optional). Add "<ui_url>/callback/google" as an authorized
-# redirect URI on the OAuth client after the first apply.
+# Google sign-in (optional). Setup guide: ../DEPLOYMENT.md#google-sign-in-optional
+# Redirect URI for the OAuth client: terraform output google_oauth_redirect_uri
 # google_oauth_client_id     = ""
 # google_oauth_client_secret = ""
 

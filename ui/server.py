@@ -115,6 +115,7 @@ def create_app() -> FastAPI:
 
     templates.env.globals["url_for"] = _url_for
     templates.env.globals["get_flashed_messages"] = lambda **_: []
+    templates.env.globals["google_oauth_enabled"] = auth.google_oauth_enabled
 
     @app.exception_handler(404)
     async def not_found_handler(request: Request, exc):

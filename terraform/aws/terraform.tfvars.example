@@ -33,9 +33,8 @@ server_admin_onboarding_password = "CHANGE_ME"
 # Restrict who can reach MPAC (default: anyone).
 # allowed_ingress_cidrs = ["203.0.113.0/24"]
 
-# Google sign-in (optional). Add "<ui_url>/callback/google" as an authorized
-# redirect URI on the OAuth client after the first apply. Use a real domain
-# for this: sign-in through a self-signed certificate warning is fragile.
+# Google sign-in (optional). Setup guide: ../DEPLOYMENT.md#google-sign-in-optional
+# Redirect URI for the OAuth client: terraform output google_oauth_redirect_uri
 # google_oauth_client_id     = ""
 # google_oauth_client_secret = ""
 

@@ -44,3 +44,8 @@ output "state_backend_config" {
   ]) : null
   description = "Paste into backend.tf, then run `terraform init -migrate-state`."
 }
+
+output "google_oauth_redirect_uri" {
+  value       = "${google_cloud_run_v2_service.ui.uri}/callback/google"
+  description = "Authorized redirect URI to add to your Google OAuth client (see ../DEPLOYMENT.md#google-sign-in-optional)."
+}

@@ -226,7 +226,7 @@ run "route53_domain" {
   }
 
   assert {
-    condition     = output.ui_url == "https://mpac.example.com" && output.grpc_endpoint == "mpac.example.com:50051"
+    condition     = output.ui_url == "https://mpac.example.com" && output.grpc_endpoint == "mpac.example.com:50051" && output.google_oauth_redirect_uri == "https://mpac.example.com/callback/google"
     error_message = "Endpoints should use the custom domain."
   }
 
