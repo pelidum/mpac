@@ -1,6 +1,6 @@
 import os
-import re as _re
 from contextlib import asynccontextmanager
+from itertools import combinations
 from urllib.parse import urlencode
 
 import uvicorn
@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.routing import NoMatchFound
 from starlette.templating import Jinja2Templates
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
@@ -95,28 +96,22 @@ def create_app() -> FastAPI:
         # Flask used filename=, Starlette StaticFiles uses path=
         if name == "static" and "filename" in kwargs:
             kwargs["path"] = kwargs.pop("filename")
-        try:
-            return str(app.url_path_for(name, **kwargs))
-        except Exception:
-            # Flask compat: extra kwargs that aren't path params become query string
-            for route in app.routes:
-                if getattr(route, "name", None) == name:
-                    path_param_names = set(
-                        _re.findall(r"\{(\w+)\}", getattr(route, "path", ""))
-                    )
+        # Flask compat: kwargs that aren't path params become the query string.
+        # Probe url_path_for with the largest matching subset of kwargs instead of
+        # scanning app.routes: since FastAPI 0.141, included routers are nested
+        # (_IncludedRouter), so their routes are no longer visible there by name.
+        keys = list(kwargs)
+        for size in range(len(keys), -1, -1):
+            for path_keys in combinations(keys, size):
+                try:
                     base = str(
-                        app.url_path_for(
-                            name,
-                            **{
-                                k: v for k, v in kwargs.items() if k in path_param_names
-                            },
-                        )
+                        app.url_path_for(name, **{k: kwargs[k] for k in path_keys})
                     )
-                    extra = {
-                        k: v for k, v in kwargs.items() if k not in path_param_names
-                    }
-                    return base + ("?" + urlencode(extra) if extra else "")
-            raise
+                except NoMatchFound:
+                    continue
+                extra = {k: v for k, v in kwargs.items() if k not in path_keys}
+                return base + ("?" + urlencode(extra) if extra else "")
+        raise NoMatchFound(name, kwargs)
 
     templates.env.globals["url_for"] = _url_for
     templates.env.globals["get_flashed_messages"] = lambda **_: []

@@ -297,6 +297,9 @@
 <!-- Shared hidden file inputs -->
 <input type="file" id="row-file-input" accept="audio/*,image/*,video/*,text/*" class="hidden">
 <input type="file" id="import-files-input" multiple accept="audio/*,image/*,video/*,text/*" class="hidden">
+<input type="file" id="import-test-input"
+    accept=".zip,.csv,.json,application/zip,application/x-zip-compressed,text/csv,application/json"
+    class="hidden">
 
 <!-- Page header -->
 <div class="content-header">
@@ -366,6 +369,12 @@
                     onclick="document.getElementById('import-files-input').click()">
                     <span class="material-icons" style="font-size:16px;">upload_file</span>
                     Import Files
+                </button>
+                <button id="import-test-btn" class="button-secondary" style="padding:6px 12px; font-size:13px;"
+                    onclick="document.getElementById('import-test-input').click()"
+                    title="Import a CSV, JSON, or .zip test export into the table">
+                    <span class="material-icons" style="font-size:16px;">table_view</span>
+                    Import Test
                 </button>
             </div>
         </div>
@@ -994,6 +1003,79 @@
             if (firstIdx !== null) focusCell(firstIdx, 'question');
         });
     });
+
+    // ── Test import: parse a CSV/JSON/zip export into the draft table ──────────
+
+    document.getElementById('import-test-input').addEventListener('change', async function () {
+        const file = this.files[0];
+        this.value = '';
+        if (!file) return;
+
+        const btn = document.getElementById('import-test-btn');
+        const origHTML = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="material-icons animate-spin" style="font-size:16px;">refresh</span> Importing...';
+
+        try {
+            const form = new FormData();
+            form.append('file', file);
+            const resp = await fetch('/tests/parse', { method: 'POST', body: form });
+            const data = await resp.json();
+            if (!resp.ok) { alert(data.error || 'Import failed'); return; }
+            applyImportedTest(data);
+        } catch (e) {
+            alert('Import failed: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = origHTML;
+        }
+    });
+
+    function applyImportedTest(data) {
+        // Metadata: only overwrite fields the export actually carries.
+        if (data.name) document.getElementById('test-name').value = data.name;
+        if (data.description) document.getElementById('test-description').value = data.description;
+        if (data.type) { document.getElementById('test-type').value = String(data.type); onTypeChange(); }
+        if (data.provider) document.getElementById('test-provider').value = data.provider;
+        if (Array.isArray(data.labels) && data.labels.length) {
+            document.getElementById('test-labels').value = data.labels.join(', ');
+        }
+
+        // Rebuild attachments (archives only) so rows can reference them.
+        const filenameToId = {};
+        (data.attachments || []).forEach(a => {
+            const att = {
+                id: crypto.randomUUID(),
+                name: a.name,
+                extension: a.extension,
+                modality: a.modality != null ? a.modality : getFileModality(a.mime || ''),
+                file: (a.data_url || '').split(',')[1] || '',
+                file_size: a.file_size,
+                mime: a.mime,
+                dataUrl: a.data_url,
+            };
+            attachments.set(att.id, att);
+            filenameToId[a.filename] = att.id;
+        });
+
+        const imported = (data.items || []).map(it => ({
+            ...makeEmptyRow(),
+            question: it.question || '',
+            context: it.context || '',
+            choices: Array.isArray(it.choices) ? it.choices.join('; ') : (it.choices || ''),
+            answer: it.answer || '',
+            is_relevant: !!it.is_relevant,
+            attachment_id: it.attachment ? (filenameToId[it.attachment] || null) : null,
+        }));
+        if (!imported.length) { alert('No items found in file'); return; }
+
+        // Replace a blank draft; otherwise append to what's already there.
+        const firstIdx = rows.every(isRowEmpty) ? 0 : rows.length;
+        rows = firstIdx === 0 ? imported : rows.concat(imported);
+        renderTable();
+        updateSubmitState();
+        focusCell(firstIdx, 'question');
+    }
 
     // ── Drag and drop: table level ────────────────────────────────────────────
 
