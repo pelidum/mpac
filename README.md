@@ -109,13 +109,17 @@ bazel run //:requirements.update
 ## Deployment
 
 Self-hosting configurations live under [`terraform/`](terraform/), and each is a single
-`terraform apply` after filling in a `terraform.tfvars`:
+`terraform apply` after filling in a `terraform.tfvars`. See
+[`terraform/DEPLOYMENT.md`](terraform/DEPLOYMENT.md) for a side-by-side comparison (cost, TLS,
+security, operations) to help you choose.
 
 - [`terraform/on_prem/`](terraform/on_prem/): a single machine running Docker (PostgreSQL,
   server, UI, Envoy TLS proxy). Also covered in the
   [technical guide](docs/mpac_guide.md#11-deployment-on-premises-docker-admin).
 - [`terraform/gcloud/`](terraform/gcloud/): Google Cloud (Cloud Run + Cloud SQL). Scales to
   zero, roughly $13–15/month for light use.
+- [`terraform/aws/`](terraform/aws/): AWS (ALB + Fargate + RDS). Always on, roughly
+  $65/month.
 
 ## License
 

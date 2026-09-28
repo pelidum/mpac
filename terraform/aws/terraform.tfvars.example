@@ -1,0 +1,55 @@
+# MPAC AWS Configuration
+#
+# Copy this file to terraform.tfvars and fill in your values:
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# NEVER commit terraform.tfvars to version control; it may contain secrets.
+# (It is already covered by .gitignore.)
+#
+# Only region is required. Everything else has safe, low-cost defaults (see
+# variables.tf for the full list). Credentials come from your usual AWS setup
+# (AWS_PROFILE, SSO, environment variables).
+
+region = "us-east-1"
+
+# First admin user, created on first boot. Log in with these to invite others.
+# Written to SSM Parameter Store; never stored in Terraform state.
+server_admin_onboarding_id       = "admin@example.com"
+server_admin_onboarding_password = "CHANGE_ME"
+
+# The database password and JWT secret are generated automatically and never
+# stored in state. To supply your own, set them here or via environment
+# variables (TF_VAR_postgres_password, TF_VAR_mpac_jwt_secret).
+# postgres_password = ""
+# mpac_jwt_secret   = ""
+
+# TLS. Default: self-signed certificate on the load balancer's hostname
+# (browsers warn; export tls_certificate_pem for gRPC clients).
+# For a trusted certificate on your own domain, either:
+# domain_name     = "mpac.example.com"
+# route53_zone_id = "Z0123456789ABCDEFGHIJ"    # fully automatic
+# acm_certificate_arn = "arn:aws:acm:..."      # or bring your own
+
+# Restrict who can reach MPAC (default: anyone).
+# allowed_ingress_cidrs = ["203.0.113.0/24"]
+
+# Google sign-in (optional). Add "<ui_url>/callback/google" as an authorized
+# redirect URI on the OAuth client after the first apply. Use a real domain
+# for this: sign-in through a self-signed certificate warning is fragile.
+# google_oauth_client_id     = ""
+# google_oauth_client_secret = ""
+
+# Cost
+# use_spot    = false   # true: ~70% cheaper compute, brief outages possible
+# task_cpu    = 512     # 1024 = 1 vCPU
+# task_memory = 2048
+
+# Alerts & budget (optional). Confirm the subscription email AWS sends you.
+# alert_email        = "ops@example.com"
+# monthly_budget_usd = 100
+
+# Remote state (optional; see backend.tf.example)
+# create_state_bucket = true
+
+# Set false and apply before `terraform destroy`.
+# deletion_protection = true

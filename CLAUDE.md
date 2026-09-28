@@ -84,6 +84,17 @@ Infrastructure-as-code for self-hosting MPAC.
   `public_access_mode` (`invoker_iam_disabled` default vs `allusers` + `drs_tag_value`) to
   work under Domain Restricted Sharing. Offline tests with mocked providers:
   `terraform init -backend=false && terraform test` in `terraform/gcloud/`.
+- `terraform/aws/` — AWS deployment (ALB → one Fargate task running server + UI → RDS
+  PostgreSQL 16 db.t4g.micro). Flat root, only `region` required. Deliberate choices: no NAT
+  gateway (the task has a public IP for egress; its SG admits only the ALB); UI→server over
+  localhost plaintext (`MPAC_GRPC_INSECURE`, as on-prem); ALB listeners mirror on-prem Envoy
+  (80 redirect, 443 UI, 50051 gRPC); TLS modes self-signed (default) / Route 53 + ACM / BYO ACM
+  ARN; secrets in SSM SecureString via ephemeral values + write-only args (never in state),
+  rotated by bumping `secrets_version`; RDS `rds.force_ssl` + server `PGSSLMODE=require`;
+  x86_64 only (images aren't multi-arch). Offline tests: `terraform test` in `terraform/aws/`
+  (mocked provider, `apply` runs).
+- `terraform/DEPLOYMENT.md` — comparison table and cross-target instructions. Update it when a
+  target's cost, TLS, security or operations change.
 
 ## Database
 
