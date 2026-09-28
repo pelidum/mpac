@@ -206,6 +206,17 @@ py_test(
 )
 
 py_test(
+    name = "test_tests",
+    size = "small",
+    srcs = [
+        "tests/conftest.py",
+        "tests/test_tests.py",
+    ],
+    deps = _UI_TEST_DEPS,
+    data = _UI_TEST_DATA,
+)
+
+py_test(
     name = "test_settings",
     size = "small",
     srcs = [

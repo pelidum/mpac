@@ -93,7 +93,9 @@
         <span class="material-icons text-[20px]">upload_file</span>
         Import
       </button>
-      <input type="file" id="import-file" accept=".zip" class="hidden" onchange="importTestArchive(this)">
+      <input type="file" id="import-file"
+        accept=".zip,.csv,.json,application/zip,application/x-zip-compressed,text/csv,application/json"
+        class="hidden" onchange="importTestFile(this)">
       <a href="{{ url_for('create_test') }}" class="button-primary">
         <span class="material-icons text-[20px]">add</span>
         New Test
@@ -627,7 +629,7 @@
       renderPage();
     })();
 
-    async function importTestArchive(input) {
+    async function importTestFile(input) {
       const file = input.files[0];
       if (!file) return;
       input.value = '';

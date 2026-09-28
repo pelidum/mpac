@@ -1,4 +1,6 @@
+import ast
 import base64
+import csv
 import io
 import json
 import os
@@ -336,7 +338,7 @@ async def download_test_archive(
             "type": type_name,
             "provider": test_pb.provider,
             "labels": list(test_pb.labels),
-            "test_items": [],
+            "items": [],
         }
         for item_pb in test_item_pbs:
             item_dict = {
@@ -377,6 +379,146 @@ async def download_test_archive(
 
 TEST_TYPE_MAP = {"EVALUATION": 1, "SURVEY": 2}
 
+# Caps for uploaded test exports. The item cap must fit the largest real tests
+# (~52k items); the byte-size caps are what bound memory.
+MAX_IMPORT_ITEMS = 100_000
+MAX_IMPORT_SIZE = 100 * 1024 * 1024  # 100 MB upload
+MAX_DECOMPRESSED_SIZE = 500 * 1024 * 1024  # 500 MB uncompressed archive
+
+
+class _ImportFileError(Exception):
+    """A user-facing failure while parsing an uploaded test export."""
+
+    def __init__(self, message: str, status_code: int = 400):
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+
+
+def _manifest_items(manifest: dict) -> list:
+    """Return a manifest's item list, tolerating the legacy ``test_items`` key."""
+    items = manifest.get("items")
+    if items is None:
+        items = manifest.get("test_items")
+    return items or []
+
+
+def _coerce_str_list(value) -> list:
+    """Normalize a ``choices``/``labels`` cell to a list of strings.
+
+    JSON exports carry real arrays; CSV exports carry a Python ``repr`` such as
+    ``"['Low', 'Medium', 'High']"`` (produced by ``pandas.to_csv``), so fall back
+    to JSON then to ``ast.literal_eval`` before treating it as a lone value.
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    text = str(value).strip()
+    if not text:
+        return []
+    for parse in (json.loads, ast.literal_eval):
+        try:
+            parsed = parse(text)
+        except (ValueError, SyntaxError):
+            continue
+        if isinstance(parsed, list):
+            return [str(v) for v in parsed]
+    return [text]
+
+
+def _coerce_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("true", "1", "yes")
+
+
+def _manifest_from_rows(rows: list) -> dict:
+    """Build a manifest from flattened CSV/JSON export rows.
+
+    Each exported row repeats the test-level columns and carries one item, so
+    test metadata is read from the first row; the rows themselves are the items
+    (``_normalize_items`` picks out the item fields).
+    """
+    first = rows[0]
+    return {
+        "name": str(first.get("name") or ""),
+        "description": str(first.get("description") or ""),
+        "type": str(first.get("type") or "EVALUATION"),
+        "provider": str(first.get("provider") or ""),
+        "labels": first.get("labels"),
+        "items": rows,
+    }
+
+
+def _archive_attachment_names(zf: zipfile.ZipFile) -> set:
+    return {
+        n.removeprefix("attachments/")
+        for n in zf.namelist()
+        if n.startswith("attachments/") and not n.endswith("/")
+    }
+
+
+def _parse_import_file(content: bytes, filename: str):
+    """Parse an uploaded test export into ``(manifest, zip_or_None)``.
+
+    Shared by ``/tests/import`` (creates the test) and ``/tests/parse`` (fills the
+    create-page draft table) so both read CSV, JSON, and ZIP exports identically.
+    A ZIP archive carries manifest.json plus attachment files; CSV/JSON exports
+    are flattened (one row per item), carry no attachments, and return no zip.
+    Raises :class:`_ImportFileError` on failure.
+    """
+    filename = (filename or "").lower()
+
+    if zipfile.is_zipfile(io.BytesIO(content)):
+        zf = zipfile.ZipFile(io.BytesIO(content))
+        total_uncompressed = sum(info.file_size for info in zf.infolist())
+        if total_uncompressed > MAX_DECOMPRESSED_SIZE:
+            raise _ImportFileError("Decompressed archive exceeds size limit", 413)
+        if "manifest.json" not in zf.namelist():
+            raise _ImportFileError("Archive missing manifest.json")
+        return json.loads(zf.read("manifest.json")), zf
+
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise _ImportFileError(
+            "Unsupported file. Upload a .zip, .csv, or .json export."
+        )
+
+    is_json = filename.endswith(".json") or (
+        not filename.endswith(".csv") and text.lstrip()[:1] in ("[", "{")
+    )
+    try:
+        if is_json:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                return parsed, None
+            if isinstance(parsed, list) and parsed:
+                return _manifest_from_rows(parsed), None
+            raise _ImportFileError("No test found in JSON file")
+        rows = list(csv.DictReader(io.StringIO(text)))
+        if not rows:
+            raise _ImportFileError("No rows found in CSV export")
+        return _manifest_from_rows(rows), None
+    except (json.JSONDecodeError, csv.Error) as e:
+        raise _ImportFileError(f"Could not parse file: {e}")
+
+
+def _normalize_items(manifest: dict) -> list:
+    """Return the manifest's items with every field coerced to its proto type."""
+    return [
+        {
+            "question": str(i.get("question") or ""),
+            "context": str(i.get("context") or ""),
+            "choices": _coerce_str_list(i.get("choices")),
+            "answer": str(i.get("answer") or ""),
+            "is_relevant": _coerce_bool(i.get("is_relevant", False)),
+            "attachment": i.get("attachment") or None,
+        }
+        for i in _manifest_items(manifest)
+    ]
+
 
 @router.post("/tests/import")
 async def import_test(
@@ -390,72 +532,56 @@ async def import_test(
         metadata = get_grpc_metadata(jwt_token)
         loop = __import__("asyncio").get_running_loop()
 
-        MAX_IMPORT_SIZE = 100 * 1024 * 1024  # 100 MB
         content = await file.read()
         if len(content) > MAX_IMPORT_SIZE:
             return JSONResponse(
                 {"error": f"Upload exceeds {MAX_IMPORT_SIZE // (1024 * 1024)}MB limit"},
                 status_code=413,
             )
+
         try:
-            zf = zipfile.ZipFile(io.BytesIO(content))
-        except zipfile.BadZipFile:
-            return JSONResponse({"error": "Invalid ZIP file"}, status_code=400)
+            manifest, zf = _parse_import_file(content, file.filename)
+        except _ImportFileError as e:
+            return JSONResponse({"error": e.message}, status_code=e.status_code)
 
-        MAX_DECOMPRESSED_SIZE = 500 * 1024 * 1024  # 500 MB
-        total_uncompressed = sum(info.file_size for info in zf.infolist())
-        if total_uncompressed > MAX_DECOMPRESSED_SIZE:
-            return JSONResponse(
-                {"error": "Decompressed archive exceeds size limit"},
-                status_code=413,
-            )
-
-        if "manifest.json" not in zf.namelist():
-            return JSONResponse(
-                {"error": "Archive missing manifest.json"}, status_code=400
-            )
-
-        manifest = json.loads(zf.read("manifest.json"))
-        name = manifest.get("name", "").strip()
+        name = (manifest.get("name") or "").strip()
         if not name:
             return JSONResponse(
                 {"error": "Test name is required in manifest"}, status_code=400
             )
-        items = manifest.get("items", [])
-        valid_items = [i for i in items if i.get("question", "").strip()]
+        valid_items = [i for i in _normalize_items(manifest) if i["question"].strip()]
         if not valid_items:
             return JSONResponse(
                 {"error": "At least one item with a question is required"},
                 status_code=400,
             )
-        MAX_IMPORT_ITEMS = 10_000
         if len(valid_items) > MAX_IMPORT_ITEMS:
             return JSONResponse(
                 {"error": f"Import exceeds maximum of {MAX_IMPORT_ITEMS} items"},
                 status_code=400,
             )
 
-        referenced_files = {i["attachment"] for i in valid_items if i.get("attachment")}
-        archive_files = {
-            n.removeprefix("attachments/")
-            for n in zf.namelist()
-            if n.startswith("attachments/") and not n.endswith("/")
-        }
-        missing = referenced_files - archive_files
-        if missing:
-            return JSONResponse(
-                {"error": f"Missing attachment files: {', '.join(sorted(missing))}"},
-                status_code=400,
-            )
+        # Only ZIP archives carry attachment files.
+        referenced_files = set()
+        if zf is not None:
+            referenced_files = {i["attachment"] for i in valid_items if i["attachment"]}
+            missing = referenced_files - _archive_attachment_names(zf)
+            if missing:
+                return JSONResponse(
+                    {
+                        "error": f"Missing attachment files: {', '.join(sorted(missing))}"
+                    },
+                    status_code=400,
+                )
 
-        test_type = TEST_TYPE_MAP.get(manifest.get("type", "EVALUATION").upper(), 1)
+        test_type = TEST_TYPE_MAP.get((manifest.get("type") or "EVALUATION").upper(), 1)
         test_pb = service_pb2.Test(
             name=name,
-            description=manifest.get("description", ""),
+            description=manifest.get("description") or "",
             type=test_type,
             item_count=len(valid_items),
-            labels=manifest.get("labels", []),
-            provider=manifest.get("provider", ""),
+            labels=_coerce_str_list(manifest.get("labels")),
+            provider=manifest.get("provider") or "",
         )
         test_response = await loop.run_in_executor(
             None, lambda: stub.CreateTest(test_pb, metadata=metadata)
@@ -484,15 +610,15 @@ async def import_test(
             attachment_map[filename] = att_response.id
 
         for item_data in valid_items:
-            att_filename = item_data.get("attachment")
+            att_filename = item_data["attachment"]
             attachment_id = attachment_map.get(att_filename, "") if att_filename else ""
             item_pb = service_pb2.TestItem(
                 test_id=test_response.id,
-                question=item_data.get("question", ""),
-                context=item_data.get("context", ""),
-                choices=item_data.get("choices", []),
-                answer=item_data.get("answer", ""),
-                is_relevant=item_data.get("is_relevant", False),
+                question=item_data["question"],
+                context=item_data["context"],
+                choices=item_data["choices"],
+                answer=item_data["answer"],
+                is_relevant=item_data["is_relevant"],
                 attachment_id=attachment_id,
             )
             await loop.run_in_executor(
@@ -510,6 +636,83 @@ async def import_test(
     except Exception as e:
         logging.error(traceback.format_exc())
         return JSONResponse({"error": f"Import failed: {e}"}, status_code=500)
+
+
+@router.post("/tests/parse")
+async def parse_test_import(
+    request: Request,
+    user: UserContext = Depends(get_current_user),
+    jwt_token: str | None = Depends(get_jwt_token),
+    file: UploadFile = File(...),
+):
+    """Parse a CSV/JSON/ZIP export and return its contents for the draft table.
+
+    Unlike ``/tests/import`` this creates nothing: it hands the create page the
+    parsed metadata, items, and (for archives) attachment bytes so the user can
+    review and edit before saving. Both routes share :func:`_parse_import_file`.
+    """
+    try:
+        content = await file.read()
+        if len(content) > MAX_IMPORT_SIZE:
+            return JSONResponse(
+                {"error": f"Upload exceeds {MAX_IMPORT_SIZE // (1024 * 1024)}MB limit"},
+                status_code=413,
+            )
+
+        try:
+            manifest, zf = _parse_import_file(content, file.filename)
+        except _ImportFileError as e:
+            return JSONResponse({"error": e.message}, status_code=e.status_code)
+
+        items = _normalize_items(manifest)
+        if not any(i["question"].strip() or i["attachment"] for i in items):
+            return JSONResponse({"error": "No items found in file"}, status_code=400)
+        if len(items) > MAX_IMPORT_ITEMS:
+            return JSONResponse(
+                {"error": f"Import exceeds maximum of {MAX_IMPORT_ITEMS} items"},
+                status_code=400,
+            )
+
+        # Bundle referenced attachments (archives only) as data URLs so the draft
+        # table can rebuild them client-side exactly like a manual file upload.
+        attachments = []
+        if zf is not None:
+            referenced = {i["attachment"] for i in items if i["attachment"]}
+            for fname in sorted(referenced & _archive_attachment_names(zf)):
+                data = zf.read(f"attachments/{fname}")
+                ext = os.path.splitext(fname)[1].lstrip(".")
+                mime = _guess_mime(ext)
+                attachments.append(
+                    {
+                        "filename": fname,
+                        "name": fname,
+                        "extension": ext,
+                        "mime": mime,
+                        "modality": _mime_to_modality(mime),
+                        "file_size": len(data),
+                        "data_url": (
+                            f"data:{mime};base64,"
+                            + base64.b64encode(data).decode("ascii")
+                        ),
+                    }
+                )
+
+        return JSONResponse(
+            {
+                "name": (manifest.get("name") or "").strip(),
+                "description": manifest.get("description") or "",
+                "type": TEST_TYPE_MAP.get(
+                    (manifest.get("type") or "EVALUATION").upper(), 1
+                ),
+                "provider": manifest.get("provider") or "",
+                "labels": _coerce_str_list(manifest.get("labels")),
+                "items": items,
+                "attachments": attachments,
+            }
+        )
+    except Exception as e:
+        logging.error(traceback.format_exc())
+        return JSONResponse({"error": f"Parse failed: {e}"}, status_code=500)
 
 
 _MIME_MAP = {
