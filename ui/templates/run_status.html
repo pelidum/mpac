@@ -197,6 +197,19 @@
     // Update model cards from a metrics array (completed models get chips + green badge;
     // the first model without metrics gets a "Running..." spinner badge).
     // Safe to call repeatedly — already-rendered cards are skipped.
+    // TTFT, output TPS and E2E latency chips. Older runs (not streamed) have
+    // no TTFT and a prefill-polluted TPS, so those render as an em dash.
+    function perfChips(m) {
+        const chip = (label, value, title) =>
+            `<span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10" title="${title}">${label}: ${value}</span>`;
+        const ttft = (m.ttft_p50 || 0) > 0 ? `${m.ttft_p50.toFixed(2)}s` : '—';
+        const tps = m.streamed && (m.output_tps_p50 || 0) > 0 ? m.output_tps_p50.toFixed(1) : '—';
+        const lat = (m.median_task_duration || 0) > 0 ? `${m.median_task_duration.toFixed(2)}s` : '—';
+        return chip('TTFT p50', ttft, 'Time to first token: request dispatch to first streamed token. Successful requests only.')
+            + chip('TPS p50', tps, 'Output tokens/sec after the first token. Answers with 2+ output tokens only.')
+            + chip('Latency p50', lat, 'End-to-end request time, dispatch to last token. Excludes queueing.');
+    }
+
     function updateModelCards(metrics) {
         const allCards = Array.from(document.querySelectorAll('[data-model-id]'));
         let foundRunning = false;
@@ -227,20 +240,10 @@
                     <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
                         F1: ${modelMetrics.f1.toFixed(2)}
                     </span>
-                    <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
-                        Throughput: ${(modelMetrics.tokens_per_minute / 60).toFixed(1)} tok/s
-                    </span>
-                    <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
-                        Latency p50: ${modelMetrics.median_task_duration.toFixed(2)}s
-                    </span>`;
+                    ${perfChips(modelMetrics)}`;
                 } else {
                     chipRow.innerHTML = `
-                    <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
-                        Throughput: ${(modelMetrics.tokens_per_minute / 60).toFixed(1)} tok/s
-                    </span>
-                    <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
-                        Latency p50: ${modelMetrics.median_task_duration.toFixed(2)}s
-                    </span>`;
+                    ${perfChips(modelMetrics)}`;
                 }
                 textContainer.appendChild(chipRow);
 
@@ -425,20 +428,10 @@
                         <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
                             F1: ${currentResponderMetrics.f1.toFixed(2)}
                         </span>
-                        <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
-                            Throughput: ${(currentResponderMetrics.tokens_per_minute / 60).toFixed(1)} tok/s
-                        </span>
-                        <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
-                            Latency p50: ${currentResponderMetrics.median_task_duration.toFixed(2)}s
-                        </span>`;
+                        ${perfChips(currentResponderMetrics)}`;
                     } else {
                         chipRow.innerHTML = `
-                        <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
-                            Throughput: ${(currentResponderMetrics.tokens_per_minute / 60).toFixed(1)} tok/s
-                        </span>
-                        <span class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-text-secondary)]/10">
-                            Latency p50: ${currentResponderMetrics.median_task_duration.toFixed(2)}s
-                        </span>`;
+                        ${perfChips(currentResponderMetrics)}`;
                     }
                     textContainer.appendChild(chipRow);
                     currentResponderBadge.classList.remove('bg-gray-300');

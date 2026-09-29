@@ -214,7 +214,7 @@
               <p class="font-medium text-sm mb-1">Bring your own quality bar</p>
               <p class="text-xs text-muted"><span class="font-mpac text-accent">MPAC</span> eschews the current "highest
                 number wins" philosophy in LLM evaluations, and focuses on several core metrics instead for a fuller
-                picture of performance (Precision, Recall, F1, Latency p50/p95, Output tok/s, Throughput, Cost). These
+                picture of performance (Precision, Recall, F1, TTFT, TPS, Latency p50/p95, Cost). These
                 are
                 complex, non-deterministic systems that <i>cannot</i> and <i>should not</i> be boiled down to any single
                 number.</p>
@@ -258,8 +258,8 @@
               <p class="font-semibold mb-1">Test Run</p>
               <p class="text-sm text-muted leading-relaxed">An execution of a test across one or more models.
                 Every model gets the same prompt under the same conditions. Each run records every answer
-                alongside precision, recall, F1, refusal rate, per-answer latency (p50/p95), per-stream output
-                tokens/sec, aggregate throughput, token usage, and cost per model.</p>
+                alongside precision, recall, F1, refusal rate, time to first token (TTFT), output tokens/sec (TPS),
+                end-to-end latency (p50/p95), token usage, and cost per model.</p>
             </div>
           </div>
 
@@ -296,8 +296,9 @@
                 <b>Precision: </b> Of all positive predictions, how many were correct? <br>
                 <b>Recall: </b> Of all actual positives, how many were found? <br>
                 <b>F1: </b> Harmonic mean of precision and recall. <br>
-                <b>Latency: </b> End-to-end run time, in seconds. <br>
-                <b>Throughput: </b> How many tokens are output per second. <br>
+                <b>TTFT: </b> Time to first token: request dispatch to the first streamed token, in seconds. <br>
+                <b>TPS: </b> Output tokens per second after the first token (excludes prefill). <br>
+                <b>Latency: </b> End-to-end request time, dispatch to last token, in seconds. <br>
                 <br>
                 The <a href="{{ url_for('metrics') }}" class="link">Metrics</a> page
                 aggregates these across runs for cross-model comparison.
@@ -637,8 +638,8 @@ channel.close()</pre>
               <div>
                 <p class="font-medium mb-1">Standardized scoring</p>
                 <p class="text-sm text-muted">Model responses are extracted and compared to the canonical answer. <span
-                    class="font-mpac text-accent">MPAC</span> computes precision, recall, F1, refusal rate, per-answer
-                  latency (p50/p95), per-stream output tokens/sec, aggregate throughput, and cost per model, weighted by
+                    class="font-mpac text-accent">MPAC</span> computes precision, recall, F1, refusal rate, time to first token (TTFT),
+                  output tokens/sec (TPS), end-to-end latency (p50/p95), and cost per model, weighted by
                   sample composition. The result is an apples-to-apples comparison across models, providers, and
                   modalities.</p>
               </div>

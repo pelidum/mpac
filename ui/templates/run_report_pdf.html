@@ -842,8 +842,8 @@
       <div class="step-content">
         <div class="step-title">Standardized scoring</div>
         <div class="step-desc">Model responses are extracted and compared to the canonical answer. MPAC computes
-          precision, recall, F1, refusal rate, per-answer latency (p50/p95), per-stream output tokens/sec, aggregate
-          throughput, and cost per model, weighted by sample composition. The result is an apples-to-apples comparison
+          precision, recall, F1, refusal rate, time to first token (TTFT), output tokens/sec (TPS), end-to-end latency (p50/p95),
+           and cost per model, weighted by sample composition. The result is an apples-to-apples comparison
           across models, providers, and modalities.</div>
       </div>
     </div>
@@ -871,8 +871,8 @@
     <div class="concept-card">
       <div class="concept-title">Test Run</div>
       <div class="concept-desc">An execution of a test across one or more models. Every model gets the same prompt under
-        the same conditions. Each run records every answer alongside precision, recall, F1, refusal rate, per-answer
-        latency (p50/p95), per-stream output tokens/sec, aggregate throughput, token usage, and cost per model.</div>
+        the same conditions. Each run records every answer alongside precision, recall, F1, refusal rate, time to first token (TTFT),
+        output tokens/sec (TPS), end-to-end latency (p50/p95), token usage, and cost per model.</div>
     </div>
     <div class="concept-card">
       <div class="concept-title">Model</div>
@@ -907,20 +907,23 @@
       <td>Harmonic mean of precision and recall. If you're going to read one quality metric, choose this one.</td>
     </tr>
     <tr>
-      <th>Output tok/s</th>
-      <td>Median per-answer output tokens/sec. Approximates per-stream generation speed.</td>
+      <th>TTFT p50</th>
+      <td>Median time to first token (seconds): request dispatch to the first streamed token, reasoning or content.
+        Excludes queueing; successful requests only. Lower is better.</td>
+    </tr>
+    <tr>
+      <th>TPS p50</th>
+      <td>Median output tokens per second after the first token: (output tokens &minus; 1) / (last token &minus; first
+        token). Excludes prefill; only answers with 2+ output tokens. Higher is better.</td>
     </tr>
     <tr>
       <th>Latency p50</th>
-      <td>Median end-to-end time per answer (seconds). Lower is better.</td>
+      <td>Median end-to-end request latency (seconds): dispatch to last token. Excludes queueing and the reasoning
+        follow-up call; successful requests only. Lower is better.</td>
     </tr>
     <tr>
       <th>Latency p95</th>
-      <td>95th-percentile per-answer latency. The tail you'll see ~1 in 20 requests.</td>
-    </tr>
-    <tr>
-      <th>Throughput</th>
-      <td>Aggregate output tokens per second across the whole run at this concurrency.</td>
+      <td>95th-percentile end-to-end request latency. The tail you'll see ~1 in 20 requests.</td>
     </tr>
     <tr>
       <th>Errors/Refusals</th>
@@ -990,8 +993,9 @@
         <th style="width:70px">Recall</th>
         <th style="width:70px">F1</th>
         {% endif %}
-        <th style="width:70px">Tok/s</th>
-        <th style="width:80px">Latency p50</th>
+        <th style="width:60px">TTFT p50</th>
+        <th style="width:60px">TPS p50</th>
+        <th style="width:70px">Latency p50</th>
         <th style="width:70px">Errors</th>
       </tr>
     </thead>
@@ -1010,8 +1014,10 @@
         <td>{{ "{:.1%}".format(m.get("recall", 0)) }}</td>
         <td style="font-weight:700">{{ "{:.1%}".format(m.get("f1", 0)) }}</td>
         {% endif %}
-        <td>{{ "{:.1f}".format(m.get("output_tps_p50", 0) | float) }}</td>
-        <td>{{ "{:.2f}s".format(m.get("median_task_duration", 0) | float) }}</td>
+        {% set ttft = m.get("ttft_p50", 0)|float %}{% set tps = m.get("output_tps_p50", 0)|float if m.get("streamed") else 0 %}{% set lat = m.get("median_task_duration", 0)|float %}
+        <td>{% if ttft > 0 %}{{ "{:.2f}s".format(ttft) }}{% else %}&mdash;{% endif %}</td>
+        <td>{% if tps > 0 %}{{ "{:.1f}".format(tps) }}{% else %}&mdash;{% endif %}</td>
+        <td>{% if lat > 0 %}{{ "{:.2f}s".format(lat) }}{% else %}&mdash;{% endif %}</td>
         <td>{{ "{:.1%}".format(m.get("refusal_error_rate", 0)) }}</td>
       </tr>
       {% endfor %}
@@ -1135,9 +1141,11 @@
         m.get("responder_id")[:20] }}</text>
       <rect x="{{ tl_label_w + bx }}" y="{{ by }}" width="{{ bw }}" height="{{ tl_bar_h }}" fill="{{ color }}" rx="3"
         opacity="0.85" />
-      <text x="{{ tl_label_w + tl_w + 16 }}" y="{{ by + 14 }}" font-size="7" fill="#555">Latency p50: {{
-        "{:.2f}s".format(m.get("median_task_duration", 0)|float) }} &middot; Throughput: {{
-        "{:.1f}".format((m.get("tokens_per_minute", 0)|int) / 60) }} tok/s</text>
+      {% set ttft = m.get("ttft_p50", 0)|float %}{% set tps = m.get("output_tps_p50", 0)|float if m.get("streamed") else 0 %}{% set lat = m.get("median_task_duration", 0)|float %}
+      <text x="{{ tl_label_w + tl_w + 16 }}" y="{{ by + 14 }}" font-size="7" fill="#555">TTFT p50: {%
+        if ttft > 0 %}{{ "{:.2f}s".format(ttft) }}{% else %}&mdash;{% endif %} &middot; TPS p50: {%
+        if tps > 0 %}{{ "{:.1f}".format(tps) }}{% else %}&mdash;{% endif %} &middot; Latency p50: {%
+        if lat > 0 %}{{ "{:.2f}s".format(lat) }}{% else %}&mdash;{% endif %}</text>
       {% endfor %}
     </svg>
   </div>
@@ -1268,9 +1276,8 @@
     Precision measures how often a positive prediction is correct. Recall measures how many actual positives were found.
     F1 is the harmonic mean of both. Higher is always better for all three.
     {% else %}
-    Output tok/s estimates per-stream generation speed. Latency p50/p95 is the per-answer time-to-completion (lower is
-    better).
-    Throughput is the aggregate tokens-per-second across the whole run at this concurrency.
+    TTFT is the time to the first streamed token and TPS the generation speed after it. Latency p50/p95 is the
+    end-to-end request time (lower is better). &mdash; means the metric was not measured for this run.
     {% endif %}
     &#11088; marks the best value across models.
   </p>
@@ -1307,27 +1314,28 @@
             &#11088;{% endif %}</span>
         </div>
         {% endif %}
+        {% set ttft = m.get("ttft_p50", 0)|float %}{% set tps = m.get("output_tps_p50", 0)|float if m.get("streamed") else 0 %}{% set lat = m.get("median_task_duration", 0)|float %}
+        {% set lat95 = m.get("task_duration_p95", 0)|float %}
         <div class="model-card-row">
-          <span class="model-card-label">Output tok/s</span>
-          <span class="model-card-value">{{ "{:.1f}".format(m.get("output_tps_p50", 0)|float) }}{% if
-            (m.get("output_tps_p50", 0)|float) == (category_winners.get("output_tps") or 0) and
-            (category_winners.get("output_tps") or 0) > 0 %} &#11088;{% endif %}</span>
+          <span class="model-card-label">TTFT p50</span>
+          <span class="model-card-value">{% if ttft > 0 %}{{ "{:.2f}s".format(ttft) }}{% if ttft ==
+            category_winners.get("ttft") %} &#11088;{% endif %}{% else %}&mdash;{% endif %}</span>
         </div>
         <div class="model-card-row">
-          <span class="model-card-label">Latency p50</span>
-          <span class="model-card-value">{{ "{:.2f}s".format(m["median_task_duration"]|float) }}{% if
-            (m["median_task_duration"]|float) == category_winners.get("latency_p50") %} &#11088;{% endif %}</span>
+          <span class="model-card-label">TPS p50</span>
+          <span class="model-card-value">{% if tps > 0 %}{{ "{:.1f}".format(tps) }}{% if tps ==
+            (category_winners.get("output_tps") or 0) %} &#11088;{% endif %}{% else %}&mdash;{% endif %}</span>
         </div>
       </div>
       <div class="model-card-col">
         <div class="model-card-row">
-          <span class="model-card-label">Latency p95</span>
-          <span class="model-card-value">{{ "{:.2f}s".format(m.get("task_duration_p95", 0)|float) }}</span>
+          <span class="model-card-label">Latency p50</span>
+          <span class="model-card-value">{% if lat > 0 %}{{ "{:.2f}s".format(lat) }}{% if lat ==
+            category_winners.get("latency_p50") %} &#11088;{% endif %}{% else %}&mdash;{% endif %}</span>
         </div>
         <div class="model-card-row">
-          <span class="model-card-label">Throughput</span>
-          <span class="model-card-value">{{ "{:,.1f}".format((m["tokens_per_minute"] | int) / 60) }} tok/s{% if
-            m["tokens_per_minute"]|int == category_winners.get("throughput") %} &#11088;{% endif %}</span>
+          <span class="model-card-label">Latency p95</span>
+          <span class="model-card-value">{% if lat95 > 0 %}{{ "{:.2f}s".format(lat95) }}{% else %}&mdash;{% endif %}</span>
         </div>
         <div class="model-card-row">
           <span class="model-card-label">Tokens</span>
@@ -1445,9 +1453,9 @@
         {% for model_pb in models_ranked %}
         {% set resp = item_dict.get("responses", {}).get(model_pb.responder_id or model_pb.id, {}) %}
         {% if is_eval %}
-        <td class="{{ 'ans-ok' if resp.get('is_correct') else 'ans-bad' }}">{{ resp.get("answer", "-") }}</td>
+        <td class="{{ 'ans-ok' if resp.get('is_correct') else 'ans-bad' }}">{% if resp.get("status") not in (None, "OK", "STATUS_UNSPECIFIED") %}<em>{{ resp.get("status")|replace("_", " ") }}</em>{% else %}{{ resp.get("answer", "-") }}{% endif %}</td>
         {% else %}
-        <td>{{ resp.get("answer", "-") }}</td>
+        <td>{% if resp.get("status") not in (None, "OK", "STATUS_UNSPECIFIED") %}<em>{{ resp.get("status")|replace("_", " ") }}</em>{% else %}{{ resp.get("answer", "-") }}{% endif %}</td>
         {% endif %}
         {% endfor %}
       </tr>
@@ -1465,7 +1473,8 @@
   <h2>Error Analysis</h2>
   <p class="section-desc">
     Up to {{ max_errors_per_cat }} False Positive and False Negative examples per model, showing the model's
-    parsed answer, reasoning, and raw response to help diagnose classification errors.
+    parsed answer, the model's reasoning, any follow-up justification, request errors, and the raw response to help
+    diagnose classification errors.
     False Positive and False Negative totals reflect the full run.
     {% if answers_truncated %}
     Because only the first {{ answers_shown }} of {{ answers_total }} items are included above, fewer than the
@@ -1510,9 +1519,18 @@
     {% endif %}
     <div class="error-item-expected"><span class="error-item-label">Expected</span><br>{{ item_pb_local.answer }}</div>
     <div class="error-item-answer"><span class="error-item-label">Model answered</span><br>{{ ex.resp.get("answer", "-") }}</div>
+    {% if ex.resp.get("error") %}
+    <div class="error-item-label">{% if ex.resp.get("status") not in ("OK", "STATUS_UNSPECIFIED") %}Request failed: {{
+      ex.resp.get("status")|replace("_", " ") }}{% else %}Justification request failed{% endif %}</div>
+    <div class="error-item-raw">{{ ex.resp.get("error")|truncate(2000) }}</div>
+    {% endif %}
     {% if ex.resp.get("reasoning") %}
     <div class="error-item-label">Reasoning</div>
     <div class="error-item-reasoning">{{ ex.resp.get("reasoning")|truncate(2000) }}</div>
+    {% endif %}
+    {% if ex.resp.get("justification") %}
+    <div class="error-item-label">Justification</div>
+    <div class="error-item-reasoning">{{ ex.resp.get("justification")|truncate(2000) }}</div>
     {% endif %}
     {% if ex.resp.get("raw_response") %}
     <div class="error-item-label">Raw response</div>
@@ -1533,9 +1551,18 @@
     {% endif %}
     <div class="error-item-expected"><span class="error-item-label">Expected</span><br>{{ item_pb_local.answer }}</div>
     <div class="error-item-answer"><span class="error-item-label">Model answered</span><br>{{ ex.resp.get("answer", "-") }}</div>
+    {% if ex.resp.get("error") %}
+    <div class="error-item-label">{% if ex.resp.get("status") not in ("OK", "STATUS_UNSPECIFIED") %}Request failed: {{
+      ex.resp.get("status")|replace("_", " ") }}{% else %}Justification request failed{% endif %}</div>
+    <div class="error-item-raw">{{ ex.resp.get("error")|truncate(2000) }}</div>
+    {% endif %}
     {% if ex.resp.get("reasoning") %}
     <div class="error-item-label">Reasoning</div>
     <div class="error-item-reasoning">{{ ex.resp.get("reasoning")|truncate(2000) }}</div>
+    {% endif %}
+    {% if ex.resp.get("justification") %}
+    <div class="error-item-label">Justification</div>
+    <div class="error-item-reasoning">{{ ex.resp.get("justification")|truncate(2000) }}</div>
     {% endif %}
     {% if ex.resp.get("raw_response") %}
     <div class="error-item-label">Raw response</div>

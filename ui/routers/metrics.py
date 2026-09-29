@@ -139,11 +139,16 @@ async def metrics(
                     MEDIAN(TRY_CAST(CAST(modality_scores AS JSON)->>'AUDIO' AS FLOAT)) AS median_audio_f1,
                     MEDIAN(TRY_CAST(CAST(modality_scores AS JSON)->>'VIDEO' AS FLOAT)) AS median_video_f1,
                     MEDIAN(refusal_error_rate::FLOAT) AS median_refusal_error_rate,
-                    MEDIAN(median_task_duration::FLOAT) AS median_latency_p50,
-                    MEDIAN(TRY_CAST(task_duration_p95 AS FLOAT)) AS median_latency_p95,
-                    MEDIAN(TRY_CAST(output_tps_p50 AS FLOAT)) AS median_output_tps,
-                    MEDIAN(startup_latency::FLOAT) AS median_first_response_latency,
-                    MEDIAN(tokens_per_minute::FLOAT) AS median_throughput,
+                    MEDIAN(median_task_duration::FLOAT)
+                        FILTER (WHERE median_task_duration::FLOAT > 0) AS median_latency_p50,
+                    MEDIAN(TRY_CAST(task_duration_p95 AS FLOAT))
+                        FILTER (WHERE TRY_CAST(task_duration_p95 AS FLOAT) > 0) AS median_latency_p95,
+                    MEDIAN(TRY_CAST(output_tps_p50 AS FLOAT))
+                        FILTER (WHERE streamed) AS median_output_tps,
+                    MEDIAN(TRY_CAST(ttft_p50 AS FLOAT))
+                        FILTER (WHERE TRY_CAST(ttft_p50 AS FLOAT) > 0) AS median_ttft,
+                    MEDIAN(TRY_CAST(ttft_p95 AS FLOAT))
+                        FILTER (WHERE TRY_CAST(ttft_p95 AS FLOAT) > 0) AS median_ttft_p95,
                     SUM(total::INT) AS total_responses,
                     COUNT(*) AS total_runs,
                     SUM(TRY_CAST(total_cost_usd AS FLOAT)) AS total_cost_usd
@@ -177,10 +182,13 @@ async def metrics(
                         COALESCE(NULLIF(model_id, ''), responder_id) AS responder_id,
                         test_id,
                         MEDIAN(f1::FLOAT) AS median_f1,
-                        MEDIAN(tokens_per_minute::FLOAT) AS median_throughput,
-                        MEDIAN(TRY_CAST(output_tps_p50 AS FLOAT)) AS median_output_tps,
+                        MEDIAN(TRY_CAST(ttft_p50 AS FLOAT))
+                            FILTER (WHERE TRY_CAST(ttft_p50 AS FLOAT) > 0) AS median_ttft,
+                        MEDIAN(TRY_CAST(output_tps_p50 AS FLOAT))
+                            FILTER (WHERE streamed) AS median_output_tps,
                         MEDIAN(refusal_error_rate::FLOAT) AS median_refusal_rate,
-                        MEDIAN(median_task_duration::FLOAT) AS median_latency_p50,
+                        MEDIAN(median_task_duration::FLOAT)
+                            FILTER (WHERE median_task_duration::FLOAT > 0) AS median_latency_p50,
                         SUM(total::INT) AS total_responses,
                         COUNT(*) AS run_count
                     FROM per_run_df

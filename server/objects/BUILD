@@ -65,6 +65,24 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
+py_library(
+    name = "answer_status",
+    srcs = ["answer_status.py"],
+    deps = ["//server:service_py_proto"],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "answer_status_test",
+    size = "small",
+    srcs = ["answer_status_test.py"],
+    deps = [
+        ":answer_status",
+        "//server:service_py_proto",
+        "@pypi//pytest",
+    ],
+)
+
 py_test(
     name = "backend_pool_test",
     size = "small",
@@ -260,6 +278,7 @@ py_library(
         "users.py",
     ],
     deps = [
+        ":answer_status",
         ":backend_pool",
         ":db",
         ":inference",

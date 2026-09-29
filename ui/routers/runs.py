@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
 
 from server import service_pb2
+from server.objects.answer_status import normalize_answer
 from ui.auth import (
     create_reconnection_token,
     validate_reconnection_token,
@@ -616,7 +617,7 @@ async def download_run_json(
         for a in answer_pbs:
             item_pb = items_by_id.get(a.item_id)
             row = MessageToDict(
-                a,
+                normalize_answer(a),
                 preserving_proto_field_name=True,
                 always_print_fields_with_no_presence=True,
             )
@@ -903,6 +904,12 @@ def _resize_image_for_pdf(image_bytes: bytes, max_width: int = 400) -> bytes:
     return buf.getvalue()
 
 
+def _min_positive(values):
+    """Smallest value > 0, or None when there is none."""
+    positive = [v for v in values if (v or 0) > 0]
+    return min(positive) if positive else None
+
+
 async def _fetch_run_report_data(
     run_id: str,
     jwt_token: str | None,
@@ -946,12 +953,19 @@ async def _fetch_run_report_data(
             "precision": max(x.get("precision") for x in metrics_items),
             "recall": max(x.get("recall") for x in metrics_items),
             "f1": max(x.get("f1") for x in metrics_items),
-            "throughput": max(
-                int(x.get("tokens_per_minute")) for x in metrics_items
-            ),  # still tpm; templates divide by 60 for display
-            "output_tps": max(x.get("output_tps_p50", 0) or 0 for x in metrics_items),
-            "latency_p50": min(
-                x.get("median_task_duration", 0) or 0 for x in metrics_items
+            # Performance winners ignore unmeasured (0) values and, for TPS,
+            # pre-streaming runs whose tok/s included prefill time.
+            "ttft": _min_positive(x.get("ttft_p50") for x in metrics_items),
+            "output_tps": max(
+                (
+                    x.get("output_tps_p50", 0) or 0
+                    for x in metrics_items
+                    if x.get("streamed")
+                ),
+                default=0,
+            ),
+            "latency_p50": _min_positive(
+                x.get("median_task_duration") for x in metrics_items
             ),
             "refusals": min(x.get("refusal_error_rate") for x in metrics_items),
             "cost_min": min(nonzero_costs) if nonzero_costs else None,
@@ -1021,9 +1035,11 @@ async def _fetch_run_report_data(
             )
         ),
     )
+    # Normalized so answers written before `status` existed render the same
+    # way as new ones (errors in `error`, not in reasoning / raw_response).
     answer_dicts = [
         MessageToDict(
-            a,
+            normalize_answer(a),
             preserving_proto_field_name=True,
             always_print_fields_with_no_presence=True,
         )

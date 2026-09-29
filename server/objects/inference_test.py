@@ -67,6 +67,7 @@ class TestExtractModalityTokens:
             "output_audio": 0,
             "video": 0,
             "cached": 0,
+            "reasoning": 0,
         }
 
     def test_reads_present_attributes(self, stub):
@@ -82,6 +83,24 @@ class TestExtractModalityTokens:
         assert result["output_audio"] == 3
         assert result["video"] == 2
         assert result["cached"] == 1
+
+    def test_reads_openai_token_details(self, stub):
+        usage = mock.MagicMock(
+            spec=["prompt_tokens_details", "completion_tokens_details"]
+        )
+        usage.prompt_tokens_details = mock.MagicMock(
+            spec=["cached_tokens", "audio_tokens"], cached_tokens=7, audio_tokens=4
+        )
+        usage.completion_tokens_details = mock.MagicMock(
+            spec=["reasoning_tokens", "audio_tokens"],
+            reasoning_tokens=30,
+            audio_tokens=2,
+        )
+        result = stub._extract_modality_tokens(usage)
+        assert result["cached"] == 7
+        assert result["input_audio"] == 4
+        assert result["output_audio"] == 2
+        assert result["reasoning"] == 30
 
     def test_none_values_coerced_to_zero(self, stub):
         usage = mock.MagicMock()
@@ -134,6 +153,14 @@ class TestAnswerTestItemDebugRandom:
         model = _make_model("p/special-model")
         result = _run(stub.answer_test_item(item, "run-1", model, _DEBUG_BACKEND, None))
         assert result.model_id == "p/special-model"
+
+    def test_debug_answers_have_streaming_timings(self, stub):
+        result = _run(
+            stub.answer_test_item(_make_item(), "run-1", _make_model(), _DEBUG_BACKEND, None)
+        )
+        assert result.ttft > 0
+        assert result.ttft < result.task_duration
+        assert result.output_tps > 0
 
     def test_task_duration_is_non_negative(self, stub):
         item = _make_item()
@@ -275,6 +302,477 @@ class _FakeResources:
         self.client.chat.completions.create = _raise
 
 
+def _chunk(content=None, **delta_extra):
+    """A streamed chat.completion.chunk with one choice."""
+    delta = mock.MagicMock(spec=["content", "model_extra"])
+    delta.content = content
+    delta.model_extra = delta_extra
+    choice = mock.MagicMock()
+    choice.delta = delta
+    chunk = mock.MagicMock()
+    chunk.choices = [choice]
+    chunk.usage = None
+    return chunk
+
+
+def _usage_chunk(usage):
+    """The final include_usage chunk: no choices, usage populated."""
+    chunk = mock.MagicMock()
+    chunk.choices = []
+    chunk.usage = usage
+    return chunk
+
+
+def _usage(prompt_tokens, completion_tokens, **details):
+    usage = mock.MagicMock(spec=["prompt_tokens", "completion_tokens", "model_extra"])
+    usage.prompt_tokens = prompt_tokens
+    usage.completion_tokens = completion_tokens
+    usage.model_extra = {}
+    if details:
+        usage.completion_tokens_details = mock.MagicMock(spec=["reasoning_tokens"])
+        usage.completion_tokens_details.reasoning_tokens = details.get(
+            "reasoning_tokens", 0
+        )
+    return usage
+
+
+class _FakeStream:
+    """Async-iterable stand-in for openai.AsyncStream with optional delays."""
+
+    def __init__(self, chunks, delay=0.0, first_delay=0.0):
+        self._chunks = chunks
+        self._delay = delay
+        self._first_delay = first_delay
+        self.closed = False
+
+    async def __aiter__(self):
+        for i, c in enumerate(self._chunks):
+            await asyncio.sleep(self._first_delay if i == 0 else self._delay)
+            yield c
+
+    async def close(self):
+        self.closed = True
+
+
+def _streaming_resources(stream, captured=None):
+    fake = _FakeResources()
+
+    async def _create(*args, **kwargs):
+        if captured is not None:
+            captured.update(kwargs)
+        return stream
+
+    fake.client.chat.completions.create = _create
+    return fake
+
+
+_OPENAI_BACKEND = service_pb2.Backend(
+    id="real-backend",
+    backend_type=service_pb2.BackendType.OPENAI,
+    base_url="https://api.example/v1",
+)
+
+
+# ---------------------------------------------------------------------------
+# Attachment content parts
+# ---------------------------------------------------------------------------
+
+
+def _attachment(mime, data=b"\x00\x01"):
+    return service_pb2.FileAttachment(mime=mime, file=data)
+
+
+class TestAttachmentContentPart:
+    def test_image_uses_image_url(self):
+        part = inference_module._attachment_content_part(_attachment("image/png"))
+        assert part == {
+            "type": "image_url",
+            "image_url": {"url": "data:image/png;base64,AAE="},
+        }
+
+    def test_video_uses_video_url(self):
+        part = inference_module._attachment_content_part(_attachment("video/mp4"))
+        assert part == {
+            "type": "video_url",
+            "video_url": {"url": "data:video/mp4;base64,AAE="},
+        }
+
+    @pytest.mark.parametrize(
+        "mime, fmt",
+        [
+            ("audio/wav", "wav"),
+            ("audio/x-wav", "wav"),
+            ("audio/mpeg", "mp3"),
+            ("audio/mp3", "mp3"),
+            ("audio/flac", "flac"),
+            ("audio/ogg; codecs=opus", "ogg"),
+        ],
+    )
+    def test_audio_uses_input_audio(self, mime, fmt):
+        part = inference_module._attachment_content_part(_attachment(mime))
+        assert part == {
+            "type": "input_audio",
+            "input_audio": {"data": "AAE=", "format": fmt},
+        }
+
+    def test_non_media_returns_none(self):
+        assert inference_module._attachment_content_part(_attachment("text/plain")) is None
+
+    def test_video_attachment_sent_to_backend(self, monkeypatch):
+        captured = {}
+        stream = _FakeStream([_chunk(content="A"), _usage_chunk(_usage(10, 1))])
+        fake = _streaming_resources(stream, captured)
+
+        async def _get(_backend):
+            return fake
+
+        class _VideoStub(_StubInference):
+            async def GetAttachment(self, request, context):
+                return service_pb2.FileAttachment(
+                    mime="video/mp4", file=b"\x00\x01", modality=3
+                )
+
+        monkeypatch.setattr(inference_module, "get_backend_resources", _get)
+        item = _make_item(choices=["A", "B"], answer="A")
+        item.attachment_id = "att-1"
+        result = _run(
+            _VideoStub().answer_test_item(
+                item, "run-1", _make_model("openai/gpt-test"), _OPENAI_BACKEND, None
+            )
+        )
+        assert result.attachment_type == service_pb2.FileModality.VIDEO
+        media_msg = captured["messages"][-1]
+        assert media_msg["content"][0]["type"] == "video_url"
+        assert "image_url" not in media_msg["content"][0]
+
+
+# ---------------------------------------------------------------------------
+# Streaming inference: TTFT / output TPS / latency
+# ---------------------------------------------------------------------------
+
+
+class TestStreamingInference:
+    def _answer(self, monkeypatch, stream, captured=None, choices=("A", "B")):
+        fake = _streaming_resources(stream, captured)
+
+        async def _get(_backend):
+            return fake
+
+        monkeypatch.setattr(inference_module, "get_backend_resources", _get)
+        item = _make_item(choices=list(choices), answer="A")
+        return _run(
+            _StubInference().answer_test_item(
+                item, "run-1", _make_model("openai/gpt-test"), _OPENAI_BACKEND, None
+            )
+        )
+
+    def test_requests_streaming_with_usage(self, monkeypatch):
+        captured = {}
+        stream = _FakeStream([_chunk(content="A"), _usage_chunk(_usage(10, 1))])
+        self._answer(monkeypatch, stream, captured)
+        assert captured["stream"] is True
+        assert captured["stream_options"] == {"include_usage": True}
+        assert stream.closed
+
+    def test_ttft_tps_and_latency(self, monkeypatch):
+        stream = _FakeStream(
+            [_chunk(content="A"), _chunk(content=" is"), _chunk(content=" it")]
+            + [_usage_chunk(_usage(20, 5))],
+            first_delay=0.2,
+            delay=0.05,
+        )
+        result = self._answer(monkeypatch, stream)
+        assert 0.15 < result.ttft < 0.5
+        assert result.task_duration >= result.ttft
+        # 5 tokens over the post-first-token window of ~0.1s -> ~40 tok/s;
+        # prefill (first_delay) must not be in the denominator.
+        assert 20 < result.output_tps < 60
+        assert result.input_tokens == 20
+        assert result.output_tokens == 5
+        assert not result.usage_estimated
+
+    def test_single_token_answer_has_no_tps(self, monkeypatch):
+        stream = _FakeStream([_chunk(content="A"), _usage_chunk(_usage(10, 1))])
+        result = self._answer(monkeypatch, stream)
+        assert result.ttft > 0
+        assert result.output_tps == 0.0
+        assert result.answer == "A"
+
+    def test_reasoning_deltas_count_toward_ttft(self, monkeypatch):
+        stream = _FakeStream(
+            [
+                _chunk(reasoning_content="thinking"),
+                _chunk(reasoning_content=" more"),
+                _chunk(content="A"),
+                _usage_chunk(_usage(10, 3)),
+            ],
+            first_delay=0.1,
+            delay=0.1,
+        )
+        result = self._answer(monkeypatch, stream)
+        assert result.ttft < 0.18  # first reasoning delta, not first content
+        assert result.raw_response == "A"  # verbatim content only
+        assert result.reasoning == "thinking more"
+        assert result.status == service_pb2.TestRunAnswer.OK
+        assert result.answer == "A"
+
+    def test_reasoning_only_response_is_not_an_error(self, monkeypatch):
+        stream = _FakeStream(
+            [_chunk(reasoning="just thinking"), _usage_chunk(_usage(10, 2))]
+        )
+        result = self._answer(monkeypatch, stream)
+        assert result.status == service_pb2.TestRunAnswer.OK
+        assert result.reasoning == "just thinking"
+        assert result.raw_response == ""
+        assert result.answer == ""
+
+    def test_hidden_reasoning_tokens_excluded_from_tps(self, monkeypatch):
+        stream = _FakeStream(
+            [_chunk(content="A"), _chunk(content="B"), _chunk(content="C")]
+            + [_usage_chunk(_usage(10, 103, reasoning_tokens=100))],
+            delay=0.05,
+        )
+        result = self._answer(monkeypatch, stream)
+        assert result.reasoning_tokens == 100
+        assert result.output_tokens == 103
+        # 3 visible tokens over ~0.1s, not 103.
+        assert result.output_tps < 60
+
+    def test_missing_usage_is_estimated(self, monkeypatch):
+        stream = _FakeStream(
+            [_chunk(content="A"), _chunk(content="B"), _chunk(content="C")],
+            delay=0.05,
+        )
+        result = self._answer(monkeypatch, stream)
+        assert result.usage_estimated
+        assert result.output_tokens == 3
+        assert result.input_tokens == 0
+        assert result.output_tps > 0
+
+    def test_timeout_mid_stream(self, monkeypatch):
+        fake_stream = _FakeStream([_chunk(content="A"), _chunk(content="B")], delay=5)
+        fake = _streaming_resources(fake_stream)
+        fake.request_timeout = -9.9  # wait_for budget = request_timeout + 10s
+
+        async def _get(_backend):
+            return fake
+
+        monkeypatch.setattr(inference_module, "get_backend_resources", _get)
+        result = _run(
+            _StubInference().answer_test_item(
+                _make_item(), "run-1", _make_model("openai/gpt-test"),
+                _OPENAI_BACKEND, None,
+            )
+        )
+        assert result.status == service_pb2.TestRunAnswer.TIMEOUT
+        assert result.error
+        assert result.raw_response == ""
+        assert result.reasoning == ""
+        assert fake_stream.closed
+        assert result.ttft == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Native reasoning: request params, extraction, TPS on summarized reasoning
+# ---------------------------------------------------------------------------
+
+
+_OPENROUTER_BACKEND = service_pb2.Backend(
+    id="or-backend",
+    backend_type=service_pb2.BackendType.OPENROUTER,
+    base_url="https://openrouter.ai/api/v1",
+)
+_LOCAL_BACKEND = service_pb2.Backend(
+    id="local-backend",
+    backend_type=service_pb2.BackendType.LLAMA_CPP,
+    base_url="http://localhost:1234/v1",
+    is_local=True,
+)
+
+
+class TestReasoningRequestParams:
+    def test_off_sends_nothing(self):
+        for bt in ("openrouter", "openai", "vllm", "llama_cpp", "ollama"):
+            assert inference_module._reasoning_request_params(bt, False) == {}
+
+    def test_openrouter_requests_effort(self):
+        assert inference_module._reasoning_request_params("openrouter", True) == {
+            "extra_body": {"reasoning": {"effort": "medium"}}
+        }
+
+    def test_openai_requests_reasoning_effort(self):
+        assert inference_module._reasoning_request_params("openai", True) == {
+            "reasoning_effort": "medium"
+        }
+
+    def test_local_backends_send_nothing(self):
+        for bt in ("vllm", "llama_cpp", "ollama"):
+            assert inference_module._reasoning_request_params(bt, True) == {}
+
+
+class TestNativeReasoning:
+    def _answer(self, monkeypatch, create, backend, include_reasoning=True):
+        fake = _FakeResources()
+        fake.client.chat.completions.create = create
+
+        async def _get(_backend):
+            return fake
+
+        monkeypatch.setattr(inference_module, "get_backend_resources", _get)
+        return _run(
+            _StubInference().answer_test_item(
+                _make_item(choices=["A", "B"], answer="A"),
+                "run-1",
+                _make_model("some/model"),
+                backend,
+                None,
+                include_reasoning=include_reasoning,
+            )
+        )
+
+    def test_openrouter_on_sends_reasoning_param(self, monkeypatch):
+        calls = []
+
+        async def _create(*args, **kwargs):
+            calls.append(kwargs)
+            return _FakeStream(
+                [_chunk(reasoning="because"), _chunk(content="A"), _usage_chunk(_usage(10, 3))]
+            )
+
+        self._answer(monkeypatch, _create, _OPENROUTER_BACKEND)
+        assert calls[0]["extra_body"] == {"reasoning": {"effort": "medium"}}
+
+    def test_off_sends_no_reasoning_param(self, monkeypatch):
+        calls = []
+
+        async def _create(*args, **kwargs):
+            calls.append(kwargs)
+            return _FakeStream([_chunk(content="A"), _usage_chunk(_usage(10, 1))])
+
+        self._answer(monkeypatch, _create, _OPENROUTER_BACKEND, include_reasoning=False)
+        assert "extra_body" not in calls[0]
+        assert "reasoning_effort" not in calls[0]
+
+    def test_native_reasoning_extracted_and_follow_up_skipped(self, monkeypatch):
+        calls = []
+
+        async def _create(*args, **kwargs):
+            calls.append(kwargs)
+            return _FakeStream(
+                [
+                    _chunk(reasoning_content="The content is benign."),
+                    _chunk(content="A"),
+                    _usage_chunk(_usage(10, 8)),
+                ]
+            )
+
+        result = self._answer(monkeypatch, _create, _LOCAL_BACKEND)
+        assert result.reasoning == "The content is benign."
+        assert result.justification == ""
+        assert result.answer == "A"
+        assert len(calls) == 1  # no "explain your answer" follow-up
+
+    def test_reasoning_stored_even_when_toggle_off(self, monkeypatch):
+        async def _create(*args, **kwargs):
+            return _FakeStream(
+                [_chunk(reasoning="thinking"), _chunk(content="A"), _usage_chunk(_usage(10, 3))]
+            )
+
+        result = self._answer(
+            monkeypatch, _create, _LOCAL_BACKEND, include_reasoning=False
+        )
+        assert result.reasoning == "thinking"
+
+    def test_rejected_reasoning_param_retries_without(self, monkeypatch):
+        from openai import BadRequestError
+
+        calls = []
+
+        async def _create(*args, **kwargs):
+            calls.append(kwargs)
+            if "reasoning_effort" in kwargs:
+                raise BadRequestError(
+                    "Unsupported parameter: reasoning_effort",
+                    response=mock.MagicMock(status_code=400),
+                    body=None,
+                )
+            if len(calls) == 2:
+                return _FakeStream([_chunk(content="A"), _usage_chunk(_usage(10, 1))])
+            # Follow-up "explain" call (non-streaming), since no native reasoning.
+            follow_up = mock.MagicMock()
+            follow_up.choices = [mock.MagicMock()]
+            follow_up.choices[0].message.content = "Because A."
+            follow_up.usage = _usage(20, 3)
+            return follow_up
+
+        result = self._answer(monkeypatch, _create, _OPENAI_BACKEND)
+        assert "reasoning_effort" in calls[0]
+        assert "reasoning_effort" not in calls[1]
+        assert result.answer == "A"
+        assert result.status == service_pb2.TestRunAnswer.OK
+        assert result.justification == "Because A."
+        assert result.reasoning == ""
+
+    def test_failed_request_skips_justification(self, monkeypatch):
+        calls = []
+
+        async def _create(*args, **kwargs):
+            calls.append(kwargs)
+            raise APIConnectionError(request=mock.MagicMock())
+
+        result = self._answer(monkeypatch, _create, _OPENAI_BACKEND)
+        assert len(calls) == 1
+        assert result.status == service_pb2.TestRunAnswer.CONNECTION_ERROR
+        assert result.justification == ""
+
+    def test_inline_think_is_reasoning_and_raw_is_verbatim(self, monkeypatch):
+        async def _create(*args, **kwargs):
+            return _FakeStream(
+                [_chunk(content="<think>hmm</think>"), _chunk(content="A"), _usage_chunk(_usage(10, 5))]
+            )
+
+        result = self._answer(monkeypatch, _create, _LOCAL_BACKEND)
+        assert result.raw_response == "<think>hmm</think>A"
+        assert result.reasoning == "hmm"
+        # (Answer matching strips <think>; covered by db_test's _validate_answer.)
+
+    def test_summarized_reasoning_excluded_from_tps(self, monkeypatch):
+        """Gemini via OpenRouter: 165 reasoning tokens, a short summary in one
+        chunk, then a one-token answer. TPS is undefined, not ~2000 tok/s."""
+
+        async def _create(*args, **kwargs):
+            return _FakeStream(
+                [
+                    _chunk(reasoning="**Analyzing** I think it's fine."),
+                    _chunk(content="A"),
+                    _usage_chunk(_usage(10, 166, reasoning_tokens=165)),
+                ],
+                first_delay=0.2,
+                delay=0.05,
+            )
+
+        result = self._answer(monkeypatch, _create, _OPENROUTER_BACKEND)
+        assert result.ttft > 0.15
+        assert result.output_tps == 0.0
+        assert result.reasoning_tokens == 165
+
+    def test_live_reasoning_counts_toward_tps(self, monkeypatch):
+        """Reasoning streamed token-by-token (e.g. qwen3) is part of TPS even
+        when the provider reports reasoning_tokens."""
+        words = [f"w{i:02d} " for i in range(10)]  # ~4 chars ~= 1 token each
+
+        async def _create(*args, **kwargs):
+            return _FakeStream(
+                [_chunk(reasoning=w) for w in words]
+                + [_chunk(content="A"), _usage_chunk(_usage(10, 11, reasoning_tokens=10))],
+                delay=0.02,
+            )
+
+        result = self._answer(monkeypatch, _create, _OPENROUTER_BACKEND)
+        # 10 tokens over ~0.2s window -> ~50 tok/s
+        assert 20 < result.output_tps < 100
+
+
 class TestAPIConnectionErrorHandling:
     def test_main_inference_records_error_without_invalidating_pool(self, monkeypatch):
         fake = _FakeResources()
@@ -295,9 +793,11 @@ class TestAPIConnectionErrorHandling:
 
         result = _run(stub.answer_test_item(item, "run-1", model, backend, None))
 
-        assert "Connection error" in result.reasoning
+        assert result.status == service_pb2.TestRunAnswer.CONNECTION_ERROR
+        assert "Connection error" in result.error
         assert result.answer == ""
-        assert result.raw_response.startswith("[CONNECTION_ERROR]")
+        assert result.raw_response == ""
+        assert result.reasoning == ""
 
     def test_reasoning_call_records_error_without_invalidating_pool(self, monkeypatch):
         """The reasoning sub-call has its own try/except — verify it sets a
@@ -314,19 +814,13 @@ class TestAPIConnectionErrorHandling:
         usage.video_tokens = 0
         usage.cached_tokens = 0
 
-        choice = mock.MagicMock()
-        choice.message.content = "A"
-        main_response = mock.MagicMock()
-        main_response.choices = [choice]
-        main_response.usage = usage
-
         err = APIConnectionError(request=mock.MagicMock())
         call_count = {"n": 0}
 
         async def _create(*args, **kwargs):
             call_count["n"] += 1
             if call_count["n"] == 1:
-                return main_response
+                return _FakeStream([_chunk(content="A"), _usage_chunk(usage)])
             raise err
 
         fake = _FakeResources()
@@ -353,7 +847,11 @@ class TestAPIConnectionErrorHandling:
         )
 
         assert call_count["n"] == 2  # main succeeded, reasoning was attempted
-        assert "Reasoning connection error" in result.reasoning
+        assert "Justification connection error" in result.error
+        assert result.justification == ""
+        assert result.reasoning == ""
+        # The primary request succeeded, so the answer's status is OK.
+        assert result.status == service_pb2.TestRunAnswer.OK
         # Main answer must still be preserved — only the reasoning failed.
         assert result.answer == "A"
         assert result.is_correct is True

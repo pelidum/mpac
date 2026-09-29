@@ -157,8 +157,8 @@
                     </label>
                 </div>
                 <p class="text-xs text-[var(--color-text-secondary)] leading-tight max-w-xs">
-                    Reasoning gives models the opportunity to explain / justify their responses and explain why they
-                    chose it.
+                    Turns on native reasoning for models that support it and records their reasoning. Models that
+                    don't reason natively are asked to justify their answer in a follow-up call.
                 </p>
             </div>
 
@@ -187,7 +187,8 @@
     // conservative for real models (system prompt + question + choices).
     const EST_INPUT_TOKENS = 500;
     const EST_OUTPUT_TOKENS = 25;
-    // Reasoning adds a second call with a longer context.
+    // Reasoning adds native reasoning tokens, or a follow-up justification
+    // call for non-reasoning models; estimated the same way for both.
     const EST_REASONING_EXTRA_INPUT = 600;
     const EST_REASONING_EXTRA_OUTPUT = 200;
 

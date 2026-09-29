@@ -7,6 +7,7 @@ import grpc
 import pytest
 
 from server import service_pb2
+from server.objects import models as models_module
 from server.objects.models import ModelsMixin
 
 
@@ -62,6 +63,78 @@ async def _collect_models(stub):
     async for m in stub.ListModels(request=service_pb2.ListRequest(), context=_ctx):
         results.append(m)
     return results
+
+
+# ---------------------------------------------------------------------------
+# Private-address guard on real _list_models_for_backend
+# ---------------------------------------------------------------------------
+
+
+class _RealListStub(ModelsMixin):
+    """Uses the real _list_models_for_backend against the given backends."""
+
+    def __init__(self, backends):
+        self._backends = backends
+        self.db_pool = None
+
+    async def _get_enabled_backends(self):
+        return self._backends
+
+
+def _backend(backend_id, base_url, is_local=False, backend_type="OPENAI"):
+    return service_pb2.Backend(
+        id=backend_id,
+        base_url=base_url,
+        is_local=is_local,
+        enabled=True,
+        backend_type=service_pb2.BackendType.Value(backend_type),
+    )
+
+
+def _fake_models_response(model_ids):
+    resp = mock.MagicMock()
+    resp.raise_for_status.return_value = None
+    resp.json.return_value = {"data": [{"id": mid} for mid in model_ids]}
+    return resp
+
+
+class TestPrivateAddressGuard:
+    def test_local_backend_on_loopback_lists_models(self, monkeypatch):
+        """LM Studio on localhost:1234 marked is_local must list its models."""
+        calls = []
+
+        def _get(url, **kwargs):
+            calls.append(url)
+            return _fake_models_response(["qwen3-8b"])
+
+        monkeypatch.setattr(models_module.requests, "get", _get)
+        stub = _RealListStub(
+            [_backend("lmstudio", "http://localhost:1234/v1", is_local=True)]
+        )
+        models = _run(_collect_models(stub))
+        assert [m.id for m in models] == ["qwen3-8b"]
+        assert calls == ["http://localhost:1234/v1/models"]
+
+    def test_non_local_private_backend_is_blocked_without_breaking_others(
+        self, monkeypatch
+    ):
+        """A blocked backend is skipped; other backends still list models."""
+        calls = []
+
+        def _get(url, **kwargs):
+            calls.append(url)
+            return _fake_models_response(["gpt-test"])
+
+        monkeypatch.setattr(models_module.requests, "get", _get)
+        stub = _RealListStub(
+            [
+                _backend("blocked", "http://127.0.0.1:1234/v1", is_local=False),
+                _backend("cloud", "http://8.8.8.8/v1", is_local=False),
+            ]
+        )
+        models = _run(_collect_models(stub))
+        assert [m.backend_id for m in models] == ["cloud"]
+        assert calls == ["http://8.8.8.8/v1/models"]
 
 
 # ---------------------------------------------------------------------------

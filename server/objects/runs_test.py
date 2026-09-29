@@ -481,8 +481,8 @@ class TestConnectionErrorCircuitBreaker:
         def _conn_error_answer(call_count):
             a = service_pb2.TestRunAnswer()
             a.id = f"answer-{call_count}"
-            a.raw_response = "[CONNECTION_ERROR] Connection error."
-            a.reasoning = "Connection error"
+            a.status = service_pb2.TestRunAnswer.CONNECTION_ERROR
+            a.error = "Connection error."
             return a
 
         stub = _RecordingCreateStub(
@@ -509,13 +509,16 @@ class TestConnectionErrorCircuitBreaker:
         # At least (num_items - threshold) items were skipped without an
         # inference round trip.
         skipped = [
-            a for a in stub._created_answers if a.raw_response.startswith("[SKIPPED]")
+            a
+            for a in stub._created_answers
+            if a.status == service_pb2.TestRunAnswer.SKIPPED
         ]
         conn_errors = [
             a
             for a in stub._created_answers
-            if a.raw_response.startswith("[CONNECTION_ERROR]")
+            if a.status == service_pb2.TestRunAnswer.CONNECTION_ERROR
         ]
+        assert all(a.error and not a.raw_response for a in skipped)
         assert len(conn_errors) >= threshold
         assert len(skipped) >= 1
         assert len(skipped) + len(conn_errors) == num_items
@@ -528,6 +531,7 @@ class TestConnectionErrorCircuitBreaker:
             if call_count % 2 == 0:
                 a = service_pb2.TestRunAnswer()
                 a.id = f"answer-{call_count}"
+                # Legacy prefix encoding: the breaker must still recognize it.
                 a.raw_response = "[CONNECTION_ERROR] Connection error."
                 return a
             a = _make_answer()
@@ -829,7 +833,8 @@ class TestThrottledAnswerTaskTimeout:
         assert spy.acquire_calls == 3
         assert len(stub.created_answers) == 3
         for answer_pb in stub.created_answers:
-            assert "Backend at capacity" in answer_pb.reasoning
+            assert answer_pb.status == service_pb2.TestRunAnswer.CAPACITY
+            assert "Backend at capacity" in answer_pb.error
             assert answer_pb.run_id == run_pb.id
             assert answer_pb.model_id == "model-1"
 
@@ -1000,6 +1005,113 @@ class TestGetTestRunVisibility:
             )
         )
         assert result.id == ""
+
+
+# ---------------------------------------------------------------------------
+# Performance metrics: TTFT / output TPS / latency
+# ---------------------------------------------------------------------------
+
+
+def _perf_answer(task_duration=1.0, ttft=0.2, output_tps=50.0, raw_response="A"):
+    a = _make_answer(task_duration=task_duration)
+    a.ttft = ttft
+    a.output_tps = output_tps
+    a.raw_response = raw_response
+    return a
+
+
+class TestPercentiles:
+    def test_empty(self):
+        assert runs_module._percentiles([]) == (0.0, 0.0, 0.0)
+
+    def test_single_value(self):
+        assert runs_module._percentiles([2.5]) == (2.5, 2.5, 2.5)
+
+    def test_many_values(self):
+        values = [float(x) for x in range(1, 101)]
+        p50, p95, p99 = runs_module._percentiles(values)
+        assert p50 == statistics.median(values)
+        assert 94 < p95 < 97
+        assert 98 < p99 <= 100
+
+
+class TestApplyPerformanceMetrics:
+    def test_failed_requests_are_excluded(self):
+        answers = [_perf_answer(task_duration=1.0, ttft=0.2) for _ in range(5)]
+        answers += [
+            _perf_answer(task_duration=130.0, ttft=0.0, raw_response="[TIMEOUT] x"),
+            _perf_answer(task_duration=0.0, ttft=0.0, raw_response="[CAPACITY] x"),
+            _perf_answer(task_duration=0.0, ttft=0.0, raw_response="[SKIPPED] x"),
+            _perf_answer(task_duration=5.0, ttft=4.0, raw_response="[ERROR] boom"),
+        ]
+        m = service_pb2.TestRun.TestRunMetrics()
+        runs_module._apply_performance_metrics(m, answers)
+        assert m.median_task_duration == pytest.approx(1.0)
+        assert m.task_duration_p95 == pytest.approx(1.0)
+        assert m.ttft_p50 == pytest.approx(0.2)
+        assert m.ttft_p99 == pytest.approx(0.2)
+        assert m.output_tps_p50 == pytest.approx(50.0)
+        assert m.streamed
+
+    def test_status_field_excludes_failed_requests(self):
+        answers = [_perf_answer(task_duration=1.0, ttft=0.2)]
+        timed_out = _perf_answer(task_duration=130.0, ttft=0.0, raw_response="")
+        timed_out.status = service_pb2.TestRunAnswer.TIMEOUT
+        answers.append(timed_out)
+        m = service_pb2.TestRun.TestRunMetrics()
+        runs_module._apply_performance_metrics(m, answers)
+        assert m.task_duration_p99 == pytest.approx(1.0)
+
+    def test_refusals_still_count_as_successful_requests(self):
+        answers = [_perf_answer(ttft=0.3, raw_response="I cannot answer that")]
+        m = service_pb2.TestRun.TestRunMetrics()
+        runs_module._apply_performance_metrics(m, answers)
+        assert m.ttft_p50 == pytest.approx(0.3)
+
+    def test_unmeasured_tps_is_skipped(self):
+        answers = [
+            _perf_answer(output_tps=0.0),  # single-token answer
+            _perf_answer(output_tps=40.0),
+            _perf_answer(output_tps=60.0),
+        ]
+        m = service_pb2.TestRun.TestRunMetrics()
+        runs_module._apply_performance_metrics(m, answers)
+        assert m.output_tps_p50 == pytest.approx(50.0)
+
+    def test_pre_streaming_answers_are_not_streamed(self):
+        answers = [_perf_answer(ttft=0.0, output_tps=0.0) for _ in range(3)]
+        m = service_pb2.TestRun.TestRunMetrics()
+        runs_module._apply_performance_metrics(m, answers)
+        assert not m.streamed
+        assert m.ttft_p50 == 0.0
+        assert m.output_tps_p50 == 0.0
+        assert m.median_task_duration == pytest.approx(1.0)
+
+
+class TestThroughputWallTime:
+    def test_tpm_excludes_rate_limit_sleep(self, monkeypatch):
+        """A TPM rate-limit sleep after the request must not count toward the
+        model's throughput wall time."""
+
+        class _SlowStub(_DoRunStub):
+            async def answer_test_item(self, *args, **kwargs):
+                await asyncio.sleep(0.2)
+                return _perf_answer()
+
+            async def record_and_check_tpm(self, user_id, tokens):
+                return False
+
+        # seconds_remaining = 60 - (59 % 60) = 1 -> sleeps 2s after the answer.
+        monkeypatch.setattr(runs_module.time, "time", lambda: 59.0)
+        stub = _SlowStub()
+        run_pb, test_pb, items, request = _make_run_and_request()
+        asyncio.get_event_loop().run_until_complete(
+            stub._do_run_inference(run_pb, test_pb, items, request, asyncio.Event())
+        )
+        metrics = stub._update_calls[-1].metrics[0]
+        # 50 output tokens over ~0.2s -> ~15000 TPM; with the sleep it'd be ~1400.
+        assert metrics.tokens_per_minute > 5000
+        assert metrics.streamed
 
 
 if __name__ == "__main__":

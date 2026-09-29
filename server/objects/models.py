@@ -31,12 +31,18 @@ def _validate_backend_url(url: str) -> None:
             for _, _, _, _, sockaddr in resolved:
                 addr = ipaddress.ip_address(sockaddr[0])
                 if addr.is_private or addr.is_loopback or addr.is_link_local:
-                    raise ValueError(f"Backend URL resolves to private address: {addr}")
+                    raise ValueError(
+                        f"Backend URL resolves to private address: {addr} "
+                        "(mark the backend as local to allow this)"
+                    )
         except socket.gaierror:
             pass
         return
     if addr.is_private or addr.is_loopback or addr.is_link_local:
-        raise ValueError(f"Backend URL points to private address: {addr}")
+        raise ValueError(
+            f"Backend URL points to private address: {addr} "
+            "(mark the backend as local to allow this)"
+        )
 
 
 _PARAM_RE = re.compile(
@@ -253,9 +259,15 @@ class ModelsMixin:
         context: grpc.aio.ServicerContext,
     ):
         backend_type = service_pb2.BackendType.Name(backend.backend_type).lower()
-        if backend.base_url and backend_type != "debug_random":
-            _validate_backend_url(backend.base_url)
         try:
+            # Local backends (LM Studio, Ollama, llama.cpp, ...) legitimately
+            # live on loopback/private addresses; admins opt in via is_local.
+            if (
+                backend.base_url
+                and backend_type != "debug_random"
+                and not backend.is_local
+            ):
+                _validate_backend_url(backend.base_url)
             match backend_type:
                 case "debug_random":
                     know_it_all = {

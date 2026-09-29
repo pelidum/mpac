@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import dataclasses
 import random
 import re
 import time
@@ -42,14 +43,241 @@ MPAC_SYSTEM_PROMPT = """
     """
 
 
+# Fields that OpenAI-compatible backends use for streamed or returned reasoning
+# text, in priority order (vLLM/llama.cpp/DeepSeek, then others, then
+# OpenRouter/Ollama).
+_REASONING_FIELDS = ("reasoning_content", "thinking", "reasoning")
+
+
+def _int_attr(obj, name: str) -> int:
+    """Read an integer attribute, treating absent / None / non-int as 0."""
+    val = getattr(obj, name, None) if obj is not None else None
+    if isinstance(val, bool) or not isinstance(val, int):
+        return 0
+    return val
+
+
+def _reasoning_text(obj) -> str | None:
+    """Return reasoning text from a message or stream delta, if any."""
+    extra = getattr(obj, "model_extra", None) or {}
+    for field in _REASONING_FIELDS:
+        val = getattr(obj, field, None)
+        if not isinstance(val, str):
+            val = extra.get(field)
+        if isinstance(val, str) and val:
+            return val
+    return None
+
+
+# Audio MIME subtypes that don't match the OpenAI `input_audio.format` name.
+_AUDIO_FORMAT_ALIASES = {
+    "mpeg": "mp3",
+    "mpeg3": "mp3",
+    "x-mpeg-3": "mp3",
+    "x-wav": "wav",
+    "wave": "wav",
+    "vnd.wave": "wav",
+    "x-flac": "flac",
+    "x-m4a": "m4a",
+    "mp4": "m4a",
+}
+
+
+def _attachment_content_part(attachment_pb) -> dict | None:
+    """Build the OpenAI-compatible chat content part for a media attachment.
+
+    - image: `image_url` with a data URI (OpenAI, vLLM, Ollama, OpenRouter).
+    - audio: `input_audio` with raw base64 and a format name (OpenAI, vLLM,
+      OpenRouter). Backends that reject the format return a BadRequestError,
+      which the caller records as status BAD_REQUEST.
+    - video: `video_url` with a data URI (vLLM, OpenRouter; there is no OpenAI
+      standard for video).
+
+    Returns None for non-media attachments.
+    """
+    kind, _, subtype = attachment_pb.mime.partition("/")
+    if kind not in ("image", "audio", "video"):
+        return None
+    b64 = base64.b64encode(attachment_pb.file).decode("utf-8")
+    if kind == "audio":
+        subtype = subtype.split(";")[0].strip().lower()
+        return {
+            "type": "input_audio",
+            "input_audio": {
+                "data": b64,
+                "format": _AUDIO_FORMAT_ALIASES.get(subtype, subtype),
+            },
+        }
+    part_type = f"{kind}_url"
+    return {
+        "type": part_type,
+        part_type: {"url": f"data:{attachment_pb.mime};base64,{b64}"},
+    }
+
+
+# Effort requested from reasoning-capable models when a run enables reasoning.
+_REASONING_EFFORT = "medium"
+# Rough characters per token, used only to tell a live reasoning stream from a
+# post-hoc summary. It undercounts tokens for CJK text, which errs toward
+# treating reasoning as summarized (answer-only TPS) rather than inflating TPS.
+_CHARS_PER_TOKEN = 4
+# Streamed reasoning shorter than this fraction of the reported reasoning
+# tokens is treated as a summary (e.g. Gemini thought summaries).
+_LIVE_REASONING_MIN_FRACTION = 0.5
+
+
+def _reasoning_request_params(backend_type: str, include_reasoning: bool) -> dict:
+    """Extra chat.completions.create kwargs that ask for native reasoning.
+
+    Only sent when the run enables reasoning; otherwise the model's default
+    behavior is left untouched. Local servers (vLLM, llama.cpp, LM Studio,
+    Ollama) get nothing: reasoning models there think by default and stream it
+    as `reasoning_content` / `reasoning`.
+    """
+    if not include_reasoning:
+        return {}
+    if backend_type == "openrouter":
+        return {"extra_body": {"reasoning": {"effort": _REASONING_EFFORT}}}
+    if backend_type == "openai":
+        return {"reasoning_effort": _REASONING_EFFORT}
+    return {}
+
+
+@dataclasses.dataclass
+class StreamResult:
+    """Accumulated output and timings of one streamed chat completion.
+
+    Timings follow the usual serving-benchmark definitions (e.g. vLLM
+    benchmark_serving): TTFT is dispatch to the first reasoning or content
+    token; output_tps is (n_out - 1) / (t_last - t_first), which excludes
+    prefill; duration is dispatch to end of stream.
+
+    output_tps only counts tokens that were streamed as they were generated.
+    When the backend reports reasoning tokens that were hidden or only
+    summarized (e.g. OpenAI o-series, Gemini thought summaries), those tokens
+    were generated before the first chunk, so TPS is measured over the answer
+    content alone.
+    """
+
+    content: str
+    reasoning: str
+    usage: object | None
+    ttft: float
+    output_tps: float
+    duration: float
+    usage_estimated: bool
+    estimated_output_tokens: int
+
+
+async def _stream_completion(
+    client, messages, model: str, timeout: float, extra: dict | None = None
+):
+    """Run a streaming chat completion and measure TTFT / output speed."""
+    t0 = time.perf_counter()
+    stream = await client.chat.completions.create(
+        messages=messages,
+        model=model,
+        timeout=timeout,
+        stream=True,
+        stream_options={"include_usage": True},
+        **(extra or {}),
+    )
+    content_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    usage = None
+    t_first = t_last = None
+    t_first_content = t_last_content = None
+    n_deltas = n_content_deltas = 0
+    try:
+        async for chunk in stream:
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage is not None:
+                usage = chunk_usage
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if delta is None:
+                continue
+            text = delta.content if isinstance(delta.content, str) else None
+            reasoning = _reasoning_text(delta)
+            if not text and not reasoning:
+                continue
+            now = time.perf_counter()
+            if t_first is None:
+                t_first = now
+            t_last = now
+            n_deltas += 1
+            if text:
+                if t_first_content is None:
+                    t_first_content = now
+                t_last_content = now
+                n_content_deltas += 1
+                content_parts.append(text)
+            if reasoning:
+                reasoning_parts.append(reasoning)
+    finally:
+        close = getattr(stream, "close", None)
+        if close is not None:
+            await close()
+    t_end = time.perf_counter()
+
+    reasoning_text = "".join(reasoning_parts)
+    window = (t_first, t_last)
+    if usage is not None:
+        n_out = _int_attr(usage, "completion_tokens")
+        reasoning_tokens = _int_attr(
+            getattr(usage, "completion_tokens_details", None), "reasoning_tokens"
+        )
+        streamed_reasoning_tokens = len(reasoning_text) / _CHARS_PER_TOKEN
+        reasoning_was_live = (
+            streamed_reasoning_tokens
+            >= _LIVE_REASONING_MIN_FRACTION * reasoning_tokens
+        )
+        if reasoning_tokens and not reasoning_was_live:
+            # Reasoning was hidden or summarized: it was generated before the
+            # first chunk, so only the answer content is in the stream window.
+            n_out = max(0, n_out - reasoning_tokens)
+            window = (t_first_content, t_last_content)
+    else:
+        n_out = n_deltas
+
+    output_tps = 0.0
+    w_start, w_end = window
+    if w_start is not None and w_end > w_start and n_out >= 2:
+        output_tps = (n_out - 1) / (w_end - w_start)
+
+    return StreamResult(
+        content="".join(content_parts),
+        reasoning=reasoning_text,
+        usage=usage,
+        ttft=(t_first - t0) if t_first is not None else 0.0,
+        output_tps=output_tps,
+        duration=t_end - t0,
+        usage_estimated=usage is None,
+        estimated_output_tokens=n_deltas,
+    )
+
+
 class InferenceMixin:
     def _extract_modality_tokens(self, usage) -> dict:
+        """Per-modality token counts from a usage object.
+
+        Reads the legacy top-level fields some backends return, falling back to
+        the OpenAI `prompt_tokens_details` / `completion_tokens_details` shape.
+        """
+        prompt_details = getattr(usage, "prompt_tokens_details", None)
+        completion_details = getattr(usage, "completion_tokens_details", None)
         return {
-            "image": getattr(usage, "image_tokens", 0) or 0,
-            "input_audio": getattr(usage, "input_audio_tokens", 0) or 0,
-            "output_audio": getattr(usage, "output_audio_tokens", 0) or 0,
-            "video": getattr(usage, "video_tokens", 0) or 0,
-            "cached": getattr(usage, "cached_tokens", 0) or 0,
+            "image": _int_attr(usage, "image_tokens"),
+            "input_audio": _int_attr(usage, "input_audio_tokens")
+            or _int_attr(prompt_details, "audio_tokens"),
+            "output_audio": _int_attr(usage, "output_audio_tokens")
+            or _int_attr(completion_details, "audio_tokens"),
+            "video": _int_attr(usage, "video_tokens"),
+            "cached": _int_attr(usage, "cached_tokens")
+            or _int_attr(prompt_details, "cached_tokens"),
+            "reasoning": _int_attr(usage, "reasoning_tokens")
+            or _int_attr(completion_details, "reasoning_tokens"),
         }
 
     async def answer_test_item(
@@ -61,8 +289,6 @@ class InferenceMixin:
         context: grpc.aio.ServicerContext,
         include_reasoning: bool = False,
     ) -> service_pb2.TestRunAnswer:
-        task_start_time = time.perf_counter()
-
         backend_type = service_pb2.BackendType.Name(backend.backend_type).lower()
 
         answer_pb = service_pb2.TestRunAnswer()
@@ -90,12 +316,19 @@ class InferenceMixin:
             else:
                 answer_pb.attachment_type = service_pb2.FileModality.TEXT
 
+            debug_start = time.perf_counter()
             await asyncio.sleep(random.random())
+            debug_duration = time.perf_counter() - debug_start
+            answer_pb.task_duration = debug_duration
+            answer_pb.ttft = debug_duration * 0.25
+            if debug_duration > 0:
+                answer_pb.output_tps = 99 / (debug_duration * 0.75)
             answer_pb.input_tokens = 500
             answer_pb.output_tokens = 100
             answer_pb.input_cost = 0.0
             answer_pb.output_cost = 0.0
             answer_pb.raw_response = answer_pb.answer
+            answer_pb.status = service_pb2.TestRunAnswer.OK
 
         else:
             chat_messages = []
@@ -124,24 +357,9 @@ class InferenceMixin:
                 )
                 answer_pb.has_attachment = True
                 answer_pb.attachment_type = attachment_pb.modality
-                attachment_type = attachment_pb.mime.split("/")[0]
-                if attachment_type in ["image", "video", "audio"]:
-                    base64_attachment = base64.b64encode(attachment_pb.file).decode(
-                        "utf-8"
-                    )
-                    chat_messages.append(
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": f"{attachment_type}_url",
-                                    "image_url": {
-                                        "url": f"data:{attachment_pb.mime};base64,{base64_attachment}"
-                                    },
-                                },
-                            ],
-                        }
-                    )
+                content_part = _attachment_content_part(attachment_pb)
+                if content_part is not None:
+                    chat_messages.append({"role": "user", "content": [content_part]})
             else:
                 answer_pb.has_attachment = False
                 answer_pb.attachment_type = service_pb2.FileModality.TEXT
@@ -149,159 +367,183 @@ class InferenceMixin:
             resources = await get_backend_resources(backend)
             request_timeout = resources.request_timeout
 
+            reasoning_params = _reasoning_request_params(
+                backend_type, include_reasoning
+            )
+            request_start = time.perf_counter()
+            result = None
             try:
-                model_response_task_result = await asyncio.wait_for(
-                    resources.client.chat.completions.create(
-                        messages=chat_messages,
-                        model=model_pb.id,
-                        timeout=request_timeout,
-                    ),
-                    timeout=request_timeout + 10.0,
+                try:
+                    result = await asyncio.wait_for(
+                        _stream_completion(
+                            resources.client,
+                            chat_messages,
+                            model_pb.id,
+                            request_timeout,
+                            reasoning_params,
+                        ),
+                        timeout=request_timeout + 10.0,
+                    )
+                except BadRequestError as e:
+                    if not reasoning_params:
+                        raise
+                    # Non-reasoning models may reject reasoning params (e.g.
+                    # OpenAI gpt-4.1 with reasoning_effort): retry without.
+                    logging.info(
+                        f"[{model_pb.id}] reasoning params rejected, retrying "
+                        f"without: {e}"
+                    )
+                    result = await asyncio.wait_for(
+                        _stream_completion(
+                            resources.client,
+                            chat_messages,
+                            model_pb.id,
+                            request_timeout,
+                        ),
+                        timeout=request_timeout + 10.0,
+                    )
+                raw_answer = result.content
+                answer_pb.status = service_pb2.TestRunAnswer.OK
+                answer_pb.raw_response = raw_answer
+                logging.debug(f"[{model_pb.id}] raw={raw_answer!r:.200}")
+                answer_pb.ttft = result.ttft
+                answer_pb.output_tps = result.output_tps
+                answer_pb.usage_estimated = result.usage_estimated
+
+                # Reasoning: streamed separately, or inline <think> in content.
+                think_match = re.search(
+                    r"<think>(.*?)</think>",
+                    raw_answer,
+                    flags=re.DOTALL | re.IGNORECASE,
                 )
-                if (
-                    model_response_task_result.choices
-                    and len(model_response_task_result.choices) > 0
-                ):
-                    _msg = model_response_task_result.choices[0].message
-                    raw_answer = _msg.content
-                    _extra = getattr(_msg, "model_extra", None) or {}
-                    _thinking = None
-                    for _field in ("reasoning_content", "thinking", "reasoning"):
-                        _val = getattr(_msg, _field, None)
-                        if not isinstance(_val, str):
-                            _val = _extra.get(_field)
-                        if isinstance(_val, str) and _val:
-                            _thinking = _val
-                            break
-                    if _thinking:
-                        answer_pb.raw_response = (
-                            f"<think>\n{_thinking}\n</think>\n{raw_answer or ''}"
-                        )
-                    else:
-                        answer_pb.raw_response = raw_answer or ""
-                    logging.debug(f"[{model_pb.id}] raw={raw_answer!r:.200}")
+                if result.reasoning:
+                    answer_pb.reasoning = result.reasoning.strip()
+                elif think_match:
+                    answer_pb.reasoning = think_match.group(1).strip()
+                validated_answer = await self._validate_answer(
+                    raw_answer=raw_answer,
+                    choices=item_pb.choices,
+                )
+                answer_pb.answer = validated_answer
+                answer_pb.is_correct = (
+                    True if item_pb.answer == validated_answer else False
+                )
 
-                    # Extract <think>...</think> block
-                    think_match = re.search(
-                        r"<think>(.*?)</think>",
-                        raw_answer,
-                        flags=re.DOTALL | re.IGNORECASE,
-                    )
-                    if think_match:
-                        answer_pb.reasoning = think_match.group(1).strip()
-                    validated_answer = await self._validate_answer(
-                        raw_answer=raw_answer,
-                        choices=item_pb.choices,
-                    )
-                    answer_pb.answer = validated_answer
-                    answer_pb.is_correct = (
-                        True if item_pb.answer == validated_answer else False
-                    )
+                usage = result.usage
+                if usage is not None:
+                    input_tokens = _int_attr(usage, "prompt_tokens")
+                    output_tokens = _int_attr(usage, "completion_tokens")
+                else:
+                    input_tokens = 0
+                    output_tokens = result.estimated_output_tokens
 
-                    input_tokens = model_response_task_result.usage.prompt_tokens
-                    output_tokens = model_response_task_result.usage.completion_tokens
+                modality_tokens = self._extract_modality_tokens(usage)
+                answer_pb.reasoning_tokens = modality_tokens["reasoning"]
 
-                    modality_tokens = self._extract_modality_tokens(
-                        model_response_task_result.usage
-                    )
+                total_modality_input = (
+                    modality_tokens["image"]
+                    + modality_tokens["input_audio"]
+                    + modality_tokens["video"]
+                )
+                base_prompt_tokens = max(0, input_tokens - total_modality_input)
 
-                    total_modality_input = (
-                        modality_tokens["image"]
-                        + modality_tokens["input_audio"]
-                        + modality_tokens["video"]
-                    )
-                    base_prompt_tokens = max(0, input_tokens - total_modality_input)
+                input_cost = base_prompt_tokens * model_pb.pricing.input_token_cost
+                image_cost = (
+                    modality_tokens["image"] * model_pb.pricing.image_token_cost
+                )
+                input_audio_cost = (
+                    modality_tokens["input_audio"]
+                    * model_pb.pricing.audio_token_cost
+                )
+                output_audio_cost = (
+                    modality_tokens["output_audio"]
+                    * model_pb.pricing.audio_token_cost
+                )
+                output_cost = output_tokens * model_pb.pricing.output_token_cost
 
-                    input_cost = base_prompt_tokens * model_pb.pricing.input_token_cost
-                    image_cost = (
-                        modality_tokens["image"] * model_pb.pricing.image_token_cost
-                    )
-                    input_audio_cost = (
-                        modality_tokens["input_audio"]
-                        * model_pb.pricing.audio_token_cost
-                    )
-                    output_audio_cost = (
-                        modality_tokens["output_audio"]
-                        * model_pb.pricing.audio_token_cost
-                    )
-                    output_cost = output_tokens * model_pb.pricing.output_token_cost
+                answer_pb.input_tokens = input_tokens
+                answer_pb.output_tokens = output_tokens
+                if backend_type == "openrouter":
+                    _or_cost = getattr(usage, "cost", None) or (
+                        getattr(usage, "model_extra", None) or {}
+                    ).get("cost")
 
-                    answer_pb.input_tokens = input_tokens
-                    answer_pb.output_tokens = output_tokens
-                    if backend_type == "openrouter":
-                        _usage = model_response_task_result.usage
-                        _or_cost = getattr(_usage, "cost", None) or (
-                            _usage.model_extra or {}
-                        ).get("cost")
-
-                        if _or_cost:
-                            answer_pb.input_cost = float(_or_cost)
-                            answer_pb.output_cost = 0.0
-                        else:
-                            answer_pb.input_cost = (
-                                input_cost + image_cost + input_audio_cost
-                            )
-                            answer_pb.output_cost = output_cost + output_audio_cost
+                    if _or_cost:
+                        answer_pb.input_cost = float(_or_cost)
+                        answer_pb.output_cost = 0.0
                     else:
                         answer_pb.input_cost = (
                             input_cost + image_cost + input_audio_cost
                         )
                         answer_pb.output_cost = output_cost + output_audio_cost
+                else:
+                    answer_pb.input_cost = (
+                        input_cost + image_cost + input_audio_cost
+                    )
+                    answer_pb.output_cost = output_cost + output_audio_cost
 
             except asyncio.TimeoutError:
                 logging.warning(
                     f"Inference timeout for model {model_pb.id}, item {item_pb.id}"
                 )
-                answer_pb.reasoning = "Request timeout - inference took too long"
-                answer_pb.answer = ""
-                answer_pb.raw_response = "[TIMEOUT] Inference request timed out"
+                answer_pb.status = service_pb2.TestRunAnswer.TIMEOUT
+                answer_pb.error = "Inference request timed out"
 
             except asyncio.CancelledError:
                 logging.info(
                     f"Inference cancelled for model {model_pb.id}, item {item_pb.id}"
                 )
-                answer_pb.reasoning = "Request cancelled by user"
-                answer_pb.answer = ""
-                answer_pb.raw_response = "[CANCELLED] Request cancelled by user"
+                answer_pb.status = service_pb2.TestRunAnswer.CANCELLED
+                answer_pb.error = "Request cancelled by user"
                 raise
 
             except BadRequestError as e:
+                answer_pb.status = service_pb2.TestRunAnswer.BAD_REQUEST
                 if attachment_pb:
-                    refusal_reason = f"[BAD_REQUEST] Unable to handle attachment type: {attachment_pb.mime}"
-                    answer_pb.reasoning = refusal_reason
+                    answer_pb.error = (
+                        f"Unable to handle attachment type {attachment_pb.mime}: {e}"
+                    )
                 else:
-                    refusal_reason = f"[BAD_REQUEST] {e}"
-                    answer_pb.reasoning = str(e)
-                answer_pb.answer = ""
-                answer_pb.raw_response = refusal_reason
+                    answer_pb.error = str(e)
 
             except APIConnectionError as e:
                 logging.warning(
                     f"Connection error for model {model_pb.id}, item {item_pb.id}: {e}"
                 )
-                answer_pb.reasoning = f"Connection error: {e}"
-                answer_pb.answer = ""
-                answer_pb.raw_response = f"[CONNECTION_ERROR] {e}"
+                answer_pb.status = service_pb2.TestRunAnswer.CONNECTION_ERROR
+                answer_pb.error = f"Connection error: {e}"
 
             except Exception as e:
                 logging.error(e)
-                answer_pb.reasoning = f"Unexpected error: {e}"
-                answer_pb.answer = ""
-                answer_pb.raw_response = f"[ERROR] {e}"
+                answer_pb.status = service_pb2.TestRunAnswer.ERROR
+                answer_pb.error = f"Unexpected error: {e}"
 
-            if include_reasoning and not answer_pb.reasoning:
-                reasoning_messages = [
+            answer_pb.task_duration = (
+                result.duration
+                if result is not None
+                else time.perf_counter() - request_start
+            )
+
+            # Models that returned no reasoning of their own are asked to
+            # justify their answer in a separate, non-streamed follow-up call.
+            # It doesn't affect the primary request's timings.
+            if (
+                include_reasoning
+                and answer_pb.status == service_pb2.TestRunAnswer.OK
+                and not answer_pb.reasoning
+            ):
+                justification_messages = [
                     msg
                     for msg in chat_messages
                     if not isinstance(msg.get("content"), list)
                 ]
-                reasoning_messages.append(
+                justification_messages.append(
                     {
                         "role": "assistant",
                         "content": answer_pb.answer,
                     }
                 )
-                reasoning_messages.append(
+                justification_messages.append(
                     {
                         "role": "user",
                         "content": "Provide reasoning to justify and explain your last response. Be concised, focused, and accurate in responding.",
@@ -309,59 +551,61 @@ class InferenceMixin:
                 )
 
                 try:
-                    reasoning_result = await asyncio.wait_for(
+                    justification_result = await asyncio.wait_for(
                         resources.client.chat.completions.create(
-                            messages=reasoning_messages,
+                            messages=justification_messages,
                             model=model_pb.id,
                             timeout=request_timeout,
                         ),
                         timeout=request_timeout + 10.0,
                     )
-                    if reasoning_result.choices and len(reasoning_result.choices) > 0:
-                        reasoning_text = reasoning_result.choices[0].message.content
-                        answer_pb.reasoning = reasoning_text
+                    if justification_result.choices and len(justification_result.choices) > 0:
+                        justification_text = justification_result.choices[
+                            0
+                        ].message.content
+                        answer_pb.justification = justification_text or ""
 
-                        reasoning_input_tokens = reasoning_result.usage.prompt_tokens
-                        reasoning_output_tokens = (
-                            reasoning_result.usage.completion_tokens
-                        )
-
-                        reasoning_modality = self._extract_modality_tokens(
-                            reasoning_result.usage
+                        justification_input_tokens = justification_result.usage.prompt_tokens
+                        justification_output_tokens = (
+                            justification_result.usage.completion_tokens
                         )
 
-                        reasoning_modality_input = (
-                            reasoning_modality["image"]
-                            + reasoning_modality["input_audio"]
-                            + reasoning_modality["video"]
-                        )
-                        reasoning_base_tokens = max(
-                            0, reasoning_input_tokens - reasoning_modality_input
+                        justification_modality = self._extract_modality_tokens(
+                            justification_result.usage
                         )
 
-                        reasoning_input_cost = (
-                            reasoning_base_tokens * model_pb.pricing.input_token_cost
+                        justification_modality_input = (
+                            justification_modality["image"]
+                            + justification_modality["input_audio"]
+                            + justification_modality["video"]
                         )
-                        reasoning_image_cost = (
-                            reasoning_modality["image"]
+                        justification_base_tokens = max(
+                            0, justification_input_tokens - justification_modality_input
+                        )
+
+                        justification_input_cost = (
+                            justification_base_tokens * model_pb.pricing.input_token_cost
+                        )
+                        justification_image_cost = (
+                            justification_modality["image"]
                             * model_pb.pricing.image_token_cost
                         )
-                        reasoning_input_audio_cost = (
-                            reasoning_modality["input_audio"]
+                        justification_input_audio_cost = (
+                            justification_modality["input_audio"]
                             * model_pb.pricing.audio_token_cost
                         )
-                        reasoning_output_audio_cost = (
-                            reasoning_modality["output_audio"]
+                        justification_output_audio_cost = (
+                            justification_modality["output_audio"]
                             * model_pb.pricing.audio_token_cost
                         )
-                        reasoning_output_cost = (
-                            reasoning_output_tokens * model_pb.pricing.output_token_cost
+                        justification_output_cost = (
+                            justification_output_tokens * model_pb.pricing.output_token_cost
                         )
 
-                        answer_pb.input_tokens += reasoning_input_tokens
-                        answer_pb.output_tokens += reasoning_output_tokens
+                        answer_pb.input_tokens += justification_input_tokens
+                        answer_pb.output_tokens += justification_output_tokens
                         if backend_type == "openrouter":
-                            _r_usage = reasoning_result.usage
+                            _r_usage = justification_result.usage
                             _r_or_cost = getattr(_r_usage, "cost", None) or (
                                 _r_usage.model_extra or {}
                             ).get("cost")
@@ -369,48 +613,46 @@ class InferenceMixin:
                                 answer_pb.input_cost += float(_r_or_cost)
                             else:
                                 answer_pb.input_cost += (
-                                    reasoning_input_cost
-                                    + reasoning_image_cost
-                                    + reasoning_input_audio_cost
+                                    justification_input_cost
+                                    + justification_image_cost
+                                    + justification_input_audio_cost
                                 )
                                 answer_pb.output_cost += (
-                                    reasoning_output_cost + reasoning_output_audio_cost
+                                    justification_output_cost + justification_output_audio_cost
                                 )
                         else:
                             answer_pb.input_cost += (
-                                reasoning_input_cost
-                                + reasoning_image_cost
-                                + reasoning_input_audio_cost
+                                justification_input_cost
+                                + justification_image_cost
+                                + justification_input_audio_cost
                             )
                             answer_pb.output_cost += (
-                                reasoning_output_cost + reasoning_output_audio_cost
+                                justification_output_cost + justification_output_audio_cost
                             )
 
                 except asyncio.TimeoutError:
                     logging.warning(
-                        f"Reasoning timeout for model {model_pb.id}, item {item_pb.id}"
+                        f"Justification timeout for model {model_pb.id}, item {item_pb.id}"
                     )
-                    answer_pb.reasoning = "Reasoning request timeout"
+                    answer_pb.error = "Justification request timed out"
 
                 except asyncio.CancelledError:
                     logging.info(
-                        f"Reasoning cancelled for model {model_pb.id}, item {item_pb.id}"
+                        f"Justification cancelled for model {model_pb.id}, item {item_pb.id}"
                     )
-                    answer_pb.reasoning = "Reasoning request cancelled"
+                    answer_pb.error = "Justification request cancelled"
                     raise
 
                 except APIConnectionError as e:
                     logging.warning(
-                        f"Reasoning connection error for model {model_pb.id}, "
+                        f"Justification connection error for model {model_pb.id}, "
                         f"item {item_pb.id}: {e}"
                     )
-                    answer_pb.reasoning = f"Reasoning connection error: {e}"
+                    answer_pb.error = f"Justification connection error: {e}"
 
                 except Exception as e:
                     logging.error(traceback.format_exc())
-                    logging.error(f"MPAC inference failed: {e}")
-
-        task_end_time = time.perf_counter()
-        answer_pb.task_duration = task_end_time - task_start_time
+                    logging.error(f"MPAC justification failed: {e}")
+                    answer_pb.error = f"Justification failed: {e}"
 
         return answer_pb
