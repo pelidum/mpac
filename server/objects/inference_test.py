@@ -579,6 +579,77 @@ class TestStreamingInference:
         assert result.ttft == 0.0
 
 
+class _ErrorStream(_FakeStream):
+    def __init__(self, chunks, body):
+        super().__init__(chunks)
+        self._body = body
+
+    async def __aiter__(self):
+        async for c in super().__aiter__():
+            yield c
+        from openai import APIError
+
+        raise APIError(self._body["message"], mock.MagicMock(), body=self._body)
+
+
+_DECODE_ERROR = {
+    "code": 500,
+    "message": "failed to decode, ret = 1",
+    "type": "server_error",
+}
+
+
+class TestInStreamServerErrorRetry:
+    def _answer(self, monkeypatch, streams):
+        fake = _FakeResources()
+        calls = []
+
+        async def _create(*args, **kwargs):
+            calls.append(kwargs)
+            return streams[len(calls) - 1]
+
+        fake.client.chat.completions.create = _create
+
+        async def _get(_backend):
+            return fake
+
+        monkeypatch.setattr(inference_module, "get_backend_resources", _get)
+        monkeypatch.setattr(inference_module, "_STREAM_SERVER_ERROR_BACKOFF", 0.0)
+        result = _run(
+            _StubInference().answer_test_item(
+                _make_item(choices=["A", "B"], answer="A"),
+                "run-1",
+                _make_model("some/model"),
+                _LOCAL_BACKEND,
+                None,
+            )
+        )
+        return result, calls
+
+    def test_decode_error_is_retried(self, monkeypatch):
+        failed = _ErrorStream([_chunk(content="B")], _DECODE_ERROR)
+        ok = _FakeStream([_chunk(content="A"), _usage_chunk(_usage(10, 1))])
+        result, calls = self._answer(monkeypatch, [failed, ok])
+        assert len(calls) == 2
+        assert failed.closed
+        assert result.status == service_pb2.TestRunAnswer.OK
+        assert result.raw_response == "A"
+
+    def test_gives_up_after_retries(self, monkeypatch):
+        streams = [_ErrorStream([], _DECODE_ERROR) for _ in range(5)]
+        result, calls = self._answer(monkeypatch, streams)
+        assert len(calls) == 1 + inference_module._STREAM_SERVER_ERROR_RETRIES
+        assert result.status == service_pb2.TestRunAnswer.ERROR
+        assert "failed to decode" in result.error
+
+    def test_non_server_error_not_retried(self, monkeypatch):
+        body = {"message": "content filtered", "type": "invalid_request_error"}
+        streams = [_ErrorStream([], body) for _ in range(3)]
+        result, calls = self._answer(monkeypatch, streams)
+        assert len(calls) == 1
+        assert result.status == service_pb2.TestRunAnswer.ERROR
+
+
 # ---------------------------------------------------------------------------
 # Native reasoning: request params, extraction, TPS on summarized reasoning
 # ---------------------------------------------------------------------------

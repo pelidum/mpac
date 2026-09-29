@@ -10,7 +10,7 @@ import uuid
 import grpc
 
 from absl import logging
-from openai import APIConnectionError, BadRequestError
+from openai import APIConnectionError, APIError, APIStatusError, BadRequestError
 
 from server import service_pb2
 from server.objects.backend_pool import get_backend_resources
@@ -257,6 +257,39 @@ async def _stream_completion(
     )
 
 
+_STREAM_SERVER_ERROR_RETRIES = 2
+_STREAM_SERVER_ERROR_BACKOFF = 0.5
+
+
+def _is_in_stream_server_error(e: Exception) -> bool:
+    if not isinstance(e, APIError) or isinstance(
+        e, (APIStatusError, APIConnectionError)
+    ):
+        return False
+    body = e.body if isinstance(e.body, dict) else {}
+    code = body.get("code")
+    return body.get("type") == "server_error" or (isinstance(code, int) and code >= 500)
+
+
+async def _stream_completion_with_retry(
+    client, messages, model: str, timeout: float, extra: dict | None = None
+):
+    for attempt in range(_STREAM_SERVER_ERROR_RETRIES + 1):
+        try:
+            return await _stream_completion(client, messages, model, timeout, extra)
+        except APIError as e:
+            if (
+                not _is_in_stream_server_error(e)
+                or attempt == _STREAM_SERVER_ERROR_RETRIES
+            ):
+                raise
+            logging.warning(
+                f"[{model}] in-stream server error, retrying "
+                f"({attempt + 1}/{_STREAM_SERVER_ERROR_RETRIES}): {e}"
+            )
+            await asyncio.sleep(_STREAM_SERVER_ERROR_BACKOFF * 2**attempt)
+
+
 class InferenceMixin:
     def _extract_modality_tokens(self, usage) -> dict:
         """Per-modality token counts from a usage object.
@@ -374,7 +407,7 @@ class InferenceMixin:
             try:
                 try:
                     result = await asyncio.wait_for(
-                        _stream_completion(
+                        _stream_completion_with_retry(
                             resources.client,
                             chat_messages,
                             model_pb.id,
@@ -393,7 +426,7 @@ class InferenceMixin:
                         f"without: {e}"
                     )
                     result = await asyncio.wait_for(
-                        _stream_completion(
+                        _stream_completion_with_retry(
                             resources.client,
                             chat_messages,
                             model_pb.id,
