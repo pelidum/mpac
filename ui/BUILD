@@ -80,6 +80,7 @@ py_library(
     name = "routers",
     srcs = glob(["routers/*.py"]),
     deps = [
+        "//server/objects:answer_status",
         ":auth_lib",
         ":dependencies",
         ":grpc_client",

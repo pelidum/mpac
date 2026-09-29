@@ -11,6 +11,7 @@ from google.protobuf import timestamp_pb2
 from sklearn.metrics import precision_score, recall_score, f1_score
 
 from server import service_pb2
+from server.objects.answer_status import answer_status, is_request_success
 from server.objects.backend_pool import get_backend_resources
 
 _CANCEL_EVENTS: dict = {}
@@ -24,6 +25,42 @@ _COST_FLUSH_INTERVAL_S = 30
 _HEARTBEAT_INTERVAL_S = 30
 _HEARTBEAT_STALE_S = 120
 _CONN_ERROR_BREAKER_THRESHOLD = 5
+
+
+def _percentiles(values: list) -> tuple[float, float, float]:
+    """Return (p50, p95, p99) of `values`, or zeros when empty."""
+    if not values:
+        return 0.0, 0.0, 0.0
+    if len(values) < 2:
+        return values[0], values[0], values[0]
+    return (
+        statistics.median(values),
+        statistics.quantiles(values, n=20)[18],
+        statistics.quantiles(values, n=100)[98],
+    )
+
+
+def _apply_performance_metrics(metrics_pb, model_answers: list) -> None:
+    """Fill TTFT, output TPS and latency percentiles over successful requests.
+
+    Failed requests (timeouts, errors, capacity, skipped) still count toward
+    refusal/error rates but are excluded here.
+
+    Zero values mean "not measured" (e.g. answers written before streaming
+    inference) and are skipped rather than dragging percentiles down.
+    """
+    ok = [a for a in model_answers if is_request_success(a)]
+    (
+        metrics_pb.median_task_duration,
+        metrics_pb.task_duration_p95,
+        metrics_pb.task_duration_p99,
+    ) = _percentiles([a.task_duration for a in ok if a.task_duration > 0])
+    ttfts = [a.ttft for a in ok if a.ttft > 0]
+    metrics_pb.ttft_p50, metrics_pb.ttft_p95, metrics_pb.ttft_p99 = _percentiles(ttfts)
+    tps_p50, tps_p95, _ = _percentiles([a.output_tps for a in ok if a.output_tps > 0])
+    metrics_pb.output_tps_p50 = tps_p50
+    metrics_pb.output_tps_p95 = tps_p95
+    metrics_pb.streamed = bool(ttfts)
 
 
 def _responder_key(model_pb) -> str:
@@ -212,6 +249,9 @@ class RunsMixin:
         cancellation rather than context.cancelled().
         """
         _backend_cache: dict[str, service_pb2.Backend] = {}
+        # answer id -> perf_counter when its request finished, recorded before
+        # any TPM rate-limit sleep so throughput wall time excludes that wait.
+        _answer_done_at: dict[str, float] = {}
 
         async def _get_backend(backend_id: str) -> service_pb2.Backend:
             if backend_id not in _backend_cache:
@@ -240,6 +280,7 @@ class RunsMixin:
                         context=None,
                         include_reasoning=request.include_reasoning,
                     )
+                _answer_done_at[answer_pb.id] = time.perf_counter()
                 total_tokens = answer_pb.input_tokens + answer_pb.output_tokens
                 if total_tokens > 0:
                     within_limit = await self.record_and_check_tpm(
@@ -279,10 +320,10 @@ class RunsMixin:
                 failed_pb.item_id = sample_pb.id
                 failed_pb.model_id = model_pb.id
                 failed_pb.responder_id = _responder_key(model_pb)
-                failed_pb.reasoning = (
+                failed_pb.status = service_pb2.TestRunAnswer.CAPACITY
+                failed_pb.error = (
                     "Backend at capacity - request waited too long for a slot"
                 )
-                failed_pb.raw_response = "[CAPACITY] Backend at capacity - request waited too long for a slot"
                 return failed_pb
 
         _run_cost = 0.0
@@ -338,6 +379,7 @@ class RunsMixin:
                         a = service_pb2.TestRunAnswer()
                         a.ParseFromString(pr["proto_bytes"])
                         model_answers.append(a)
+                prior_answer_count = len(model_answers)
                 model_start_time = time.perf_counter()
                 model_start_pb = timestamp_pb2.Timestamp()
                 model_start_pb.GetCurrentTime()
@@ -362,14 +404,21 @@ class RunsMixin:
                         overwrite=False,
                     )
 
-                    answer_complete_time = time.perf_counter()
+                    answer_complete_time = _answer_done_at.pop(
+                        answer_pb.id, time.perf_counter()
+                    )
                     if not last_answer_time:
                         startup_latency = answer_complete_time - model_start_time
-                    last_answer_time = answer_complete_time
+                    last_answer_time = max(
+                        last_answer_time or 0.0, answer_complete_time
+                    )
                     model_answers.append(answer_pb)
                     answered_item_ids.add(answer_pb.item_id)
 
-                    if answer_pb.raw_response.startswith("[CONNECTION_ERROR]"):
+                    if (
+                        answer_status(answer_pb)
+                        == service_pb2.TestRunAnswer.CONNECTION_ERROR
+                    ):
                         consecutive_conn_errors += 1
                         if consecutive_conn_errors >= _CONN_ERROR_BREAKER_THRESHOLD:
                             breaker_tripped = True
@@ -429,12 +478,10 @@ class RunsMixin:
                         skipped_pb.item_id = sample_pb.id
                         skipped_pb.model_id = model_pb.id
                         skipped_pb.responder_id = responder_key
-                        skipped_pb.reasoning = (
+                        skipped_pb.status = service_pb2.TestRunAnswer.SKIPPED
+                        skipped_pb.error = (
                             "Skipped - backend unreachable (circuit breaker open "
                             "after repeated connection errors)"
-                        )
-                        skipped_pb.raw_response = (
-                            "[SKIPPED] Backend unreachable - circuit breaker open"
                         )
                         await self._grpc_create(
                             id=skipped_pb.id,
@@ -484,42 +531,15 @@ class RunsMixin:
                             modality_correct / modality_total
                         )
 
-                task_durations = [x.task_duration for x in model_answers]
-                median_task_duration = (
-                    statistics.median(task_durations) if task_durations else 0.0
-                )
-                if len(task_durations) >= 2:
-                    p95_quants = statistics.quantiles(task_durations, n=20)
-                    task_duration_p95 = p95_quants[18]
-                else:
-                    task_duration_p95 = task_durations[0] if task_durations else 0.0
-                if len(task_durations) >= 2:
-                    p99_quants = statistics.quantiles(task_durations, n=100)
-                    task_duration_p99 = p99_quants[98]
-                else:
-                    task_duration_p99 = task_durations[0] if task_durations else 0.0
-
-                per_answer_tps = [
-                    x.output_tokens / x.task_duration
-                    for x in model_answers
-                    if x.output_tokens > 0 and x.task_duration > 0
-                ]
-                if per_answer_tps:
-                    output_tps_p50 = statistics.median(per_answer_tps)
-                    if len(per_answer_tps) >= 2:
-                        tps_quants = statistics.quantiles(per_answer_tps, n=20)
-                        output_tps_p95 = tps_quants[18]
-                    else:
-                        output_tps_p95 = per_answer_tps[0]
-                else:
-                    output_tps_p50 = 0.0
-                    output_tps_p95 = 0.0
-
                 model_wall_time = (
                     (last_answer_time - model_start_time) if last_answer_time else 0.0
                 )
+                # Only answers produced in this session: resumed answers' time
+                # is not part of model_wall_time.
                 total_output_tokens_for_model = sum(
-                    x.output_tokens for x in model_answers if x.output_tokens > 0
+                    x.output_tokens
+                    for x in model_answers[prior_answer_count:]
+                    if x.output_tokens > 0
                 )
                 output_tpm = (
                     int(total_output_tokens_for_model / model_wall_time * 60)
@@ -557,11 +577,7 @@ class RunsMixin:
                     num_refusals / actual_sample_size if actual_sample_size else 0.0
                 )
                 metrics_pb.tokens_per_minute = output_tpm
-                metrics_pb.median_task_duration = median_task_duration
-                metrics_pb.task_duration_p95 = task_duration_p95
-                metrics_pb.task_duration_p99 = task_duration_p99
-                metrics_pb.output_tps_p50 = output_tps_p50
-                metrics_pb.output_tps_p95 = output_tps_p95
+                _apply_performance_metrics(metrics_pb, model_answers)
                 metrics_pb.startup_latency = startup_latency or 0.0
                 metrics_pb.modality_scores.update(attachment_metrics)
                 metrics_pb.total_cost_usd = model_total_cost
@@ -765,6 +781,7 @@ class RunsMixin:
                 metrics_pb.num_refusals_errors = len(
                     [a for a in model_answers if not a.answer]
                 )
+                _apply_performance_metrics(metrics_pb, model_answers)
                 metrics_pb.precision = precision_score(
                     y_true=ground_truth,
                     y_pred=responder_answers,

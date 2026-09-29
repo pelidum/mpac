@@ -183,6 +183,10 @@ FIELD_SNAPSHOT: dict[str, dict[str, int]] = {
         "completed_at_utc": 16,
         "total_cost_usd": 17,
         "total_tokens": 18,
+        "ttft_p50": 28,
+        "ttft_p95": 29,
+        "ttft_p99": 30,
+        "streamed": 31,
     },
     "pelidum.services.grpc.mpac.TestRunAnswer": {
         "id": 1,
@@ -200,6 +204,13 @@ FIELD_SNAPSHOT: dict[str, dict[str, int]] = {
         "has_attachment": 13,
         "attachment_type": 14,
         "raw_response": 15,
+        "ttft": 17,
+        "output_tps": 18,
+        "reasoning_tokens": 19,
+        "usage_estimated": 20,
+        "justification": 21,
+        "status": 22,
+        "error": 23,
     },
     "pelidum.services.grpc.mpac.RunProgress": {
         "answer_counts": 1,
@@ -297,6 +308,17 @@ FIELD_SNAPSHOT: dict[str, dict[str, int]] = {
 # NEVER delete or change an existing entry — only append.
 # ---------------------------------------------------------------------------
 ENUM_SNAPSHOT: dict[str, dict[str, int]] = {
+    "pelidum.services.grpc.mpac.TestRunAnswer.Status": {
+        "STATUS_UNSPECIFIED": 0,
+        "OK": 1,
+        "TIMEOUT": 2,
+        "CANCELLED": 3,
+        "BAD_REQUEST": 4,
+        "CONNECTION_ERROR": 5,
+        "ERROR": 6,
+        "CAPACITY": 7,
+        "SKIPPED": 8,
+    },
     "pelidum.services.grpc.mpac.BackendType": {
         "BACKEND_TYPE_UNSPECIFIED": 0,
         "VLLM": 1,

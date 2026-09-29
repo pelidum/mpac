@@ -26,6 +26,7 @@ gRPC backend service for MPAC.
   - `tests.py` / `test_items.py` - test and test item CRUD
   - `runs.py` - test run lifecycle
   - `answers.py` - test run answer storage and retrieval
+  - `answer_status.py` - `TestRunAnswer.status` helpers; `normalize_answer` maps legacy answers (errors encoded as a `[TAG]` prefix in `raw_response`) to `status`/`error`. Read answers through it rather than parsing `raw_response`
   - `attachments.py` - file attachment CRUD with modality enum (Audio=1, Image=2, Video=3, Text=4)
   - `backends.py` - inference backend registration
   - `models.py` - model registry

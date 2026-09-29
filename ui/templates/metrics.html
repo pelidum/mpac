@@ -373,16 +373,17 @@
                     </div>
                 </div>
 
-                <!-- Minimum throughput filter -->
+                <!-- Minimum TPS filter -->
                 <div>
-                    <label class="block text-xs font-semibold mb-1 label-bold" for="throughput-min-input">
-                        Min throughput
-                        <span id="throughput-min-label" class="ml-1 font-normal">—</span>
+                    <label class="block text-xs font-semibold mb-1 label-bold" for="tps-min-input"
+                        title="Median output tokens/sec after the first token.">
+                        Min TPS
+                        <span id="tps-min-label" class="ml-1 font-normal">—</span>
                     </label>
-                    <input type="range" id="throughput-min-input" class="mdc-range" min="0" max="100" value="0"
+                    <input type="range" id="tps-min-input" class="mdc-range" min="0" max="100" value="0"
                         step="1">
                     <div class="flex justify-between text-[10px] muted mt-0.5">
-                        <span>0 tok/s</span><span id="throughput-max-label">—</span>
+                        <span>0 tok/s</span><span id="tps-max-label">—</span>
                     </div>
                 </div>
 
@@ -529,12 +530,13 @@
                         <th class="px-4 py-2.5 text-center">F1</th>
                         <th class="px-4 py-2.5 text-right">Responses</th>
                         <th class="px-4 py-2.5 text-right">Runs</th>
-                        <th class="px-4 py-2.5 text-right" title="Median per-stream output tokens/sec.">Output tok/s
-                        </th>
-                        <th class="px-4 py-2.5 text-right" title="Median end-to-end answer latency (seconds).">Latency
-                            p50</th>
                         <th class="px-4 py-2.5 text-right"
-                            title="Aggregate output tokens per second at this run's concurrency.">Throughput</th>
+                            title="Median time to first token (seconds): dispatch to first streamed token.">TTFT p50</th>
+                        <th class="px-4 py-2.5 text-right"
+                            title="Median output tokens/sec after the first token. Streamed runs only.">TPS p50</th>
+                        <th class="px-4 py-2.5 text-right"
+                            title="Median end-to-end request latency (seconds): dispatch to last token.">Latency
+                            p50</th>
                         <th class="px-4 py-2.5 text-right">Refusal</th>
                         <th class="px-4 py-2.5 text-right">$/resp</th>
                     </tr>
@@ -603,10 +605,11 @@
                 </div>
                 <div id="f1-chart" style="height:300px;"></div>
             </div>
-            <div class="card p-0 overflow-hidden" title="Median per-stream output tokens/sec across runs in window.">
+            <div class="card p-0 overflow-hidden"
+                title="Median output tokens/sec after the first token, across streamed runs in window. Excludes prefill.">
                 <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
                     <span class="material-icons text-[var(--color-accent-secondary)] text-[18px]">speed</span>
-                    <h3 class="text-sm font-semibold">Median Output tok/s</h3>
+                    <h3 class="text-sm font-semibold">TPS p50 (tok/s)</h3>
                 </div>
                 <div id="output-tps-chart" style="height:300px;"></div>
             </div>
@@ -617,7 +620,8 @@
                 </div>
                 <div id="refusal-chart" style="height:280px;"></div>
             </div>
-            <div class="card p-0 overflow-hidden" title="Median p50 of per-answer end-to-end latency across runs.">
+            <div class="card p-0 overflow-hidden"
+                title="Median p50 of end-to-end request latency (dispatch to last token) across runs.">
                 <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
                     <span class="material-icons text-[var(--color-accent-secondary)] text-[18px]">timer</span>
                     <h3 class="text-sm font-semibold">Latency p50 (s)</h3>
@@ -625,7 +629,7 @@
                 <div id="dur-chart" style="height:280px;"></div>
             </div>
             <div class="card p-0 overflow-hidden"
-                title="Median p95 of per-answer end-to-end latency across runs. Tail behaviour for SLO planning.">
+                title="Median p95 of end-to-end request latency across runs. Tail behaviour for SLO planning.">
                 <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
                     <span class="material-icons text-[var(--color-accent-secondary)] text-[18px]">trending_up</span>
                     <h3 class="text-sm font-semibold">Latency p95 (s)</h3>
@@ -633,20 +637,20 @@
                 <div id="lat-p95-chart" style="height:280px;"></div>
             </div>
             <div class="card p-0 overflow-hidden"
-                title="Median aggregate output tokens/sec across runs at each run's concurrency. Capacity, not per-stream speed.">
+                title="Median p50 time to first token (dispatch to first streamed token) across streamed runs.">
                 <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
-                    <span class="material-icons text-[var(--color-accent-secondary)] text-[18px]">bolt</span>
-                    <h3 class="text-sm font-semibold">Throughput (tok/s)</h3>
+                    <span class="material-icons text-[var(--color-accent-secondary)] text-[18px]">hourglass_top</span>
+                    <h3 class="text-sm font-semibold">TTFT p50 (s)</h3>
                 </div>
-                <div id="throughput-chart" style="height:280px;"></div>
+                <div id="ttft-chart" style="height:280px;"></div>
             </div>
             <div class="card p-0 overflow-hidden"
-                title="Median wall-clock time until the first answer in a run completed. Biased by concurrency, treat as a cold-start proxy, not true TTFT.">
+                title="Median p95 time to first token across streamed runs. Tail behaviour for SLO planning.">
                 <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
-                    <span class="material-icons text-[var(--color-accent-secondary)] text-[18px]">rocket_launch</span>
-                    <h3 class="text-sm font-semibold">First Response Latency (s)</h3>
+                    <span class="material-icons text-[var(--color-accent-secondary)] text-[18px]">trending_up</span>
+                    <h3 class="text-sm font-semibold">TTFT p95 (s)</h3>
                 </div>
-                <div id="first-response-chart" style="height:280px;"></div>
+                <div id="ttft-p95-chart" style="height:280px;"></div>
             </div>
             <div class="card p-0 overflow-hidden lg:col-span-2">
                 <div class="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
@@ -698,9 +702,9 @@
     /* Additional filter state */
     let minF1 = 0;
     const selectedModalities = new Set();
-    let minThroughput = 0;  // tok/s (median_throughput/60)
+    let minTps = 0;  // tok/s (median_output_tps)
     let minCost = 0;  // $/response
-    let maxThroughput = 0;  // computed from data
+    let maxTps = 0;  // computed from data
     let maxCost = 0;  // computed from data
 
     /* ── Theme helpers ────────────────────────────────────────── */
@@ -795,9 +799,9 @@
             </td>
             <td class="px-4 py-3 text-sm text-right muted">${fmtCompact(m.total_responses)}</td>
             <td class="px-4 py-3 text-sm text-right muted">${fmtNum(m.total_runs)}</td>
+            <td class="px-4 py-3 text-sm text-right muted">${m.median_ttft != null ? fmtDec(m.median_ttft, 2) + 's' : '—'}</td>
             <td class="px-4 py-3 text-sm text-right muted">${m.median_output_tps != null ? fmtDec(m.median_output_tps, 1) : '—'}</td>
             <td class="px-4 py-3 text-sm text-right muted">${m.median_latency_p50 != null ? fmtDec(m.median_latency_p50, 2) + 's' : '—'}</td>
-            <td class="px-4 py-3 text-sm text-right muted">${m.median_throughput != null ? (m.median_throughput / 60).toFixed(1) + ' tok/s' : '—'}</td>
             <td class="px-4 py-3 text-sm text-right ${Number(m.median_refusal_error_rate) > 0.1 ? 'text-red-500' : 'muted'}">${fmtPct(m.median_refusal_error_rate)}</td>
             <td class="px-4 py-3 text-sm text-right muted">${costPerResp != null ? '$' + costPerResp.toFixed(5) : '—'}</td>
         </tr>`);
@@ -830,9 +834,9 @@
                 <td class="px-4 py-2.5 text-center">
                     <span class="f1-pill ${f1Class(r.median_f1)}">${fmtPct(r.median_f1)}</span>
                 </td>
+                <td class="px-4 py-2.5 text-sm text-right muted">${r.median_ttft != null ? fmtDec(r.median_ttft, 2) + 's' : '—'}</td>
                 <td class="px-4 py-2.5 text-sm text-right muted">${r.median_output_tps != null ? fmtDec(r.median_output_tps, 1) : '—'}</td>
                 <td class="px-4 py-2.5 text-sm text-right muted">${r.median_latency_p50 != null ? fmtDec(r.median_latency_p50, 2) + 's' : '—'}</td>
-                <td class="px-4 py-2.5 text-sm text-right muted">${r.median_throughput != null ? (r.median_throughput / 60).toFixed(1) + ' tok/s' : '—'}</td>
                 <td class="px-4 py-2.5 text-sm text-right ${(r.median_refusal_rate ?? 0) > 0.1 ? 'text-red-500' : 'muted'}">${fmtPct(r.median_refusal_rate)}</td>
                 <td class="px-4 py-2.5 text-sm text-right muted">${fmtNum(r.total_responses)}</td>
             </tr>`).join('');
@@ -856,9 +860,9 @@
                                     <th class="px-4 py-2 text-left w-8">#</th>
                                     <th class="px-4 py-2 text-left">Model</th>
                                     <th class="px-4 py-2 text-center">F1</th>
-                                    <th class="px-4 py-2 text-right">Output tok/s</th>
+                                    <th class="px-4 py-2 text-right">TTFT p50</th>
+                                    <th class="px-4 py-2 text-right">TPS p50</th>
                                     <th class="px-4 py-2 text-right">Latency p50</th>
-                                    <th class="px-4 py-2 text-right">Throughput</th>
                                     <th class="px-4 py-2 text-right">Refusal</th>
                                     <th class="px-4 py-2 text-right">Responses</th>
                                 </tr>
@@ -1159,12 +1163,9 @@
             filtered = filtered.filter(m => keys.some(k => m[k] != null));
         }
 
-        // Throughput filter (tok/s)
-        if (minThroughput > 0) {
-            filtered = filtered.filter(m => {
-                const tps = (m.median_throughput ?? 0) / 60;
-                return tps >= minThroughput;
-            });
+        // TPS filter (tok/s)
+        if (minTps > 0) {
+            filtered = filtered.filter(m => (m.median_output_tps ?? 0) >= minTps);
         }
 
         // Cost filter ($/response)
@@ -1302,22 +1303,22 @@
         });
     }
 
-    /* ── Throughput slider filter ───────────────────────────── */
-    function initThroughputFilter() {
-        const input = document.getElementById('throughput-min-input');
-        const label = document.getElementById('throughput-min-label');
-        const maxLabel = document.getElementById('throughput-max-label');
+    /* ── TPS slider filter ───────────────────────────────────── */
+    function initTpsFilter() {
+        const input = document.getElementById('tps-min-input');
+        const label = document.getElementById('tps-min-label');
+        const maxLabel = document.getElementById('tps-max-label');
         if (!input || !label) return;
 
-        // Compute max throughput from all data (tok/s)
-        maxThroughput = Math.max(..._allMetrics.map(m => (m.median_throughput ?? 0) / 60));
-        const cap = maxThroughput > 0 ? Math.ceil(maxThroughput) : 100;
+        // Compute max TPS from all data (tok/s)
+        maxTps = Math.max(..._allMetrics.map(m => m.median_output_tps ?? 0));
+        const cap = maxTps > 0 ? Math.ceil(maxTps) : 100;
         input.max = cap;
         input.step = cap > 1000 ? 10 : cap > 100 ? 1 : 0.1;
         if (maxLabel) maxLabel.textContent = cap + ' tok/s';
 
         input.addEventListener('input', () => {
-            minThroughput = parseFloat(input.value);
+            minTps = parseFloat(input.value);
             label.textContent = parseFloat(input.value).toFixed(input.step < 1 ? 1 : 0) + ' tok/s';
             rerender();
         });
@@ -1368,8 +1369,8 @@
         drawMetricBars('refusal-chart', 'median_refusal_error_rate', fmtPct, true);
         drawMetricBars('dur-chart', 'median_latency_p50', v => fmtDec(v) + 's', false);
         drawMetricBars('lat-p95-chart', 'median_latency_p95', v => fmtDec(v) + 's', false);
-        drawMetricBars('throughput-chart', 'median_throughput', v => (v / 60).toFixed(1) + ' tok/s', true);
-        drawMetricBars('first-response-chart', 'median_first_response_latency', v => fmtDec(v) + 's', false);
+        drawMetricBars('ttft-chart', 'median_ttft', v => fmtDec(v) + 's', false);
+        drawMetricBars('ttft-p95-chart', 'median_ttft_p95', v => fmtDec(v) + 's', false);
         drawMetricBars('cost-chart', 'cost_per_response', v => v != null ? '$' + v.toFixed(5) : '—', true);
     }
 
@@ -1380,7 +1381,7 @@
             initModelFilter();
             initF1Filter();
             initModalityFilter();
-            initThroughputFilter();
+            initTpsFilter();
             initCostFilter();
             _filterInitialized = true;
         }

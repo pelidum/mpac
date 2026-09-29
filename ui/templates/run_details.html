@@ -123,6 +123,10 @@
         color: var(--color-accent-secondary);
         background: rgba(var(--color-accent-primary-rgb), 0.08);
     }
+    .answers-ss .cell-actions button.has-error { color: #ef4444; }
+    .answers-ss .ans-status {
+        font-size: 10px; font-weight: 600; letter-spacing: 0.04em; color: #ef4444;
+    }
 
     .toc-link {
         display: block;
@@ -416,8 +420,12 @@
                 </div>
                 {% else %}
                 <div class="flex items-center gap-4 text-sm tabular-nums">
-                    <span title="Output tok/s"><span class="text-muted text-xs">tok/s</span> {{ "{:.1f}".format(m.get("output_tps_p50", 0) | float) }}</span>
-                    <span title="Latency p50"><span class="text-muted text-xs">p50</span> {{ "{:.2f}s".format(m.get("median_task_duration", 0) | float) }}</span>
+                    {% set ttft = m.get("ttft_p50", 0) | float %}
+                    {% set tps = m.get("output_tps_p50", 0) | float if m.get("streamed") else 0 %}
+                    {% set lat = m.get("median_task_duration", 0) | float %}
+                    <span title="Time to first token p50"><span class="text-muted text-xs">TTFT</span> {% if ttft > 0 %}{{ "{:.2f}s".format(ttft) }}{% else %}—{% endif %}</span>
+                    <span title="Output tokens/sec after first token, p50"><span class="text-muted text-xs">TPS</span> {% if tps > 0 %}{{ "{:.1f}".format(tps) }}{% else %}—{% endif %}</span>
+                    <span title="End-to-end latency p50"><span class="text-muted text-xs">Latency</span> {% if lat > 0 %}{{ "{:.2f}s".format(lat) }}{% else %}—{% endif %}</span>
                 </div>
                 {% endif %}
             </div>
@@ -510,6 +518,30 @@
         </div>
         {% endif %}
 
+        {#- One details button per answer. Sections render only when present. -#}
+        {% macro answer_details(response) -%}
+        {% set status = response.get("status", "OK") %}
+        {% set failed = status not in ("OK", "STATUS_UNSPECIFIED") %}
+        {% if failed or response.get("reasoning") or response.get("justification") or response.get("raw_response") or response.get("error") %}
+        <div class="cell-actions">
+            <button type="button" onclick="openAnswerDetails(this)"
+                class="{{ 'has-error' if failed else '' }}"
+                data-status="{{ status }}"
+                data-error="{{ response.get('error', '') }}"
+                data-reasoning="{{ response.get('reasoning', '') }}"
+                data-justification="{{ response.get('justification', '') }}"
+                data-raw="{{ response.get('raw_response', '') }}"
+                title="{{ 'Error: ' ~ status if failed else 'Answer details' }}">
+                <span class="material-icons" style="font-size:15px">{{ 'error_outline' if failed else ('psychology' if response.get('reasoning') or response.get('justification') else 'code') }}</span>
+            </button>
+        </div>
+        {% endif %}
+        {%- endmacro %}
+        {% macro answer_text(response) -%}
+        {% set status = response.get("status", "OK") %}
+        {% if status not in ("OK", "STATUS_UNSPECIFIED") %}<span class="ans-status">{{ status | replace("_", " ") }}</span>
+        {% else %}<span style="font-weight:500">{{ response.get("answer") }}</span>{% endif %}
+        {%- endmacro %}
         <div class="answers-ss">
             <table>
                 <thead>
@@ -582,8 +614,6 @@
                         {% for model_pb in models_ranked %}
                         {% set rkey = model_pb.responder_id or model_pb.id %}
                         {% set response = item_dict["responses"].get(rkey, {}) %}
-                        {% set reasoning = response.get("reasoning", "No reasoning provided.") %}
-                        {% set raw_resp = response.get("raw_response", "") %}
                         {% if test_pb and test_pb.type == 1 %}
                         {% set is_correct = response.get("is_correct") %}
                         {% set is_relevant = effective_relevance.get(item_id, item_dict.get("item_pb").is_relevant) %}
@@ -594,24 +624,9 @@
                         <td data-model-col="{{ rkey }}" data-classification="{{ cls }}"
                             class="col-model {{ 'ans-ok' if is_correct else 'ans-bad' }}">
                             <div class="cell-c">
-                                <span style="font-weight:500">{{ response.get("answer") }}</span>
+                                {{ answer_text(response) }}
                             </div>
-                            {% if result_pb.include_reasoning or raw_resp %}
-                            <div class="cell-actions">
-                                {% if result_pb.include_reasoning %}
-                                <button type="button" onclick="openReasoningModal(this.getAttribute('data-reasoning'))"
-                                    data-reasoning="{{ reasoning }}" title="Reasoning">
-                                    <span class="material-icons" style="font-size:15px">psychology</span>
-                                </button>
-                                {% endif %}
-                                {% if raw_resp %}
-                                <button type="button" onclick="openRawResponseModal(this.getAttribute('data-raw'))"
-                                    data-raw="{{ raw_resp }}" title="Raw Response">
-                                    <span class="material-icons" style="font-size:15px">code</span>
-                                </button>
-                                {% endif %}
-                            </div>
-                            {% endif %}
+                            {{ answer_details(response) }}
                         </td>
                         {% else %}
                         {% set canonical_answer = item_dict.get("item_pb").answer %}
@@ -623,24 +638,9 @@
                         <td data-model-col="{{ rkey }}" class="col-model">
                         {% endif %}
                             <div class="cell-c">
-                                <span style="font-weight:500">{{ response.get("answer") }}</span>
+                                {{ answer_text(response) }}
                             </div>
-                            {% if result_pb.include_reasoning or raw_resp %}
-                            <div class="cell-actions">
-                                {% if result_pb.include_reasoning %}
-                                <button type="button" onclick="openReasoningModal(this.getAttribute('data-reasoning'))"
-                                    data-reasoning="{{ reasoning }}" title="Reasoning">
-                                    <span class="material-icons" style="font-size:15px">psychology</span>
-                                </button>
-                                {% endif %}
-                                {% if raw_resp %}
-                                <button type="button" onclick="openRawResponseModal(this.getAttribute('data-raw'))"
-                                    data-raw="{{ raw_resp }}" title="Raw Response">
-                                    <span class="material-icons" style="font-size:15px">code</span>
-                                </button>
-                                {% endif %}
-                            </div>
-                            {% endif %}
+                            {{ answer_details(response) }}
                         </td>
                         {% endif %}
                         {% endfor %}
@@ -693,7 +693,7 @@
             {% if test_pb and test_pb.type == 1 %}
             Precision measures how often a positive prediction is correct. Recall measures how many actual positives were found. F1 is the harmonic mean of both, the headline quality score. Higher is always better for all three. ⭐ marks the best value across models.
             {% else %}
-            Output tok/s estimates per-stream generation speed; Latency p50/p95 is the per-answer time-to-completion (lower is better); Throughput is the aggregate tokens-per-second across the whole run at this concurrency. Lower Errors/Refusals is better. ⭐ marks the best value across models.
+            TTFT is the time to the first streamed token (lower is better); TPS is output tokens/sec after the first token (higher is better); Latency p50/p95 is the end-to-end request time (lower is better). — means not measured for this run. Lower Errors/Refusals is better. ⭐ marks the best value across models.
             {% endif %}
         </p>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -752,29 +752,33 @@
                         <dd class="font-semibold tabular-nums">{{ "{:.2%}".format(m["f1"]) }}{% if m["f1"] == category_winners.get("f1") %} ⭐{% endif %}</dd>
                     </div>
                     {% endif %}
+                    {% set ttft = m.get("ttft_p50", 0) | float %}
+                    {% set tps = m.get("output_tps_p50", 0) | float if m.get("streamed") else 0 %}
+                    {% set lat = m.get("median_task_duration", 0) | float %}
+                    {% set lat95 = m.get("task_duration_p95", 0) | float %}
                     <div class="flex items-center justify-between gap-2">
-                        <dt class="flex items-center gap-1.5 text-muted" title="Median per-answer output tokens/sec across this run. Approximates per-stream generation speed; for very short answers the denominator includes prefill, so this understates raw generation rate.">
-                            <span class="material-icons text-[15px]">speed</span>Output tok/s
+                        <dt class="flex items-center gap-1.5 text-muted" title="Median time to first token (seconds): request dispatch to the first streamed token, reasoning or content. Excludes queueing; successful requests only. Lower is better.">
+                            <span class="material-icons text-[15px]">timer</span>TTFT p50
                         </dt>
-                        <dd class="font-semibold tabular-nums">{{ "{:.1f}".format(m.get("output_tps_p50", 0) | float) }}{% if (m.get("output_tps_p50", 0) | float) == (category_winners.get("output_tps") or 0) and (category_winners.get("output_tps") or 0) > 0 %} ⭐{% endif %}</dd>
+                        <dd class="font-semibold tabular-nums">{% if ttft > 0 %}{{ "{:.2f}s".format(ttft) }}{% if ttft == category_winners.get("ttft") %} ⭐{% endif %}{% else %}—{% endif %}</dd>
                     </div>
                     <div class="flex items-center justify-between gap-2">
-                        <dt class="flex items-center gap-1.5 text-muted" title="Median end-to-end time per answer (seconds). Lower is better. Excludes queue-wait; includes prefill + generation.">
+                        <dt class="flex items-center gap-1.5 text-muted" title="Median output tokens per second after the first token: (output tokens - 1) / (last token - first token). Excludes prefill; only answers with 2+ output tokens. Higher is better.">
+                            <span class="material-icons text-[15px]">speed</span>TPS p50
+                        </dt>
+                        <dd class="font-semibold tabular-nums">{% if tps > 0 %}{{ "{:.1f}".format(tps) }}{% if tps == (category_winners.get("output_tps") or 0) %} ⭐{% endif %}{% else %}—{% endif %}</dd>
+                    </div>
+                    <div class="flex items-center justify-between gap-2">
+                        <dt class="flex items-center gap-1.5 text-muted" title="Median end-to-end request latency (seconds): dispatch to last token. Excludes queueing and the reasoning follow-up call; successful requests only. Lower is better.">
                             <span class="material-icons text-[15px]">schedule</span>Latency p50
                         </dt>
-                        <dd class="font-semibold tabular-nums">{{ "{:.2f}s".format(m["median_task_duration"] | float) }}{% if (m["median_task_duration"] | float) == category_winners.get("latency_p50") %} ⭐{% endif %}</dd>
+                        <dd class="font-semibold tabular-nums">{% if lat > 0 %}{{ "{:.2f}s".format(lat) }}{% if lat == category_winners.get("latency_p50") %} ⭐{% endif %}{% else %}—{% endif %}</dd>
                     </div>
                     <div class="flex items-center justify-between gap-2">
-                        <dt class="flex items-center gap-1.5 text-muted" title="95th-percentile per-answer latency (seconds). The tail you'll see ~1 request in 20. Watch this for SLO planning.">
+                        <dt class="flex items-center gap-1.5 text-muted" title="95th-percentile end-to-end request latency (seconds). The tail you'll see ~1 request in 20.">
                             <span class="material-icons text-[15px]">trending_up</span>Latency p95
                         </dt>
-                        <dd class="font-semibold tabular-nums">{{ "{:.2f}s".format(m.get("task_duration_p95", 0) | float) }}</dd>
-                    </div>
-                    <div class="flex items-center justify-between gap-2">
-                        <dt class="flex items-center gap-1.5 text-muted" title="Aggregate output tokens per second across the whole run at this run's concurrency. Useful for capacity planning; not a per-stream speed (see Output tok/s for that).">
-                            <span class="material-icons text-[15px]">bolt</span>Throughput
-                        </dt>
-                        <dd class="font-semibold tabular-nums">{{ "{:,.1f}".format((m["tokens_per_minute"] | float) / 60) }} tok/s{% if m["tokens_per_minute"] | int == category_winners.get("throughput") %} ⭐{% endif %}</dd>
+                        <dd class="font-semibold tabular-nums">{% if lat95 > 0 %}{{ "{:.2f}s".format(lat95) }}{% else %}—{% endif %}</dd>
                     </div>
                     <div class="flex items-center justify-between gap-2">
                         <dt class="flex items-center gap-1.5 text-muted" title="Total tokens consumed (input + output) for this model.">
@@ -890,8 +894,8 @@
     </div>
 </div>
 
-<!-- Reasoning Modal -->
-<div id="reasoning-modal"
+<!-- Answer Details Modal -->
+<div id="answer-details-modal"
     class="fixed inset-0 z-50 hidden items-center justify-center bg-gray-900/50 backdrop-blur-sm transition-opacity"
     aria-hidden="true">
 
@@ -900,55 +904,48 @@
 
         <div class="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 pb-4 mb-4 shrink-0">
             <h3 class="text-xl font-semibold text-accent flex items-center gap-2">
-                <span class="material-icons">psychology</span>
-                Model Reasoning
+                <span class="material-icons">info</span>
+                Answer Details
             </h3>
-            <button onclick="closeReasoningModal()" class="text-gray-400 hover:text-gray-500 focus:outline-none">
+            <button onclick="closeAnswerDetails()" class="text-gray-400 hover:text-gray-500 focus:outline-none">
                 <span class="material-icons">close</span>
             </button>
         </div>
 
-        <div class="overflow-y-auto pr-2 custom-scrollbar">
-            <p id="reasoning-modal-content"
-                class="whitespace-pre-wrap text-base text-gray-700 dark:text-gray-300 font-mono text-sm">
-            </p>
+        <div class="overflow-y-auto pr-2 custom-scrollbar space-y-5">
+            <section id="answer-details-error" class="hidden rounded-md border border-red-300 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/40">
+                <h4 class="text-sm font-semibold text-red-600 dark:text-red-400 flex items-center gap-1.5 mb-1">
+                    <span class="material-icons text-[16px]">error_outline</span>
+                    <span data-role="title">Error</span>
+                </h4>
+                <p data-role="body" class="whitespace-pre-wrap font-mono text-sm text-red-700 dark:text-red-300"></p>
+            </section>
+            <section id="answer-details-reasoning" class="hidden">
+                <h4 class="text-sm font-semibold mb-1 flex items-center gap-1.5"
+                    title="The model's own reasoning, streamed natively or from a <think> block.">
+                    <span class="material-icons text-[16px]">psychology</span>Reasoning
+                </h4>
+                <p data-role="body" class="whitespace-pre-wrap font-mono text-sm text-gray-700 dark:text-gray-300"></p>
+            </section>
+            <section id="answer-details-justification" class="hidden">
+                <h4 class="text-sm font-semibold mb-1 flex items-center gap-1.5"
+                    title="The model's explanation from a follow-up request, made when it returned no reasoning of its own.">
+                    <span class="material-icons text-[16px]">record_voice_over</span>Justification
+                </h4>
+                <p data-role="body" class="whitespace-pre-wrap font-mono text-sm text-gray-700 dark:text-gray-300"></p>
+            </section>
+            <section id="answer-details-raw" class="hidden">
+                <h4 class="text-sm font-semibold mb-1 flex items-center gap-1.5"
+                    title="The model's answer text exactly as returned.">
+                    <span class="material-icons text-[16px]">code</span>Raw response
+                </h4>
+                <p data-role="body" class="whitespace-pre-wrap font-mono text-sm text-gray-700 dark:text-gray-300"></p>
+            </section>
+            <p id="answer-details-empty" class="hidden text-sm text-muted">No details recorded for this answer.</p>
         </div>
 
         <div class="mt-6 flex justify-end shrink-0 pt-2 border-t border-gray-200 dark:border-gray-700">
-            <button type="button" onclick="closeReasoningModal()"
-                class="rounded-md bg-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-300 focus:outline-none dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
-                Close
-            </button>
-        </div>
-    </div>
-</div>
-
-<!-- Raw Response Modal -->
-<div id="raw-response-modal"
-    class="fixed inset-0 z-50 hidden items-center justify-center bg-gray-900/50 backdrop-blur-sm transition-opacity"
-    aria-hidden="true">
-
-    <div
-        class="relative w-full max-w-2xl transform rounded-lg bg-white p-6 shadow-xl transition-all dark:bg-gray-800 m-4 flex flex-col max-h-[85vh]">
-
-        <div class="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 pb-4 mb-4 shrink-0">
-            <h3 class="text-xl font-semibold text-accent flex items-center gap-2">
-                <span class="material-icons">code</span>
-                Raw Response
-            </h3>
-            <button onclick="closeRawResponseModal()" class="text-gray-400 hover:text-gray-500 focus:outline-none">
-                <span class="material-icons">close</span>
-            </button>
-        </div>
-
-        <div class="overflow-y-auto pr-2 custom-scrollbar">
-            <p id="raw-response-modal-content"
-                class="whitespace-pre-wrap text-base text-gray-700 dark:text-gray-300 font-mono text-sm">
-            </p>
-        </div>
-
-        <div class="mt-6 flex justify-end shrink-0 pt-2 border-t border-gray-200 dark:border-gray-700">
-            <button type="button" onclick="closeRawResponseModal()"
+            <button type="button" onclick="closeAnswerDetails()"
                 class="rounded-md bg-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-300 focus:outline-none dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
                 Close
             </button>
@@ -1107,59 +1104,53 @@
         }
     });
 
-    // Reasoning Modal Logic
-    function openReasoningModal(text) {
-        const modal = document.getElementById('reasoning-modal');
-        const content = document.getElementById('reasoning-modal-content');
-        content.textContent = text || "No reasoning details available.";
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-        document.body.style.overflow = 'hidden';
-    }
-
-    function closeReasoningModal() {
-        const modal = document.getElementById('reasoning-modal');
-        modal.classList.add('hidden');
-        modal.classList.remove('flex');
-        document.body.style.overflow = '';
-    }
-
-    // Close on click outside
-    document.getElementById('reasoning-modal').addEventListener('click', function (e) {
-        if (e.target === this) {
-            closeReasoningModal();
+    // Answer Details Modal Logic
+    function openAnswerDetails(btn) {
+        const d = btn.dataset;
+        const failed = d.status && d.status !== 'OK' && d.status !== 'STATUS_UNSPECIFIED';
+        const sections = {
+            error: failed ? (d.error || 'Request failed.') : d.error,
+            reasoning: d.reasoning,
+            justification: d.justification,
+            raw: d.raw,
+        };
+        let shown = 0;
+        for (const [key, text] of Object.entries(sections)) {
+            const el = document.getElementById(`answer-details-${key}`);
+            el.querySelector('[data-role="body"]').textContent = text || '';
+            el.classList.toggle('hidden', !text);
+            if (text) shown++;
         }
-    });
+        // A failed request is titled by its status; an error on an OK answer
+        // came from the justification follow-up.
+        document.querySelector('#answer-details-error [data-role="title"]').textContent =
+            failed ? `Request failed: ${d.status.replaceAll('_', ' ')}` : 'Justification request failed';
+        document.getElementById('answer-details-empty').classList.toggle('hidden', shown > 0);
 
-    // Raw Response Modal Logic
-    function openRawResponseModal(text) {
-        const modal = document.getElementById('raw-response-modal');
-        const content = document.getElementById('raw-response-modal-content');
-        content.textContent = text || "No raw response available.";
+        const modal = document.getElementById('answer-details-modal');
         modal.classList.remove('hidden');
         modal.classList.add('flex');
         document.body.style.overflow = 'hidden';
     }
 
-    function closeRawResponseModal() {
-        const modal = document.getElementById('raw-response-modal');
+    function closeAnswerDetails() {
+        const modal = document.getElementById('answer-details-modal');
         modal.classList.add('hidden');
         modal.classList.remove('flex');
         document.body.style.overflow = '';
     }
 
-    document.getElementById('raw-response-modal').addEventListener('click', function (e) {
+    document.getElementById('answer-details-modal').addEventListener('click', function (e) {
         if (e.target === this) {
-            closeRawResponseModal();
+            closeAnswerDetails();
         }
     });
 
     // Close on Escape key
     document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') {
-            closeReasoningModal();
+            closeAnswerDetails();
             closeAttachmentModal();
-            closeRawResponseModal();
         }
     });
 
@@ -1181,6 +1172,13 @@
     var timeline_data = [];
 
     function fmtPct(v) { return (v * 100).toFixed(1) + '%'; }
+    // Pre-streaming runs have no TTFT and a prefill-polluted TPS: show "—".
+    function perfSummary(m) {
+        const ttft = (m.ttft_p50 || 0) > 0 ? `${m.ttft_p50.toFixed(2)}s` : '—';
+        const tps = m.streamed && (m.output_tps_p50 || 0) > 0 ? m.output_tps_p50.toFixed(1) : '—';
+        const lat = (m.median_task_duration || 0) > 0 ? `${m.median_task_duration.toFixed(2)}s` : '—';
+        return `TTFT p50: ${ttft} · TPS p50: ${tps} · Latency p50: ${lat}`;
+    }
 
     Object.keys(metrics_json).forEach(responder_id => {
         const model_metrics = metrics_json[responder_id];
@@ -1193,7 +1191,7 @@
         ]);
         timeline_data.push([
             responder_id,
-            `Latency p50: ${model_metrics.median_task_duration.toFixed(2)}s · Throughput: ${(model_metrics.tokens_per_minute / 60).toFixed(1)} tok/s`,
+            perfSummary(model_metrics),
             new Date(model_metrics.created_at_utc),
             new Date(model_metrics.completed_at_utc)
         ]);

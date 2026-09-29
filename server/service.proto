@@ -331,6 +331,16 @@ message TestRun {
     // grouping (leaderboards, /metrics). Empty on metrics written before
     // multi-instance support; readers fall back to responder_id.
     string model_id = 27;
+    // Time to first token (seconds): request dispatch to the first streamed
+    // reasoning or content token, over successful requests only. 0 on runs
+    // created before streaming inference.
+    float ttft_p50 = 28;
+    float ttft_p95 = 29;
+    float ttft_p99 = 30;
+    // True when ttft_* and output_tps_* were computed from streamed per-token
+    // timings. False on older runs, whose output_tps_* included prefill time
+    // and are not comparable.
+    bool streamed = 31;
   }
 
   string id = 1;
@@ -349,24 +359,71 @@ message TestRun {
 }
 
 message TestRunAnswer {
+  // Outcome of the primary inference request for this answer.
+  enum Status {
+    // Answers written before status tracking; derive from the legacy
+    // "[TAG] message" prefix in raw_response instead.
+    STATUS_UNSPECIFIED = 0;
+    OK = 1;
+    TIMEOUT = 2;
+    CANCELLED = 3;
+    BAD_REQUEST = 4;
+    CONNECTION_ERROR = 5;
+    ERROR = 6;
+    // Waited too long for a backend concurrency slot.
+    CAPACITY = 7;
+    // Not attempted: backend circuit breaker was open.
+    SKIPPED = 8;
+  }
+
   string id = 1;
   string run_id = 2;
   string item_id = 3;
   string model_id = 4;
+  // The choice matched from raw_response; empty on error or no match.
   string answer = 5;
+  // The model's own reasoning trace: streamed reasoning (reasoning_content /
+  // reasoning) or an inline <think> block. Never error text (see `error`) or
+  // the follow-up justification (see `justification`). Answers written before
+  // `status` may hold error text here.
   string reasoning = 6;
   int64 input_tokens = 7;
   int64 output_tokens = 8;
   float input_cost = 9;
   float output_cost = 10;
   bool is_correct = 11;
+  // End-to-end latency (seconds) of the primary request: dispatch to end of
+  // stream. Excludes client-side queueing and the include_reasoning follow-up.
   float task_duration = 12;
   bool has_attachment = 13;
   FileModality attachment_type = 14;
+  // The model's answer text exactly as returned (may contain an inline <think>
+  // block). Empty when the request failed. Answers written before `status`
+  // hold "[TAG] message" here on error.
   string raw_response = 15;
   // Per-run responder instance id (see Model.responder_id). Empty on answers
   // written before multi-instance support; readers fall back to model_id.
   string responder_id = 16;
+  // Time to first token (seconds) of the primary request: dispatch to the first
+  // streamed reasoning or content delta. 0 when not measured.
+  float ttft = 17;
+  // Output tokens per second after the first token of the primary request:
+  // (output_tokens - 1) / (t_last_token - t_first_token). 0 when undefined
+  // (fewer than 2 output tokens) or not measured.
+  float output_tps = 18;
+  // Reasoning tokens reported by the backend for the primary request, if any.
+  int64 reasoning_tokens = 19;
+  // True when the backend sent no usage and token counts were estimated from
+  // streamed deltas (input tokens and costs will be undercounted).
+  bool usage_estimated = 20;
+  // Post-hoc justification from the include_reasoning follow-up call, made
+  // only when the model returned no reasoning of its own.
+  string justification = 21;
+  // Outcome of the primary request. STATUS_UNSPECIFIED on older answers.
+  Status status = 22;
+  // Human-readable error: why the primary request failed (status != OK), or
+  // why the justification follow-up failed (status stays OK).
+  string error = 23;
 }
 
 // Lightweight in-flight progress for a TestRun. Returned by GetRunProgress.

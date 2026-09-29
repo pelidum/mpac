@@ -1,5 +1,6 @@
 """Tests for /runs/* routes."""
 
+import re
 from unittest import mock
 
 import pytest
@@ -312,6 +313,215 @@ async def test_pdf_error_analysis_totals_are_full_run(mock_stub):
     # Totals are full-run (47 FN, 5 FP), while only what's in the sample is shown.
     assert "False Negatives — showing 1 of 47" in html
     assert "False Positives — showing 0 of 5" in html
+
+
+# ---------------------------------------------------------------------------
+# Performance metrics: TTFT / TPS / latency only
+# ---------------------------------------------------------------------------
+
+
+def _wire_perf_run(mock_stub):
+    """A run with one streamed responder and one pre-streaming (legacy) one."""
+    run_pb = service_pb2.TestRun(
+        id="run-perf",
+        test_id="test-1",
+        owner="user@example.com",
+        status=1,
+        sample_size=1,
+        models=[
+            service_pb2.Model(id="model-a", responder_id="model-a", backend_id="be-1"),
+            service_pb2.Model(id="model-b", responder_id="model-b", backend_id="be-1"),
+        ],
+        metrics=[
+            service_pb2.TestRun.TestRunMetrics(
+                responder_id="model-a",
+                model_id="model-a",
+                ttft_p50=0.25,
+                output_tps_p50=42.0,
+                median_task_duration=1.5,
+                task_duration_p95=2.5,
+                tokens_per_minute=2520,
+                streamed=True,
+            ),
+            service_pb2.TestRun.TestRunMetrics(
+                responder_id="model-b",
+                model_id="model-b",
+                # Legacy run: prefill-polluted tok/s must not be shown or win.
+                output_tps_p50=99.0,
+                median_task_duration=0.5,
+                task_duration_p95=0.75,
+                tokens_per_minute=9999,
+            ),
+        ],
+    )
+    test_pb = service_pb2.Test(id="test-1", name="T", type=2, item_count=1)
+    item = service_pb2.TestItem(id="item-1", question="q?", choices=["a", "b"])
+    mock_stub.GetTestRun.return_value = run_pb
+    mock_stub.GetTest.return_value = test_pb
+    mock_stub.ListTestRunAnswers.return_value = iter([])
+    mock_stub.GetTestItem.side_effect = lambda req, **kw: item
+    mock_stub.BatchGetAttachments.return_value = iter([])
+
+
+@pytest.mark.asyncio
+async def test_perf_winners_use_aligned_metrics(mock_stub):
+    _wire_perf_run(mock_stub)
+    from ui.routers.runs import _fetch_run_report_data
+
+    with mock.patch("ui.grpc_client._stub", mock_stub):
+        ctx = await _fetch_run_report_data("run-perf", None, num_items=0)
+
+    winners = ctx["category_winners"]
+    assert winners["ttft"] == pytest.approx(0.25)
+    assert winners["output_tps"] == pytest.approx(42.0)  # legacy 99 excluded
+    assert winners["latency_p50"] == pytest.approx(0.5)
+    assert "throughput" not in winners
+
+
+@pytest.mark.asyncio
+async def test_pdf_shows_ttft_tps_latency_only(mock_stub):
+    _wire_perf_run(mock_stub)
+    from ui.routers.runs import _fetch_run_report_data
+    from ui.server import templates
+
+    with mock.patch("ui.grpc_client._stub", mock_stub):
+        ctx = await _fetch_run_report_data("run-perf", None, num_items=0)
+    html = templates.get_template("run_report_pdf.html").render(ctx)
+
+    assert "TTFT p50" in html
+    assert "TPS p50" in html
+    assert "0.25s" in html
+    assert "42.0" in html
+    assert "Throughput" not in html
+    assert "99.0" not in html  # legacy TPS hidden
+    assert "&mdash;" in html  # legacy TTFT / TPS
+
+
+@pytest.mark.asyncio
+async def test_run_details_shows_ttft_tps_latency_only(client, mock_stub):
+    _wire_perf_run(mock_stub)
+    r = await client.get("/runs/run-perf")
+    assert r.status_code == 200
+    # Only visible markup: the page also embeds raw metrics JSON for its charts.
+    html = re.sub(r"<script.*?</script>", "", r.text, flags=re.DOTALL)
+    assert "TTFT p50" in html
+    assert "TPS p50" in html
+    assert "Throughput" not in html
+    assert "99.0" not in html
+
+
+# ---------------------------------------------------------------------------
+# Answer details: status / error / reasoning / justification / raw response
+# ---------------------------------------------------------------------------
+
+_A = service_pb2.TestRunAnswer
+
+
+def _detail_answers():
+    return [
+        # New: native reasoning + verbatim raw response.
+        _A(
+            item_id="item-1",
+            model_id="model-a",
+            responder_id="model-a",
+            answer="a",
+            status=_A.OK,
+            reasoning="native thoughts",
+            raw_response="a",
+        ),
+        # New: justification from the follow-up call.
+        _A(
+            item_id="item-1",
+            model_id="model-b",
+            responder_id="model-b",
+            answer="b",
+            status=_A.OK,
+            justification="because b",
+            raw_response="b",
+        ),
+        # Legacy: error encoded in raw_response prefix + message in reasoning.
+        _A(
+            item_id="item-2",
+            model_id="model-a",
+            responder_id="model-a",
+            raw_response="[TIMEOUT] Inference request timed out",
+            reasoning="Request timeout - inference took too long",
+        ),
+        # New: failed request.
+        _A(
+            item_id="item-2",
+            model_id="model-b",
+            responder_id="model-b",
+            status=_A.CONNECTION_ERROR,
+            error="Connection error: refused",
+        ),
+    ]
+
+
+def _wire_details_run(mock_stub):
+    _wire_perf_run(mock_stub)
+    items = {
+        "item-1": service_pb2.TestItem(id="item-1", question="q1?", choices=["a", "b"]),
+        "item-2": service_pb2.TestItem(id="item-2", question="q2?", choices=["a", "b"]),
+    }
+    mock_stub.GetTestRun.return_value.sample_size = 2
+    mock_stub.ListTestRunAnswers.return_value = iter(_detail_answers())
+    mock_stub.GetTestItem.side_effect = lambda req, **kw: items[req.id]
+
+
+@pytest.mark.asyncio
+async def test_report_data_normalizes_legacy_errors(mock_stub):
+    _wire_details_run(mock_stub)
+    from ui.routers.runs import _fetch_run_report_data
+
+    with mock.patch("ui.grpc_client._stub", mock_stub):
+        ctx = await _fetch_run_report_data("run-perf", None, num_items=10)
+
+    responses = {
+        (item_id, rk): r
+        for item_id, d in ctx["answers"].items()
+        for rk, r in d["responses"].items()
+    }
+    legacy = responses[("item-2", "model-a")]
+    assert legacy["status"] == "TIMEOUT"
+    assert legacy["error"] == "Request timeout - inference took too long"
+    assert legacy["reasoning"] == ""
+    assert legacy["raw_response"] == ""
+    assert responses[("item-1", "model-a")]["status"] == "OK"
+    assert responses[("item-1", "model-b")]["justification"] == "because b"
+
+
+@pytest.mark.asyncio
+async def test_run_details_answer_details(client, mock_stub):
+    _wire_details_run(mock_stub)
+    r = await client.get("/runs/run-perf")
+    assert r.status_code == 200
+    html = re.sub(r"<script.*?</script>", "", r.text, flags=re.DOTALL)
+
+    assert 'onclick="openAnswerDetails(this)"' in html
+    assert 'data-reasoning="native thoughts"' in html
+    assert 'data-justification="because b"' in html
+    assert 'data-error="Connection error: refused"' in html
+    # Legacy error text is shown as an error, not as reasoning.
+    assert 'data-error="Request timeout - inference took too long"' in html
+    assert 'data-reasoning="Request timeout' not in html
+    assert '<span class="ans-status">TIMEOUT</span>' in html
+    assert '<span class="ans-status">CONNECTION ERROR</span>' in html
+    assert "openReasoningModal" not in r.text
+    assert "openRawResponseModal" not in r.text
+
+
+@pytest.mark.asyncio
+async def test_json_export_normalizes_answers(client, mock_stub):
+    _wire_details_run(mock_stub)
+    mock_stub.ListTestItems.return_value = iter([])
+    r = await client.get("/runs/run-perf/download/json")
+    assert r.status_code == 200
+    rows = {(x["item_id"], x["responder_id"]): x for x in r.json()["items"]}
+    legacy = rows[("item-2", "model-a")]
+    assert legacy["status"] == "TIMEOUT"
+    assert legacy["raw_response"] == ""
+    assert legacy["error"] == "Request timeout - inference took too long"
 
 
 # ---------------------------------------------------------------------------
