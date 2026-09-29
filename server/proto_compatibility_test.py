@@ -187,6 +187,9 @@ FIELD_SNAPSHOT: dict[str, dict[str, int]] = {
         "ttft_p95": 29,
         "ttft_p99": 30,
         "streamed": 31,
+        "mean_confidence": 32,
+        "input_tokens": 33,
+        "output_tokens": 34,
     },
     "pelidum.services.grpc.mpac.TestRunAnswer": {
         "id": 1,
@@ -211,6 +214,12 @@ FIELD_SNAPSHOT: dict[str, dict[str, int]] = {
         "justification": 21,
         "status": 22,
         "error": 23,
+        "confidence": 24,
+        "choice_probabilities": 25,
+    },
+    "pelidum.services.grpc.mpac.ChoiceProbability": {
+        "choice": 1,
+        "probability": 2,
     },
     "pelidum.services.grpc.mpac.RunProgress": {
         "answer_counts": 1,

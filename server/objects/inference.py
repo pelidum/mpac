@@ -14,6 +14,7 @@ from openai import APIConnectionError, APIError, APIStatusError, BadRequestError
 
 from server import service_pb2
 from server.objects.backend_pool import get_backend_resources
+from server.objects.confidence import Token, answer_confidence, apply_to_answer
 
 MPAC_SYSTEM_PROMPT = """
     Take a deep breath, read carefully, and approach the following exercise with
@@ -126,6 +127,52 @@ _CHARS_PER_TOKEN = 4
 _LIVE_REASONING_MIN_FRACTION = 0.5
 
 
+_LOGPROB_PARAMS = {"logprobs": True, "top_logprobs": 20}
+_LOGPROBS_UNSUPPORTED: set[tuple[str, str]] = set()
+
+
+def _field(obj, name: str):
+    if isinstance(obj, dict):
+        return obj.get(name)
+    val = getattr(obj, name, None)
+    if val is None:
+        val = (getattr(obj, "model_extra", None) or {}).get(name)
+    return val
+
+
+def _token_logprobs(choice) -> list[Token] | None:
+    content = _field(_field(choice, "logprobs"), "content")
+    if not isinstance(content, list):
+        return None
+    tokens = []
+    for entry in content:
+        token = _field(entry, "token")
+        logprob = _field(entry, "logprob")
+        if not isinstance(token, str) or not isinstance(logprob, (int, float)):
+            continue
+        top = []
+        for alt in _field(entry, "top_logprobs") or []:
+            alt_token = _field(alt, "token")
+            alt_logprob = _field(alt, "logprob")
+            if isinstance(alt_token, str) and isinstance(alt_logprob, (int, float)):
+                top.append((alt_token, float(alt_logprob)))
+        tokens.append(Token(token, float(logprob), top))
+    return tokens
+
+
+def _debug_confidence(answer_pb, choices: list[str]) -> None:
+    unique = list(dict.fromkeys(choices))
+    weights = {c: random.random() for c in unique}
+    weights[answer_pb.answer] = max(weights.values()) + random.random()
+    coverage = random.uniform(0.9, 1.0)
+    total = sum(weights.values())
+    for choice, w in sorted(weights.items(), key=lambda kv: -kv[1]):
+        answer_pb.choice_probabilities.add(
+            choice=choice, probability=coverage * w / total
+        )
+    answer_pb.confidence = answer_pb.choice_probabilities[0].probability
+
+
 def _reasoning_request_params(backend_type: str, include_reasoning: bool) -> dict:
     """Extra chat.completions.create kwargs that ask for native reasoning.
 
@@ -167,6 +214,7 @@ class StreamResult:
     duration: float
     usage_estimated: bool
     estimated_output_tokens: int
+    logprobs: list[Token] | None = None
 
 
 async def _stream_completion(
@@ -188,6 +236,8 @@ async def _stream_completion(
     t_first = t_last = None
     t_first_content = t_last_content = None
     n_deltas = n_content_deltas = 0
+    logprob_tokens: list[Token] = []
+    saw_logprobs = False
     try:
         async for chunk in stream:
             chunk_usage = getattr(chunk, "usage", None)
@@ -213,6 +263,10 @@ async def _stream_completion(
                 t_last_content = now
                 n_content_deltas += 1
                 content_parts.append(text)
+                chunk_logprobs = _token_logprobs(chunk.choices[0])
+                if chunk_logprobs is not None:
+                    saw_logprobs = True
+                    logprob_tokens.extend(chunk_logprobs)
             if reasoning:
                 reasoning_parts.append(reasoning)
     finally:
@@ -254,6 +308,7 @@ async def _stream_completion(
         duration=t_end - t0,
         usage_estimated=usage is None,
         estimated_output_tokens=n_deltas,
+        logprobs=logprob_tokens if saw_logprobs else None,
     )
 
 
@@ -362,6 +417,7 @@ class InferenceMixin:
             answer_pb.output_cost = 0.0
             answer_pb.raw_response = answer_pb.answer
             answer_pb.status = service_pb2.TestRunAnswer.OK
+            _debug_confidence(answer_pb, list(item_pb.choices))
 
         else:
             chat_messages = []
@@ -409,38 +465,53 @@ class InferenceMixin:
             reasoning_params = _reasoning_request_params(
                 backend_type, include_reasoning
             )
+            logprob_key = (backend.id, model_pb.id)
+            logprob_params = (
+                {} if logprob_key in _LOGPROBS_UNSUPPORTED else dict(_LOGPROB_PARAMS)
+            )
+
+            async def _attempt(params):
+                return await asyncio.wait_for(
+                    _stream_completion_with_retry(
+                        resources.client,
+                        chat_messages,
+                        model_pb.id,
+                        request_timeout,
+                        params,
+                    ),
+                    timeout=request_timeout + 10.0,
+                )
+
             request_start = time.perf_counter()
             result = None
             try:
                 try:
-                    result = await asyncio.wait_for(
-                        _stream_completion_with_retry(
-                            resources.client,
-                            chat_messages,
-                            model_pb.id,
-                            request_timeout,
-                            reasoning_params,
-                        ),
-                        timeout=request_timeout + 10.0,
-                    )
+                    result = await _attempt({**reasoning_params, **logprob_params})
                 except BadRequestError as e:
-                    if not reasoning_params:
+                    if not reasoning_params and not logprob_params:
                         raise
-                    # Non-reasoning models may reject reasoning params (e.g.
-                    # OpenAI gpt-4.1 with reasoning_effort): retry without.
+                    drop_logprobs = bool(logprob_params) and (
+                        "logprob" in str(e).lower() or not reasoning_params
+                    )
+                    if drop_logprobs:
+                        logprob_params = {}
+                    else:
+                        reasoning_params = {}
                     logging.info(
-                        f"[{model_pb.id}] reasoning params rejected, retrying "
-                        f"without: {e}"
+                        f"[{model_pb.id}] "
+                        f"{'logprobs' if drop_logprobs else 'reasoning params'} "
+                        f"rejected, retrying without: {e}"
                     )
-                    result = await asyncio.wait_for(
-                        _stream_completion_with_retry(
-                            resources.client,
-                            chat_messages,
-                            model_pb.id,
-                            request_timeout,
-                        ),
-                        timeout=request_timeout + 10.0,
-                    )
+                    try:
+                        result = await _attempt({**reasoning_params, **logprob_params})
+                    except BadRequestError as e2:
+                        if not reasoning_params and not logprob_params:
+                            raise
+                        if logprob_params and "logprob" in str(e2).lower():
+                            drop_logprobs = True
+                        result = await _attempt({})
+                    if drop_logprobs:
+                        _LOGPROBS_UNSUPPORTED.add(logprob_key)
                 raw_answer = result.content
                 answer_pb.status = service_pb2.TestRunAnswer.OK
                 answer_pb.raw_response = raw_answer
@@ -466,6 +537,12 @@ class InferenceMixin:
                 answer_pb.answer = validated_answer
                 answer_pb.is_correct = (
                     True if item_pb.answer == validated_answer else False
+                )
+                apply_to_answer(
+                    answer_pb,
+                    answer_confidence(
+                        result.logprobs, list(item_pb.choices), validated_answer
+                    ),
                 )
 
                 usage = result.usage

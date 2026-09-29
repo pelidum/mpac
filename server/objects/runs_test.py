@@ -342,6 +342,19 @@ class TestDoRunInferenceCostTracking:
 
         assert stub._instructions_seen == ["Apply policy X."]
 
+    def test_metrics_record_input_output_token_split(self):
+        stub = _DoRunStub()
+        run_pb, test_pb, items, request = _make_run_and_request()
+
+        asyncio.get_event_loop().run_until_complete(
+            stub._do_run_inference(run_pb, test_pb, items, request, asyncio.Event())
+        )
+
+        m = run_pb.metrics[0]
+        assert m.input_tokens == 100
+        assert m.output_tokens == 50
+        assert m.total_tokens == 150
+
     def test_spend_limit_cancellation_records_partial_cost(self):
         """With 1 item and daily_spend=1 cent, an answer costing $0.02 triggers
         the spend-limit cancel.  The post-model-loop guard raises CancelledError;
@@ -1067,6 +1080,36 @@ class TestPercentiles:
         assert p50 == statistics.median(values)
         assert 94 < p95 < 97
         assert 98 < p99 <= 100
+
+
+def _conf_answer(confidence=None):
+    a = _perf_answer()
+    a.status = service_pb2.TestRunAnswer.OK
+    if confidence is not None:
+        a.confidence = confidence
+    return a
+
+
+class TestApplyConfidenceMetrics:
+    def test_mean_over_successful_answers_with_confidence(self):
+        answers = [_conf_answer(0.9), _conf_answer(0.8), _conf_answer(0.3)]
+        answers.append(_conf_answer())
+        failed = _conf_answer(0.99)
+        failed.status = service_pb2.TestRunAnswer.TIMEOUT
+        answers.append(failed)
+        m = service_pb2.TestRun.TestRunMetrics()
+        runs_module._apply_confidence_metrics(m, answers)
+        assert m.mean_confidence == pytest.approx((0.9 + 0.8 + 0.3) / 3)
+
+    def test_zero_confidence_still_counts(self):
+        m = service_pb2.TestRun.TestRunMetrics()
+        runs_module._apply_confidence_metrics(m, [_conf_answer(0.0), _conf_answer(0.5)])
+        assert m.mean_confidence == pytest.approx(0.25)
+
+    def test_no_confidence_available(self):
+        m = service_pb2.TestRun.TestRunMetrics()
+        runs_module._apply_confidence_metrics(m, [_conf_answer()])
+        assert m.mean_confidence == 0.0
 
 
 class TestApplyPerformanceMetrics:

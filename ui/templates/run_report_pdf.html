@@ -1314,6 +1314,11 @@
             &#11088;{% endif %}</span>
         </div>
         {% endif %}
+        {% set mean_conf = m.get("mean_confidence", 0)|float %}
+        <div class="model-card-row">
+          <span class="model-card-label">Confidence</span>
+          <span class="model-card-value">{% if mean_conf > 0 %}{{ "{:.1%}".format(mean_conf) }}{% else %}n/a{% endif %}</span>
+        </div>
         {% set ttft = m.get("ttft_p50", 0)|float %}{% set tps = m.get("output_tps_p50", 0)|float if m.get("streamed") else 0 %}{% set lat = m.get("median_task_duration", 0)|float %}
         {% set lat95 = m.get("task_duration_p95", 0)|float %}
         <div class="model-card-row">
@@ -1339,7 +1344,8 @@
         </div>
         <div class="model-card-row">
           <span class="model-card-label">Tokens</span>
-          <span class="model-card-value">{{ "{:,}".format(m.get("total_tokens", 0)|int) }}</span>
+          <span class="model-card-value">{{ "{:,}".format(m.get("total_tokens", 0)|int) }}{% if (m.get("input_tokens", 0)|int) + (m.get("output_tokens", 0)|int) > 0 %}
+            <span style="font-weight:400;color:#6b7280">({{ "{:,}".format(m.get("input_tokens", 0)|int) }} in / {{ "{:,}".format(m.get("output_tokens", 0)|int) }} out)</span>{% endif %}</span>
         </div>
         <div class="model-card-row">
           <span class="model-card-label">Cost</span>

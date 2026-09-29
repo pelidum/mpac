@@ -512,6 +512,103 @@ async def test_run_details_answer_details(client, mock_stub):
 
 
 @pytest.mark.asyncio
+async def test_run_details_token_split(client, mock_stub):
+    _wire_perf_run(mock_stub)
+    run_pb = mock_stub.GetTestRun.return_value
+    run_pb.total_tokens = 1650
+    run_pb.metrics[0].total_tokens = 1100
+    run_pb.metrics[0].input_tokens = 1000
+    run_pb.metrics[0].output_tokens = 100
+    run_pb.metrics[1].total_tokens = 550
+    run_pb.metrics[1].input_tokens = 500
+    run_pb.metrics[1].output_tokens = 50
+    r = await client.get("/runs/run-perf")
+    assert r.status_code == 200
+    html = re.sub(r"<script.*?</script>", "", r.text, flags=re.DOTALL)
+
+    assert html.count('class="token-split"') == 3
+    assert "In 1,500" in html and "Out 150" in html
+    assert "In 1,000" in html and "Out 100" in html
+    assert 'style="flex-grow: 1000"' in html
+    assert "91%" in html and "9%" in html
+
+
+@pytest.mark.asyncio
+async def test_pdf_token_split(mock_stub):
+    _wire_perf_run(mock_stub)
+    mock_stub.GetTestRun.return_value.metrics[0].input_tokens = 1000
+    mock_stub.GetTestRun.return_value.metrics[0].output_tokens = 100
+    from ui.routers.runs import _fetch_run_report_data
+    from ui.server import templates
+
+    with mock.patch("ui.grpc_client._stub", mock_stub):
+        ctx = await _fetch_run_report_data("run-perf", None, num_items=0)
+    html = templates.get_template("run_report_pdf.html").render(ctx)
+    assert "(1,000 in / 100 out)" in html
+
+
+def _wire_confidence_run(mock_stub):
+    _wire_details_run(mock_stub)
+    run_pb = mock_stub.GetTestRun.return_value
+    run_pb.metrics[0].mean_confidence = 0.82
+    mock_stub.GetTest.return_value = service_pb2.Test(
+        id="test-1", name="T", type=1, item_count=2
+    )
+    mock_stub.GetTestRunConfusionMatrix.return_value = (
+        service_pb2.TestRunConfusionMatrix()
+    )
+    answer = _A(
+        item_id="item-1",
+        model_id="model-a",
+        responder_id="model-a",
+        answer="a",
+        status=_A.OK,
+        raw_response="a",
+        confidence=0.82,
+    )
+    answer.choice_probabilities.add(choice="a", probability=0.82)
+    answer.choice_probabilities.add(choice="b", probability=0.15)
+    unavailable = _A(
+        item_id="item-1",
+        model_id="model-b",
+        responder_id="model-b",
+        answer="b",
+        status=_A.OK,
+    )
+    mock_stub.ListTestRunAnswers.return_value = iter([answer, unavailable])
+
+
+@pytest.mark.asyncio
+async def test_run_details_shows_confidence(client, mock_stub):
+    _wire_confidence_run(mock_stub)
+    r = await client.get("/runs/run-perf")
+    assert r.status_code == 200, r.text
+    html = re.sub(r"<script.*?</script>", "", r.text, flags=re.DOTALL)
+
+    assert '<span class="ans-conf"' in html
+    assert ">82%</span>" in html
+    assert html.count('class="ans-conf"') == 1
+    assert html.count("data-confidence='") == 1
+    assert '"probability": 0.15' in html
+    assert "82.0%" in html
+    assert "n/a" in html
+
+
+@pytest.mark.asyncio
+async def test_pdf_shows_confidence(mock_stub):
+    _wire_confidence_run(mock_stub)
+    from ui.routers.runs import _fetch_run_report_data
+    from ui.server import templates
+
+    with mock.patch("ui.grpc_client._stub", mock_stub):
+        ctx = await _fetch_run_report_data("run-perf", None, num_items=10)
+    html = templates.get_template("run_report_pdf.html").render(ctx)
+
+    assert "82.0%" in html
+    assert "n/a" in html
+
+
+@pytest.mark.asyncio
 async def test_json_export_normalizes_answers(client, mock_stub):
     _wire_details_run(mock_stub)
     mock_stub.ListTestItems.return_value = iter([])

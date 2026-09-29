@@ -344,6 +344,13 @@ message TestRun {
     // timings. False on older runs, whose output_tps_* included prefill time
     // and are not comparable.
     bool streamed = 31;
+    // Mean TestRunAnswer.confidence over successful answers that have one.
+    // 0 when none do (the backend or model returned no logprobs).
+    float mean_confidence = 32;
+    // Prompt and completion token totals for this responder; they sum to
+    // total_tokens. 0 on runs created before the split was recorded.
+    int64 input_tokens = 33;
+    int64 output_tokens = 34;
   }
 
   string id = 1;
@@ -359,6 +366,13 @@ message TestRun {
   google.protobuf.Timestamp created_at_utc = 11;
   google.protobuf.Timestamp completed_at_utc = 12;
   string backend_id = 13;
+}
+
+// Probability a model assigned to one valid choice, derived from token
+// logprobs. Raw (not renormalized over the choices).
+message ChoiceProbability {
+  string choice = 1;
+  float probability = 2;
 }
 
 message TestRunAnswer {
@@ -427,6 +441,13 @@ message TestRunAnswer {
   // Human-readable error: why the primary request failed (status != OK), or
   // why the justification follow-up failed (status stays OK).
   string error = 23;
+  // Probability (0-1) the model assigned to the answer it generated, from
+  // token logprobs. Unset when the backend or model returned no logprobs or
+  // the answer could not be aligned with them.
+  optional float confidence = 24;
+  // Probability per valid choice, from the answer tokens' top_logprobs.
+  // Choices the model never considered are omitted.
+  repeated ChoiceProbability choice_probabilities = 25;
 }
 
 // Lightweight in-flight progress for a TestRun. Returned by GetRunProgress.

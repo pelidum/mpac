@@ -971,6 +971,9 @@ async def _fetch_run_report_data(
             "cost_min": min(nonzero_costs) if nonzero_costs else None,
         }
 
+    run_input_tokens = sum(int(x.get("input_tokens") or 0) for x in metrics_items)
+    run_output_tokens = sum(int(x.get("output_tokens") or 0) for x in metrics_items)
+
     has_modality_scores = any(
         x.get("modality_scores") and len(x.get("modality_scores", {})) > 0
         for x in metrics_items
@@ -1277,6 +1280,8 @@ async def _fetch_run_report_data(
         "metrics_dict": metrics_dict,
         "category_winners": category_winners,
         "has_modality_scores": has_modality_scores,
+        "run_input_tokens": run_input_tokens,
+        "run_output_tokens": run_output_tokens,
         "ranked_models": ranked_models,
         "models_ranked": models_ranked,
         "timeline_total_span_seconds": total_span,
