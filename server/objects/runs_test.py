@@ -233,14 +233,23 @@ class _DoRunStub(RunsMixin):
     def __init__(self, answer_side_effect=None, daily_spend_cents=0):
         self._update_calls = []
         self._answer_call_count = 0
+        self._instructions_seen = []
         self._answer_side_effect = answer_side_effect
         self._daily_spend_cents = daily_spend_cents
         self.db_pool = None
 
     async def answer_test_item(
-        self, item_pb, run_id, model_pb, backend, context, include_reasoning
+        self,
+        item_pb,
+        run_id,
+        model_pb,
+        backend,
+        context,
+        include_reasoning,
+        instructions="",
     ):
         self._answer_call_count += 1
+        self._instructions_seen.append(instructions)
         if self._answer_side_effect is not None:
             return self._answer_side_effect(self._answer_call_count)
         return _make_answer()
@@ -322,6 +331,30 @@ class TestDoRunInferenceCostTracking:
         assert final.status == service_pb2.ResponseCode.CANCELLED
         assert final.total_cost_usd == 0.0
 
+    def test_test_instructions_passed_to_answer_test_item(self):
+        stub = _DoRunStub()
+        run_pb, test_pb, items, request = _make_run_and_request()
+        test_pb.instructions = "Apply policy X."
+
+        asyncio.get_event_loop().run_until_complete(
+            stub._do_run_inference(run_pb, test_pb, items, request, asyncio.Event())
+        )
+
+        assert stub._instructions_seen == ["Apply policy X."]
+
+    def test_metrics_record_input_output_token_split(self):
+        stub = _DoRunStub()
+        run_pb, test_pb, items, request = _make_run_and_request()
+
+        asyncio.get_event_loop().run_until_complete(
+            stub._do_run_inference(run_pb, test_pb, items, request, asyncio.Event())
+        )
+
+        m = run_pb.metrics[0]
+        assert m.input_tokens == 100
+        assert m.output_tokens == 50
+        assert m.total_tokens == 150
+
     def test_spend_limit_cancellation_records_partial_cost(self):
         """With 1 item and daily_spend=1 cent, an answer costing $0.02 triggers
         the spend-limit cancel.  The post-model-loop guard raises CancelledError;
@@ -388,7 +421,14 @@ class _SlowAnswerStub(_DoRunStub):
         self._delay_per_call = delay_per_call
 
     async def answer_test_item(
-        self, item_pb, run_id, model_pb, backend, context, include_reasoning
+        self,
+        item_pb,
+        run_id,
+        model_pb,
+        backend,
+        context,
+        include_reasoning,
+        instructions="",
     ):
         self._answer_call_count += 1
         call = self._answer_call_count
@@ -852,7 +892,14 @@ class _ResponderRecordingStub(_DoRunStub):
         self.created_answers = []
 
     async def answer_test_item(
-        self, item_pb, run_id, model_pb, backend, context, include_reasoning
+        self,
+        item_pb,
+        run_id,
+        model_pb,
+        backend,
+        context,
+        include_reasoning,
+        instructions="",
     ):
         self._answer_call_count += 1
         a = _make_answer()
@@ -1033,6 +1080,36 @@ class TestPercentiles:
         assert p50 == statistics.median(values)
         assert 94 < p95 < 97
         assert 98 < p99 <= 100
+
+
+def _conf_answer(confidence=None):
+    a = _perf_answer()
+    a.status = service_pb2.TestRunAnswer.OK
+    if confidence is not None:
+        a.confidence = confidence
+    return a
+
+
+class TestApplyConfidenceMetrics:
+    def test_mean_over_successful_answers_with_confidence(self):
+        answers = [_conf_answer(0.9), _conf_answer(0.8), _conf_answer(0.3)]
+        answers.append(_conf_answer())
+        failed = _conf_answer(0.99)
+        failed.status = service_pb2.TestRunAnswer.TIMEOUT
+        answers.append(failed)
+        m = service_pb2.TestRun.TestRunMetrics()
+        runs_module._apply_confidence_metrics(m, answers)
+        assert m.mean_confidence == pytest.approx((0.9 + 0.8 + 0.3) / 3)
+
+    def test_zero_confidence_still_counts(self):
+        m = service_pb2.TestRun.TestRunMetrics()
+        runs_module._apply_confidence_metrics(m, [_conf_answer(0.0), _conf_answer(0.5)])
+        assert m.mean_confidence == pytest.approx(0.25)
+
+    def test_no_confidence_available(self):
+        m = service_pb2.TestRun.TestRunMetrics()
+        runs_module._apply_confidence_metrics(m, [_conf_answer()])
+        assert m.mean_confidence == 0.0
 
 
 class TestApplyPerformanceMetrics:

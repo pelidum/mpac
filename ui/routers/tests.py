@@ -97,6 +97,7 @@ async def submit_test(
         test_pb = service_pb2.Test(
             name=data.get("name"),
             description=data.get("description"),
+            instructions=data.get("instructions", ""),
             type=data.get("type"),
             item_count=len(data.get("items", [])),
             labels=data.get("labels", []),
@@ -335,6 +336,7 @@ async def download_test_archive(
         manifest = {
             "name": test_pb.name,
             "description": test_pb.description,
+            "instructions": test_pb.instructions,
             "type": type_name,
             "provider": test_pb.provider,
             "labels": list(test_pb.labels),
@@ -444,6 +446,7 @@ def _manifest_from_rows(rows: list) -> dict:
     return {
         "name": str(first.get("name") or ""),
         "description": str(first.get("description") or ""),
+        "instructions": str(first.get("instructions") or ""),
         "type": str(first.get("type") or "EVALUATION"),
         "provider": str(first.get("provider") or ""),
         "labels": first.get("labels"),
@@ -578,6 +581,7 @@ async def import_test(
         test_pb = service_pb2.Test(
             name=name,
             description=manifest.get("description") or "",
+            instructions=manifest.get("instructions") or "",
             type=test_type,
             item_count=len(valid_items),
             labels=_coerce_str_list(manifest.get("labels")),
@@ -701,6 +705,7 @@ async def parse_test_import(
             {
                 "name": (manifest.get("name") or "").strip(),
                 "description": manifest.get("description") or "",
+                "instructions": manifest.get("instructions") or "",
                 "type": TEST_TYPE_MAP.get(
                     (manifest.get("type") or "EVALUATION").upper(), 1
                 ),
@@ -871,6 +876,7 @@ async def submit_edit_test(
 
         test_pb.name = data.get("name", test_pb.name)
         test_pb.description = data.get("description", test_pb.description)
+        test_pb.instructions = data.get("instructions", test_pb.instructions)
         test_pb.type = data.get("type", test_pb.type)
         test_pb.provider = data.get("provider", test_pb.provider)
         test_pb.item_count = len(valid_items)

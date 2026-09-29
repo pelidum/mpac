@@ -328,6 +328,13 @@
                     placeholder="Describe your test…">{% if edit_mode %}{{ test_pb.description }}{% endif %}</textarea>
             </div>
             <div class="flex flex-col gap-1.5">
+                <label class="field-label">Instructions</label>
+                <textarea id="test-instructions" rows="6" class="field"
+                    placeholder="Shared text sent to the model before every question, e.g. a policy to apply…">{% if edit_mode %}{{ test_pb.instructions }}{% endif %}</textarea>
+                <p class="text-xs text-[var(--color-text-secondary)]">Optional. Included at the top of every item's prompt
+                    during a run.</p>
+            </div>
+            <div class="flex flex-col gap-1.5">
                 <label class="field-label">Test Type</label>
                 <select id="test-type" class="field" onchange="onTypeChange()">
                     <option value="1" {% if edit_mode and test_pb.type==1 %}selected{% endif %}>Evaluation - has correct
@@ -1035,6 +1042,7 @@
         // Metadata: only overwrite fields the export actually carries.
         if (data.name) document.getElementById('test-name').value = data.name;
         if (data.description) document.getElementById('test-description').value = data.description;
+        if (data.instructions) document.getElementById('test-instructions').value = data.instructions;
         if (data.type) { document.getElementById('test-type').value = String(data.type); onTypeChange(); }
         if (data.provider) document.getElementById('test-provider').value = data.provider;
         if (Array.isArray(data.labels) && data.labels.length) {
@@ -1220,6 +1228,7 @@
         const payload = {
             name,
             description: document.getElementById('test-description').value,
+            instructions: document.getElementById('test-instructions').value,
             type: testType,
             provider: document.getElementById('test-provider').value.trim(),
             labels,

@@ -55,6 +55,53 @@ async def test_test_details_page_renders(client, mock_stub):
 
 
 @pytest.mark.asyncio
+async def test_test_details_renders_item_table_and_instructions(client, mock_stub):
+    mock_stub.GetTest.return_value = service_pb2.Test(
+        id="t1",
+        name="Detail",
+        type=1,
+        item_count=1,
+        owner="user@example.com",
+        instructions="Apply policy X.",
+    )
+    mock_stub.ListTestItems.return_value = iter(
+        [
+            service_pb2.TestItem(
+                id="i1",
+                question="Q1",
+                context="ctx",
+                choices=["yes", "no"],
+                answer="yes",
+                is_relevant=True,
+            )
+        ]
+    )
+    r = await client.get("/tests/t1")
+    assert r.status_code == 200, r.text
+    assert 'id="item-table"' in r.text
+    assert 'data-filter-question="q1"' in r.text
+    assert '<span class="choice-pill">no</span>' in r.text
+    assert "Positive?" in r.text
+    assert "Apply policy X." in r.text
+    assert "eval-items-accordion" not in r.text
+
+
+@pytest.mark.asyncio
+async def test_test_details_survey_hides_eval_columns(client, mock_stub):
+    mock_stub.GetTest.return_value = service_pb2.Test(
+        id="t1", name="Survey", type=2, item_count=1, owner="user@example.com"
+    )
+    mock_stub.ListTestItems.return_value = iter(
+        [service_pb2.TestItem(id="i1", question="Q1", choices=["a"])]
+    )
+    r = await client.get("/tests/t1")
+    assert r.status_code == 200, r.text
+    assert 'id="item-table"' in r.text
+    assert "Positive?" not in r.text
+    assert "Instructions</span>" not in r.text
+
+
+@pytest.mark.asyncio
 async def test_url_for_moves_non_path_kwargs_to_query(client):
     """Regression: FastAPI >= 0.141 nests included routes, which broke the old
     app.routes scan and made every query-kwarg url_for raise NoMatchFound."""
@@ -101,6 +148,7 @@ async def test_import_archive_roundtrip(client, mock_stub):
     manifest = {
         "name": "Zip Test",
         "description": "d",
+        "instructions": "Apply policy X.",
         "type": "SURVEY",
         "provider": "acme",
         "labels": ["a", "b"],
@@ -120,6 +168,7 @@ async def test_import_archive_roundtrip(client, mock_stub):
     assert created_test.name == "Zip Test"
     assert created_test.type == 2  # SURVEY
     assert list(created_test.labels) == ["a", "b"]
+    assert created_test.instructions == "Apply policy X."
 
 
 @pytest.mark.asyncio
@@ -189,6 +238,7 @@ async def test_import_csv(client, mock_stub):
     fields = [
         "name",
         "description",
+        "instructions",
         "type",
         "provider",
         "labels",
@@ -203,6 +253,7 @@ async def test_import_csv(client, mock_stub):
         {
             "name": "CSV Test",
             "description": "desc",
+            "instructions": "Apply policy X.",
             "type": "EVALUATION",
             "provider": "acme",
             "labels": "['toxicity', 'threats']",
@@ -216,6 +267,7 @@ async def test_import_csv(client, mock_stub):
         {
             "name": "CSV Test",
             "description": "desc",
+            "instructions": "Apply policy X.",
             "type": "EVALUATION",
             "provider": "acme",
             "labels": "['toxicity', 'threats']",
@@ -238,6 +290,7 @@ async def test_import_csv(client, mock_stub):
     assert created_test.name == "CSV Test"
     assert created_test.type == 1  # EVALUATION
     assert list(created_test.labels) == ["toxicity", "threats"]
+    assert created_test.instructions == "Apply policy X."
 
     item1 = mock_stub.CreateTestItem.call_args_list[0].args[0]
     assert item1.question == "Q one?"
@@ -338,7 +391,12 @@ async def test_import_unparseable(client, mock_stub):
 async def test_download_archive_roundtrip(client, mock_stub):
     """Guards the manifest ``items`` KeyError: export must produce a real zip."""
     mock_stub.GetTest.return_value = service_pb2.Test(
-        id="test-1", name="Export Me", type=1, item_count=2, labels=["k"]
+        id="test-1",
+        name="Export Me",
+        type=1,
+        item_count=2,
+        labels=["k"],
+        instructions="Apply policy X.",
     )
     mock_stub.ListTestItems.return_value = iter(
         [
@@ -353,6 +411,7 @@ async def test_download_archive_roundtrip(client, mock_stub):
     zf = zipfile.ZipFile(io.BytesIO(r.content))
     manifest = json.loads(zf.read("manifest.json"))
     assert manifest["name"] == "Export Me"
+    assert manifest["instructions"] == "Apply policy X."
     assert len(manifest["items"]) == 2
     assert manifest["items"][0]["question"] == "Q1"
 

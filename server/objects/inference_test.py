@@ -2,7 +2,9 @@
 and debug_random inference."""
 
 import asyncio
+import math
 import re
+import types
 import unittest.mock as mock
 
 import pytest
@@ -119,6 +121,16 @@ class TestExtractModalityTokens:
 
 
 class TestAnswerTestItemDebugRandom:
+    def test_debug_answers_have_confidence(self, stub):
+        item = _make_item(choices=["X", "Y", "Z"], answer="Y")
+        result = _run(
+            stub.answer_test_item(item, "run-1", _make_model(), _DEBUG_BACKEND, None)
+        )
+        assert result.HasField("confidence")
+        assert result.choice_probabilities[0].choice == result.answer
+        assert result.confidence == result.choice_probabilities[0].probability
+        assert 0.9 <= sum(c.probability for c in result.choice_probabilities) <= 1.0
+
     def test_know_it_all_always_returns_correct_answer(self, stub):
         item = _make_item(choices=["X", "Y", "Z"], answer="Y")
         model = _make_model("debug/know_it_all")
@@ -304,13 +316,15 @@ class _FakeResources:
         self.client.chat.completions.create = _raise
 
 
-def _chunk(content=None, **delta_extra):
+def _chunk(content=None, logprobs=None, **delta_extra):
     """A streamed chat.completion.chunk with one choice."""
     delta = mock.MagicMock(spec=["content", "model_extra"])
     delta.content = content
     delta.model_extra = delta_extra
     choice = mock.MagicMock()
     choice.delta = delta
+    if logprobs is not None:
+        choice.logprobs = logprobs
     chunk = mock.MagicMock()
     chunk.choices = [choice]
     chunk.usage = None
@@ -448,6 +462,43 @@ class TestAttachmentContentPart:
         media_msg = captured["messages"][-1]
         assert media_msg["content"][0]["type"] == "video_url"
         assert "image_url" not in media_msg["content"][0]
+
+
+class TestTestInstructions:
+    def _user_message(self, monkeypatch, **kwargs):
+        captured = {}
+        stream = _FakeStream([_chunk(content="A"), _usage_chunk(_usage(10, 1))])
+        fake = _streaming_resources(stream, captured)
+
+        async def _get(_backend):
+            return fake
+
+        monkeypatch.setattr(inference_module, "get_backend_resources", _get)
+        _run(
+            _StubInference().answer_test_item(
+                _make_item(choices=["A", "B"], answer="A"),
+                "run-1",
+                _make_model("openai/gpt-test"),
+                _OPENAI_BACKEND,
+                None,
+                **kwargs,
+            )
+        )
+        return captured["messages"][1]["content"]
+
+    def test_instructions_precede_question(self, monkeypatch):
+        content = self._user_message(monkeypatch, instructions="Apply policy X.")
+        assert "```Apply policy X.```" in content
+        assert content.index("Apply policy X.") < content.index("Question:")
+
+    def test_no_instructions_block_when_empty(self, monkeypatch):
+        content = self._user_message(monkeypatch)
+        assert "Instructions" not in content
+        assert content.lstrip().startswith("Question: Pick one")
+
+    def test_whitespace_only_instructions_omitted(self, monkeypatch):
+        content = self._user_message(monkeypatch, instructions="  \n ")
+        assert "Instructions" not in content
 
 
 # ---------------------------------------------------------------------------
@@ -686,6 +737,187 @@ class TestReasoningRequestParams:
     def test_local_backends_send_nothing(self):
         for bt in ("vllm", "llama_cpp", "ollama"):
             assert inference_module._reasoning_request_params(bt, True) == {}
+
+
+def _lp(token, p, *alts):
+    return {
+        "content": [
+            {
+                "token": token,
+                "logprob": math.log(p),
+                "top_logprobs": [{"token": token, "logprob": math.log(p)}]
+                + [{"token": t, "logprob": math.log(q)} for t, q in alts],
+            }
+        ]
+    }
+
+
+class TestLogprobs:
+    def _answer(self, monkeypatch, create, backend=_LOCAL_BACKEND, **kwargs):
+        fake = _FakeResources()
+        fake.client.chat.completions.create = create
+
+        async def _get(_backend):
+            return fake
+
+        monkeypatch.setattr(inference_module, "get_backend_resources", _get)
+        return _run(
+            _StubInference().answer_test_item(
+                _make_item(choices=["A", "B"], answer="A"),
+                "run-1",
+                _make_model("local/model"),
+                backend,
+                None,
+                **kwargs,
+            )
+        )
+
+    @pytest.fixture(autouse=True)
+    def _fresh_unsupported(self, monkeypatch):
+        monkeypatch.setattr(inference_module, "_LOGPROBS_UNSUPPORTED", set())
+
+    def test_requests_logprobs(self, monkeypatch):
+        calls = []
+
+        async def _create(*args, **kwargs):
+            calls.append(kwargs)
+            return _FakeStream([_chunk(content="A"), _usage_chunk(_usage(10, 1))])
+
+        self._answer(monkeypatch, _create)
+        assert calls[0]["logprobs"] is True
+        assert calls[0]["top_logprobs"] == 20
+
+    def test_streamed_logprobs_fill_confidence(self, monkeypatch):
+        async def _create(*args, **kwargs):
+            return _FakeStream(
+                [
+                    _chunk(content="A", logprobs=_lp("A", 0.8, ("B", 0.15))),
+                    _usage_chunk(_usage(10, 1)),
+                ]
+            )
+
+        result = self._answer(monkeypatch, _create)
+        assert result.confidence == pytest.approx(0.8)
+        assert {c.choice: c.probability for c in result.choice_probabilities} == (
+            pytest.approx({"A": 0.8, "B": 0.15})
+        )
+
+    def test_object_shaped_logprobs(self, monkeypatch):
+        entry = types.SimpleNamespace(
+            token="B",
+            logprob=math.log(0.6),
+            top_logprobs=[types.SimpleNamespace(token="A", logprob=math.log(0.4))],
+        )
+
+        async def _create(*args, **kwargs):
+            return _FakeStream(
+                [
+                    _chunk(
+                        content="B",
+                        logprobs=types.SimpleNamespace(content=[entry]),
+                    ),
+                    _usage_chunk(_usage(10, 1)),
+                ]
+            )
+
+        result = self._answer(monkeypatch, _create)
+        assert result.answer == "B"
+        assert result.confidence == pytest.approx(0.6)
+
+    def test_reasoning_delta_logprobs_ignored(self, monkeypatch):
+        async def _create(*args, **kwargs):
+            return _FakeStream(
+                [
+                    _chunk(reasoning_content="B?", logprobs=_lp("B", 0.1)),
+                    _chunk(content="A", logprobs=_lp("A", 0.9)),
+                    _usage_chunk(_usage(10, 2)),
+                ]
+            )
+
+        result = self._answer(monkeypatch, _create)
+        assert result.confidence == pytest.approx(0.9)
+        assert [c.choice for c in result.choice_probabilities] == ["A"]
+
+    def test_no_logprobs_in_stream_leaves_confidence_unset(self, monkeypatch):
+        async def _create(*args, **kwargs):
+            return _FakeStream([_chunk(content="A"), _usage_chunk(_usage(10, 1))])
+
+        result = self._answer(monkeypatch, _create)
+        assert result.status == service_pb2.TestRunAnswer.OK
+        assert not result.HasField("confidence")
+        assert len(result.choice_probabilities) == 0
+
+    def test_rejected_logprobs_retry_and_are_remembered(self, monkeypatch):
+        from openai import BadRequestError
+
+        calls = []
+
+        async def _create(*args, **kwargs):
+            calls.append(kwargs)
+            if "logprobs" in kwargs:
+                raise BadRequestError(
+                    "logprobs is not supported with this model",
+                    response=mock.MagicMock(status_code=400),
+                    body=None,
+                )
+            return _FakeStream([_chunk(content="A"), _usage_chunk(_usage(10, 1))])
+
+        first = self._answer(monkeypatch, _create, include_reasoning=False)
+        assert first.status == service_pb2.TestRunAnswer.OK
+        assert not first.HasField("confidence")
+        assert len(calls) == 2
+        assert "logprobs" not in calls[1]
+
+        self._answer(monkeypatch, _create, include_reasoning=False)
+        assert len(calls) == 3
+        assert "logprobs" not in calls[2]
+
+    def test_logprobs_and_reasoning_both_rejected(self, monkeypatch):
+        from openai import BadRequestError
+
+        calls = []
+
+        async def _create(*args, **kwargs):
+            calls.append(kwargs)
+            if "logprobs" in kwargs or "reasoning_effort" in kwargs:
+                raise BadRequestError(
+                    "Unsupported parameter: reasoning_effort",
+                    response=mock.MagicMock(status_code=400),
+                    body=None,
+                )
+            if len(calls) == 3:
+                return _FakeStream([_chunk(content="A"), _usage_chunk(_usage(10, 1))])
+            follow_up = mock.MagicMock()
+            follow_up.choices = [mock.MagicMock()]
+            follow_up.choices[0].message.content = "Because A."
+            follow_up.usage = _usage(20, 3)
+            return follow_up
+
+        result = self._answer(
+            monkeypatch, _create, backend=_OPENAI_BACKEND, include_reasoning=True
+        )
+        assert result.status == service_pb2.TestRunAnswer.OK
+        assert "reasoning_effort" in calls[0] and "logprobs" in calls[0]
+        assert "reasoning_effort" not in calls[1] and "logprobs" in calls[1]
+        assert "reasoning_effort" not in calls[2] and "logprobs" not in calls[2]
+
+    def test_unrelated_bad_request_still_fails(self, monkeypatch):
+        from openai import BadRequestError
+
+        calls = []
+
+        async def _create(*args, **kwargs):
+            calls.append(kwargs)
+            raise BadRequestError(
+                "Unsupported image format",
+                response=mock.MagicMock(status_code=400),
+                body=None,
+            )
+
+        result = self._answer(monkeypatch, _create, include_reasoning=False)
+        assert result.status == service_pb2.TestRunAnswer.BAD_REQUEST
+        assert len(calls) == 2
+        assert inference_module._LOGPROBS_UNSUPPORTED == set()
 
 
 class TestNativeReasoning:

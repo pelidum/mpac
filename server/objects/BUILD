@@ -55,6 +55,7 @@ py_library(
     srcs = ["inference.py"],
     deps = [
         ":backend_pool",
+        ":confidence",
         "//server:service_py_proto",
         "@pypi//absl_py",
         "@pypi//grpcio",
@@ -63,6 +64,24 @@ py_library(
         "@pypi//tenacity",
     ],
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "confidence",
+    srcs = ["confidence.py"],
+    deps = ["//server:service_py_proto"],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "confidence_test",
+    size = "small",
+    srcs = ["confidence_test.py"],
+    deps = [
+        ":confidence",
+        "//server:service_py_proto",
+        "@pypi//pytest",
+    ],
 )
 
 py_library(

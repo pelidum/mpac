@@ -63,6 +63,15 @@ def _apply_performance_metrics(metrics_pb, model_answers: list) -> None:
     metrics_pb.streamed = bool(ttfts)
 
 
+def _apply_confidence_metrics(metrics_pb, model_answers: list) -> None:
+    scored = [
+        a.confidence
+        for a in model_answers
+        if is_request_success(a) and a.HasField("confidence")
+    ]
+    metrics_pb.mean_confidence = sum(scored) / len(scored) if scored else 0.0
+
+
 def _responder_key(model_pb) -> str:
     """Per-run responder instance id, falling back to model id for old runs."""
     return model_pb.responder_id or model_pb.id
@@ -279,6 +288,7 @@ class RunsMixin:
                         backend=backend_pb,
                         context=None,
                         include_reasoning=request.include_reasoning,
+                        instructions=test_pb.instructions,
                     )
                 _answer_done_at[answer_pb.id] = time.perf_counter()
                 total_tokens = answer_pb.input_tokens + answer_pb.output_tokens
@@ -547,8 +557,12 @@ class RunsMixin:
                     else 0
                 )
                 model_total_tokens = 0
+                model_input_tokens = 0
+                model_output_tokens = 0
                 model_total_cost = 0.0
                 for model_answer in model_answers:
+                    model_input_tokens += model_answer.input_tokens
+                    model_output_tokens += model_answer.output_tokens
                     model_total_tokens += (
                         model_answer.input_tokens + model_answer.output_tokens
                     )
@@ -578,10 +592,13 @@ class RunsMixin:
                 )
                 metrics_pb.tokens_per_minute = output_tpm
                 _apply_performance_metrics(metrics_pb, model_answers)
+                _apply_confidence_metrics(metrics_pb, model_answers)
                 metrics_pb.startup_latency = startup_latency or 0.0
                 metrics_pb.modality_scores.update(attachment_metrics)
                 metrics_pb.total_cost_usd = model_total_cost
                 metrics_pb.total_tokens = model_total_tokens
+                metrics_pb.input_tokens = model_input_tokens
+                metrics_pb.output_tokens = model_output_tokens
                 metrics_pb.created_at_utc.CopyFrom(model_start_pb)
                 metrics_pb.completed_at_utc.CopyFrom(model_end_pb)
 
@@ -782,6 +799,7 @@ class RunsMixin:
                     [a for a in model_answers if not a.answer]
                 )
                 _apply_performance_metrics(metrics_pb, model_answers)
+                _apply_confidence_metrics(metrics_pb, model_answers)
                 metrics_pb.precision = precision_score(
                     y_true=ground_truth,
                     y_pred=responder_answers,
