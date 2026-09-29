@@ -240,6 +240,9 @@ message Test {
   string provider = 10;
   // Test owner
   string owner = 11;
+  // Shared instructions sent before every item's question during inference
+  // (e.g. a policy that applies to all items)
+  string instructions = 12;
 }
 
 enum FileModality {

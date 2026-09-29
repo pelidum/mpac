@@ -279,6 +279,7 @@ class RunsMixin:
                         backend=backend_pb,
                         context=None,
                         include_reasoning=request.include_reasoning,
+                        instructions=test_pb.instructions,
                     )
                 _answer_done_at[answer_pb.id] = time.perf_counter()
                 total_tokens = answer_pb.input_tokens + answer_pb.output_tokens

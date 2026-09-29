@@ -450,6 +450,43 @@ class TestAttachmentContentPart:
         assert "image_url" not in media_msg["content"][0]
 
 
+class TestTestInstructions:
+    def _user_message(self, monkeypatch, **kwargs):
+        captured = {}
+        stream = _FakeStream([_chunk(content="A"), _usage_chunk(_usage(10, 1))])
+        fake = _streaming_resources(stream, captured)
+
+        async def _get(_backend):
+            return fake
+
+        monkeypatch.setattr(inference_module, "get_backend_resources", _get)
+        _run(
+            _StubInference().answer_test_item(
+                _make_item(choices=["A", "B"], answer="A"),
+                "run-1",
+                _make_model("openai/gpt-test"),
+                _OPENAI_BACKEND,
+                None,
+                **kwargs,
+            )
+        )
+        return captured["messages"][1]["content"]
+
+    def test_instructions_precede_question(self, monkeypatch):
+        content = self._user_message(monkeypatch, instructions="Apply policy X.")
+        assert "```Apply policy X.```" in content
+        assert content.index("Apply policy X.") < content.index("Question:")
+
+    def test_no_instructions_block_when_empty(self, monkeypatch):
+        content = self._user_message(monkeypatch)
+        assert "Instructions" not in content
+        assert content.lstrip().startswith("Question: Pick one")
+
+    def test_whitespace_only_instructions_omitted(self, monkeypatch):
+        content = self._user_message(monkeypatch, instructions="  \n ")
+        assert "Instructions" not in content
+
+
 # ---------------------------------------------------------------------------
 # Streaming inference: TTFT / output TPS / latency
 # ---------------------------------------------------------------------------

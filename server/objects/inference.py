@@ -320,6 +320,7 @@ class InferenceMixin:
         backend: "service_pb2.Backend",
         context: grpc.aio.ServicerContext,
         include_reasoning: bool = False,
+        instructions: str = "",
     ) -> service_pb2.TestRunAnswer:
         backend_type = service_pb2.BackendType.Name(backend.backend_type).lower()
 
@@ -370,10 +371,16 @@ class InferenceMixin:
                     "content": MPAC_SYSTEM_PROMPT,
                 }
             )
+            instructions_block = (
+                f"""
+                        Instructions (apply to every question): ```{instructions}```"""
+                if instructions.strip()
+                else ""
+            )
             chat_messages.append(
                 {
                     "role": "user",
-                    "content": f"""
+                    "content": f"""{instructions_block}
                         Question: {item_pb.question}
                         Valid response options (as a list of strings): {item_pb.choices}
                         Additional context: ```{item_pb.context}```

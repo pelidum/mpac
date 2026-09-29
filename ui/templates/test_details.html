@@ -2,6 +2,84 @@
 {% block title %}Pelidum MPAC - {{ test_pb.name }}{% endblock %}
 
 {% block content %}
+<style>
+    .table-scroll::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+
+    .table-scroll::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .table-scroll::-webkit-scrollbar-thumb {
+        background: var(--color-border);
+        border-radius: 3px;
+    }
+
+    #item-table th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--color-bg-primary);
+        border: 1px solid var(--color-border);
+    }
+
+    #item-table td {
+        border: 1px solid var(--color-border);
+        padding: 6px 8px;
+        vertical-align: top;
+    }
+
+    #item-table tbody tr {
+        cursor: pointer;
+    }
+
+    #item-table tbody tr:hover {
+        background: var(--color-highlight-shade1);
+    }
+
+    .cell-text {
+        white-space: pre-wrap;
+        word-break: break-word;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    #item-table tbody tr.expanded .cell-text {
+        display: block;
+        -webkit-line-clamp: unset;
+    }
+
+    .choice-pill {
+        display: inline-block;
+        padding: 1px 8px;
+        margin: 1px 2px 1px 0;
+        border-radius: 12px;
+        background: rgba(var(--color-accent-primary-rgb), 0.1);
+        font-size: 11px;
+        white-space: nowrap;
+    }
+
+    .att-thumb {
+        max-height: 48px;
+        max-width: 88px;
+        border-radius: 4px;
+        object-fit: cover;
+        cursor: zoom-in;
+    }
+
+    .att-name {
+        font-size: 10px;
+        color: var(--color-text-secondary);
+        max-width: 88px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+</style>
 <div class="max-w-4xl mx-auto">
     <div class="flex justify-between items-center mb-6">
         <div>
@@ -67,6 +145,14 @@
                     {{ test_pb.description or 'No description provided.' }}
                 </div>
             </div>
+
+            {% if test_pb.instructions %}
+            <div class="md:col-span-2">
+                <span class="block text-sm font-medium text-muted mb-0.5">Instructions</span>
+                <div
+                    class="text-sm whitespace-pre-wrap break-words max-h-64 overflow-auto bg-[var(--color-highlight-shade1)] px-4 py-3 rounded-lg border border-[var(--color-border)]">{{ test_pb.instructions }}</div>
+            </div>
+            {% endif %}
         </div>
 
         <div class="mt-6">
@@ -149,7 +235,9 @@
             </div>
         </div>
     </div>
+</div>
 
+<div>
     <div class="card p-6">
         <h3 class="flex items-center gap-2.5 text-xl font-semibold pb-3 mb-4 section-divider text-accent">
             <span class="material-icons">quiz</span>
@@ -198,140 +286,79 @@
             </span>
         </div>
 
-        <div id="eval-items-accordion" class="space-y-3">
-            {% if test_item_pbs %}
-            {% for item in test_item_pbs %}
-            <div class="border border-[var(--color-border)] rounded-lg overflow-hidden"
-                data-filter-question="{{ (item.question or '').lower() }}"
-                data-filter-content="{{ (item.context or '').lower() }}"
-                data-filter-answer="{{ (item.answer or '').lower() }}"
-                data-filter-positive="{{ (item.is_relevant | string).lower() }}"
-                data-filter-choices="{{ (item.choices | join(' ')).lower() }}">
-
-                <button data-accordion-trigger
-                    class="flex justify-between items-center w-full p-4 text-left font-medium bg-[var(--color-bg-primary)] transition-colors duration-200 hover:bg-[var(--color-highlight-shade1)]"
-                    aria-expanded="false">
-                    <span class="flex-1 min-w-0 flex items-center gap-3">
-                        <span class="font-semibold mr-2">{{ loop.index }}.</span>
-
-                        <span class="clamp-1 text-primary flex items-center gap-2">
-                            {{ item.question }}
-                            {% if item.attachment_id %}
-                            <span class="material-icons text-secondary text-base"
-                                title="Has attachment">attach_file</span>
-                            {% endif %}
-                        </span>
-                    </span>
-                    <span data-accordion-icon
-                        class="material-icons text-secondary ml-4 transition-transform duration-200 ease-in-out">expand_more</span>
-                </button>
-
-                <div
-                    class="overflow-hidden max-h-0 transition-[max-height] duration-300 ease-in-out bg-[var(--color-highlight-shade1)]">
-                    <div class="p-4 space-y-4">
-                        <div class="flex items-start gap-3">
-                            <span class="material-icons text-accent mt-px text-[24px]">notes</span>
-                            <div>
-                                <span class="block text-sm font-medium text-muted mb-0.5">Question</span>
-                                <p class="font-medium text-base break-words">{{ item.question }}</p>
-                            </div>
-                        </div>
-
-                        <div class="flex items-start gap-3">
-                            <span class="material-icons text-accent mt-px text-[24px]">description</span>
-                            <div>
-                                <span class="block text-sm font-medium text-muted mb-0.5">Context</span>
-                                <p class="font-medium text-base break-words">{{ item.context }}</p>
-                            </div>
-                        </div>
-
-                        <div class="flex items-start gap-3">
-                            <span class="material-icons text-accent mt-px text-[24px]">check_circle_outline</span>
-                            <div>
-                                <span class="block text-sm font-medium text-muted mb-0.5">Correct Answer</span>
-                                <p class="font-medium text-base break-words">{{ item.answer }}</p>
-                            </div>
-                        </div>
-
-                        <div class="flex items-start gap-3">
-                            <span class="material-icons text-accent mt-px text-[24px]">thumb_up_off_alt</span>
-                            <div>
-                                <span class="block text-sm font-medium text-muted mb-0.5">Relevant Instance</span>
-                                <p class="font-medium text-base break-words">{{ item.is_relevant }}</p>
-                            </div>
-                        </div>
-
-                        <div class="flex items-start gap-3">
-                            <span class="material-icons text-accent mt-px text-[24px]">rule</span>
-                            <div>
-                                <span class="block text-sm font-medium text-muted mb-0.5">Choices</span>
-                                {% if item.choices %}
-                                <ul class="list-disc list-inside space-y-1 font-medium text-base break-words">
-                                    {% for choice in item.choices %}
-                                    <li>{{ choice }}</li>
-                                    {% endfor %}
-                                </ul>
-                                {% else %}
-                                <p class="font-medium text-base break-words text-muted">No choices for this item.</p>
-                                {% endif %}
-                            </div>
-                        </div>
-
-                        {% if item.attachment_id %}
-                        {% set att_pb = attachments_map.get(item.attachment_id) %}
-                        <div class="flex items-start gap-3">
-                            <span class="material-icons text-accent mt-px text-[24px]">attach_file</span>
-                            <div class="flex-1">
-                                <span class="block text-sm font-medium text-muted mb-1.5">Attachment</span>
-                                {% if att_pb %}
-                                    {% if att_pb.modality == 2 %}
-                                        {# Image — loaded lazily by browser #}
-                                        <img src="{{ url_for('attachment_file', attachment_id=att_pb.id) }}"
-                                             alt="{{ att_pb.name }}"
-                                             class="max-h-48 max-w-full object-contain rounded-lg border border-[var(--color-border)] cursor-pointer hover:opacity-85 transition-opacity"
-                                             data-name="{{ att_pb.name }}" onclick="openAttachmentModal(this.src, this.dataset.name)"
-                                             title="Click to enlarge">
-                                        <p class="text-xs text-muted mt-1.5">{{ att_pb.name }}</p>
-                                    {% elif att_pb.modality == 1 %}
-                                        {# Audio #}
-                                        <a href="{{ url_for('attachment_details', attachment_id=att_pb.id) }}"
-                                           class="inline-flex flex-col items-center gap-1 text-accent hover:text-accent/80 transition-opacity">
-                                            <span class="material-icons text-4xl">audiotrack</span>
-                                            <span class="text-xs">{{ att_pb.name }}</span>
-                                        </a>
-                                    {% elif att_pb.modality == 3 %}
-                                        {# Video #}
-                                        <a href="{{ url_for('attachment_details', attachment_id=att_pb.id) }}"
-                                           class="inline-flex flex-col items-center gap-1 text-accent hover:text-accent/80 transition-opacity">
-                                            <span class="material-icons text-4xl">videocam</span>
-                                            <span class="text-xs">{{ att_pb.name }}</span>
-                                        </a>
-                                    {% else %}
-                                        {# Generic file #}
-                                        <a href="{{ url_for('attachment_details', attachment_id=att_pb.id) }}"
-                                           class="inline-flex flex-col items-center gap-1 text-accent hover:text-accent/80 transition-opacity">
-                                            <span class="material-icons text-4xl">insert_drive_file</span>
-                                            <span class="text-xs">{{ att_pb.name }}</span>
-                                        </a>
-                                    {% endif %}
-                                {% else %}
-                                    {# Attachment exists but failed to load — fall back to link #}
-                                    <a href="{{ url_for('attachment_details', attachment_id=item.attachment_id) }}"
-                                        class="font-medium text-accent hover:underline">
-                                        View attachment
-                                    </a>
-                                {% endif %}
-                            </div>
-                        </div>
+        {% set is_eval = test_pb.type == 1 %}
+        {% if test_item_pbs %}
+        <div class="table-scroll overflow-auto max-h-[70vh] pr-1">
+            <table id="item-table" class="w-full text-sm"
+                style="border-collapse: collapse; border: 1px solid var(--color-border);">
+                <thead>
+                    <tr class="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide">
+                        <th class="px-2 py-2 text-center" style="width:36px;">#</th>
+                        <th class="px-2 py-2 text-center" style="width:110px;">
+                            <span class="material-icons" style="font-size:14px; vertical-align:middle;">attach_file</span>
+                            File
+                        </th>
+                        <th class="px-2 py-2 text-left" style="min-width:240px;">Question</th>
+                        <th class="px-2 py-2 text-left" style="min-width:160px;">Context</th>
+                        <th class="px-2 py-2 text-left" style="min-width:160px;">Choices</th>
+                        {% if is_eval %}
+                        <th class="px-2 py-2 text-left" style="min-width:120px;">Answer</th>
+                        <th class="px-2 py-2 text-center" style="width:72px;">Positive?</th>
                         {% endif %}
-                    </div>
-                </div>
-            </div>
-            {% endfor %}
-            {% else %}
-            <div class="flex items-center gap-2.5 text-xl font-semibold pb-3 mb-4 section-divider text-accent"></div>
-            {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in test_item_pbs %}
+                    <tr data-filter-question="{{ (item.question or '').lower() }}"
+                        data-filter-content="{{ (item.context or '').lower() }}"
+                        data-filter-answer="{{ (item.answer or '').lower() }}"
+                        data-filter-positive="{{ (item.is_relevant | string).lower() }}"
+                        data-filter-choices="{{ (item.choices | join(' ')).lower() }}">
+                        <td class="text-center text-xs text-[var(--color-text-secondary)]">{{ loop.index }}</td>
+                        <td class="text-center">
+                            {% if item.attachment_id %}
+                            {% set att_pb = attachments_map.get(item.attachment_id) %}
+                            {% if att_pb and att_pb.modality == 2 %}
+                            <div class="flex flex-col items-center gap-0.5">
+                                <img src="{{ url_for('attachment_file', attachment_id=att_pb.id) }}"
+                                    alt="{{ att_pb.name }}" loading="lazy" class="att-thumb"
+                                    data-name="{{ att_pb.name }}"
+                                    onclick="openAttachmentModal(this.src, this.dataset.name)" title="Click to enlarge">
+                                <span class="att-name" title="{{ att_pb.name }}">{{ att_pb.name }}</span>
+                            </div>
+                            {% elif att_pb %}
+                            <a href="{{ url_for('attachment_details', attachment_id=att_pb.id) }}"
+                                class="inline-flex flex-col items-center gap-0.5 text-accent" title="{{ att_pb.name }}">
+                                <span class="material-icons">{{ 'audiotrack' if att_pb.modality == 1 else 'videocam' if att_pb.modality == 3 else 'insert_drive_file' }}</span>
+                                <span class="att-name">{{ att_pb.name }}</span>
+                            </a>
+                            {% else %}
+                            <a href="{{ url_for('attachment_details', attachment_id=item.attachment_id) }}"
+                                class="text-accent text-xs hover:underline">View</a>
+                            {% endif %}
+                            {% endif %}
+                        </td>
+                        <td><div class="cell-text">{{ item.question }}</div></td>
+                        <td><div class="cell-text">{{ item.context }}</div></td>
+                        <td>
+                            <div class="cell-text">{% for choice in item.choices %}<span class="choice-pill">{{ choice }}</span>{% endfor %}</div>
+                        </td>
+                        {% if is_eval %}
+                        <td><div class="cell-text">{{ item.answer }}</div></td>
+                        <td class="text-center">
+                            {% if item.is_relevant %}
+                            <span class="material-icons text-accent" style="font-size:18px;">check</span>
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
+        {% else %}
+        <p class="muted text-sm">This test has no items.</p>
+        {% endif %}
 
         <div class="mt-6 flex flex-col items-center gap-3">
             {% if test_item_pbs|length < test_pb.item_count %}
@@ -388,32 +415,13 @@
             }
         });
 
-        // 2. Accordion Logic
-        const accordionContainer = document.getElementById("eval-items-accordion");
-        if (accordionContainer) {
-            accordionContainer.addEventListener("click", (event) => {
-                const trigger = event.target.closest("[data-accordion-trigger]");
-                if (!trigger) return;
+        const itemTable = document.getElementById("item-table");
+        itemTable?.addEventListener("click", (event) => {
+            if (event.target.closest("a, img")) return;
+            event.target.closest("tbody tr")?.classList.toggle("expanded");
+        });
 
-                const content = trigger.nextElementSibling;
-                const icon = trigger.querySelector("[data-accordion-icon]");
-                const isOpen = !!content.style.maxHeight; // Simple check
-
-                if (isOpen) {
-                    // Close
-                    content.style.maxHeight = null;
-                    trigger.setAttribute("aria-expanded", "false");
-                    if (icon) icon.classList.remove("rotate-180");
-                } else {
-                    // Open
-                    content.style.maxHeight = content.scrollHeight + "px";
-                    trigger.setAttribute("aria-expanded", "true");
-                    if (icon) icon.classList.add("rotate-180");
-                }
-            });
-        }
-
-        // 3. Dropdown Logic
+        // 2. Dropdown Logic
         const downloadButton = document.getElementById("download-button");
         const downloadDropdown = document.getElementById("download-dropdown");
         if (downloadButton && downloadDropdown) {
@@ -433,7 +441,7 @@
             });
         }
 
-        // 4. Filtering Logic
+        // 3. Filtering Logic
         const filterInputs = {
             question: document.getElementById("filterItemQuestion"),
             content: document.getElementById("filterItemContent"),
@@ -444,7 +452,7 @@
         const clearButton = document.getElementById("clearItemFilters");
         const resultsCountEl = document.getElementById("filter-results-count");
         // Get all item rows based on having a question data attribute
-        const allItems = Array.from(accordionContainer.querySelectorAll("div[data-filter-question]"));
+        const allItems = Array.from(document.querySelectorAll("#item-table tbody tr[data-filter-question]"));
         const totalItems = allItems.length;
 
         const applyFilters = () => {
