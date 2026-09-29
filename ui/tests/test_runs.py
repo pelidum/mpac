@@ -420,18 +420,41 @@ _A = service_pb2.TestRunAnswer
 def _detail_answers():
     return [
         # New: native reasoning + verbatim raw response.
-        _A(item_id="item-1", model_id="model-a", responder_id="model-a", answer="a",
-           status=_A.OK, reasoning="native thoughts", raw_response="a"),
+        _A(
+            item_id="item-1",
+            model_id="model-a",
+            responder_id="model-a",
+            answer="a",
+            status=_A.OK,
+            reasoning="native thoughts",
+            raw_response="a",
+        ),
         # New: justification from the follow-up call.
-        _A(item_id="item-1", model_id="model-b", responder_id="model-b", answer="b",
-           status=_A.OK, justification="because b", raw_response="b"),
+        _A(
+            item_id="item-1",
+            model_id="model-b",
+            responder_id="model-b",
+            answer="b",
+            status=_A.OK,
+            justification="because b",
+            raw_response="b",
+        ),
         # Legacy: error encoded in raw_response prefix + message in reasoning.
-        _A(item_id="item-2", model_id="model-a", responder_id="model-a",
-           raw_response="[TIMEOUT] Inference request timed out",
-           reasoning="Request timeout - inference took too long"),
+        _A(
+            item_id="item-2",
+            model_id="model-a",
+            responder_id="model-a",
+            raw_response="[TIMEOUT] Inference request timed out",
+            reasoning="Request timeout - inference took too long",
+        ),
         # New: failed request.
-        _A(item_id="item-2", model_id="model-b", responder_id="model-b",
-           status=_A.CONNECTION_ERROR, error="Connection error: refused"),
+        _A(
+            item_id="item-2",
+            model_id="model-b",
+            responder_id="model-b",
+            status=_A.CONNECTION_ERROR,
+            error="Connection error: refused",
+        ),
     ]
 
 

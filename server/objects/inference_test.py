@@ -156,7 +156,9 @@ class TestAnswerTestItemDebugRandom:
 
     def test_debug_answers_have_streaming_timings(self, stub):
         result = _run(
-            stub.answer_test_item(_make_item(), "run-1", _make_model(), _DEBUG_BACKEND, None)
+            stub.answer_test_item(
+                _make_item(), "run-1", _make_model(), _DEBUG_BACKEND, None
+            )
         )
         assert result.ttft > 0
         assert result.ttft < result.task_duration
@@ -416,7 +418,9 @@ class TestAttachmentContentPart:
         }
 
     def test_non_media_returns_none(self):
-        assert inference_module._attachment_content_part(_attachment("text/plain")) is None
+        assert (
+            inference_module._attachment_content_part(_attachment("text/plain")) is None
+        )
 
     def test_video_attachment_sent_to_backend(self, monkeypatch):
         captured = {}
@@ -560,8 +564,11 @@ class TestStreamingInference:
         monkeypatch.setattr(inference_module, "get_backend_resources", _get)
         result = _run(
             _StubInference().answer_test_item(
-                _make_item(), "run-1", _make_model("openai/gpt-test"),
-                _OPENAI_BACKEND, None,
+                _make_item(),
+                "run-1",
+                _make_model("openai/gpt-test"),
+                _OPENAI_BACKEND,
+                None,
             )
         )
         assert result.status == service_pb2.TestRunAnswer.TIMEOUT
@@ -636,7 +643,11 @@ class TestNativeReasoning:
         async def _create(*args, **kwargs):
             calls.append(kwargs)
             return _FakeStream(
-                [_chunk(reasoning="because"), _chunk(content="A"), _usage_chunk(_usage(10, 3))]
+                [
+                    _chunk(reasoning="because"),
+                    _chunk(content="A"),
+                    _usage_chunk(_usage(10, 3)),
+                ]
             )
 
         self._answer(monkeypatch, _create, _OPENROUTER_BACKEND)
@@ -675,7 +686,11 @@ class TestNativeReasoning:
     def test_reasoning_stored_even_when_toggle_off(self, monkeypatch):
         async def _create(*args, **kwargs):
             return _FakeStream(
-                [_chunk(reasoning="thinking"), _chunk(content="A"), _usage_chunk(_usage(10, 3))]
+                [
+                    _chunk(reasoning="thinking"),
+                    _chunk(content="A"),
+                    _usage_chunk(_usage(10, 3)),
+                ]
             )
 
         result = self._answer(
@@ -728,7 +743,11 @@ class TestNativeReasoning:
     def test_inline_think_is_reasoning_and_raw_is_verbatim(self, monkeypatch):
         async def _create(*args, **kwargs):
             return _FakeStream(
-                [_chunk(content="<think>hmm</think>"), _chunk(content="A"), _usage_chunk(_usage(10, 5))]
+                [
+                    _chunk(content="<think>hmm</think>"),
+                    _chunk(content="A"),
+                    _usage_chunk(_usage(10, 5)),
+                ]
             )
 
         result = self._answer(monkeypatch, _create, _LOCAL_BACKEND)
@@ -764,7 +783,10 @@ class TestNativeReasoning:
         async def _create(*args, **kwargs):
             return _FakeStream(
                 [_chunk(reasoning=w) for w in words]
-                + [_chunk(content="A"), _usage_chunk(_usage(10, 11, reasoning_tokens=10))],
+                + [
+                    _chunk(content="A"),
+                    _usage_chunk(_usage(10, 11, reasoning_tokens=10)),
+                ],
                 delay=0.02,
             )
 

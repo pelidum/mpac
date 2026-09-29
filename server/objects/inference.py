@@ -230,8 +230,7 @@ async def _stream_completion(
         )
         streamed_reasoning_tokens = len(reasoning_text) / _CHARS_PER_TOKEN
         reasoning_was_live = (
-            streamed_reasoning_tokens
-            >= _LIVE_REASONING_MIN_FRACTION * reasoning_tokens
+            streamed_reasoning_tokens >= _LIVE_REASONING_MIN_FRACTION * reasoning_tokens
         )
         if reasoning_tokens and not reasoning_was_live:
             # Reasoning was hidden or summarized: it was generated before the
@@ -452,12 +451,10 @@ class InferenceMixin:
                     modality_tokens["image"] * model_pb.pricing.image_token_cost
                 )
                 input_audio_cost = (
-                    modality_tokens["input_audio"]
-                    * model_pb.pricing.audio_token_cost
+                    modality_tokens["input_audio"] * model_pb.pricing.audio_token_cost
                 )
                 output_audio_cost = (
-                    modality_tokens["output_audio"]
-                    * model_pb.pricing.audio_token_cost
+                    modality_tokens["output_audio"] * model_pb.pricing.audio_token_cost
                 )
                 output_cost = output_tokens * model_pb.pricing.output_token_cost
 
@@ -477,9 +474,7 @@ class InferenceMixin:
                         )
                         answer_pb.output_cost = output_cost + output_audio_cost
                 else:
-                    answer_pb.input_cost = (
-                        input_cost + image_cost + input_audio_cost
-                    )
+                    answer_pb.input_cost = input_cost + image_cost + input_audio_cost
                     answer_pb.output_cost = output_cost + output_audio_cost
 
             except asyncio.TimeoutError:
@@ -559,13 +554,18 @@ class InferenceMixin:
                         ),
                         timeout=request_timeout + 10.0,
                     )
-                    if justification_result.choices and len(justification_result.choices) > 0:
+                    if (
+                        justification_result.choices
+                        and len(justification_result.choices) > 0
+                    ):
                         justification_text = justification_result.choices[
                             0
                         ].message.content
                         answer_pb.justification = justification_text or ""
 
-                        justification_input_tokens = justification_result.usage.prompt_tokens
+                        justification_input_tokens = (
+                            justification_result.usage.prompt_tokens
+                        )
                         justification_output_tokens = (
                             justification_result.usage.completion_tokens
                         )
@@ -584,7 +584,8 @@ class InferenceMixin:
                         )
 
                         justification_input_cost = (
-                            justification_base_tokens * model_pb.pricing.input_token_cost
+                            justification_base_tokens
+                            * model_pb.pricing.input_token_cost
                         )
                         justification_image_cost = (
                             justification_modality["image"]
@@ -599,7 +600,8 @@ class InferenceMixin:
                             * model_pb.pricing.audio_token_cost
                         )
                         justification_output_cost = (
-                            justification_output_tokens * model_pb.pricing.output_token_cost
+                            justification_output_tokens
+                            * model_pb.pricing.output_token_cost
                         )
 
                         answer_pb.input_tokens += justification_input_tokens
@@ -618,7 +620,8 @@ class InferenceMixin:
                                     + justification_input_audio_cost
                                 )
                                 answer_pb.output_cost += (
-                                    justification_output_cost + justification_output_audio_cost
+                                    justification_output_cost
+                                    + justification_output_audio_cost
                                 )
                         else:
                             answer_pb.input_cost += (
@@ -627,7 +630,8 @@ class InferenceMixin:
                                 + justification_input_audio_cost
                             )
                             answer_pb.output_cost += (
-                                justification_output_cost + justification_output_audio_cost
+                                justification_output_cost
+                                + justification_output_audio_cost
                             )
 
                 except asyncio.TimeoutError:

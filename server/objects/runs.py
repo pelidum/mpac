@@ -56,9 +56,7 @@ def _apply_performance_metrics(metrics_pb, model_answers: list) -> None:
         metrics_pb.task_duration_p99,
     ) = _percentiles([a.task_duration for a in ok if a.task_duration > 0])
     ttfts = [a.ttft for a in ok if a.ttft > 0]
-    metrics_pb.ttft_p50, metrics_pb.ttft_p95, metrics_pb.ttft_p99 = _percentiles(
-        ttfts
-    )
+    metrics_pb.ttft_p50, metrics_pb.ttft_p95, metrics_pb.ttft_p99 = _percentiles(ttfts)
     tps_p50, tps_p95, _ = _percentiles([a.output_tps for a in ok if a.output_tps > 0])
     metrics_pb.output_tps_p50 = tps_p50
     metrics_pb.output_tps_p95 = tps_p95
