@@ -375,6 +375,17 @@ message ChoiceProbability {
   float probability = 2;
 }
 
+message TokenLogprob {
+  message TopLogprob {
+    string token = 1;
+    double logprob = 2;
+  }
+
+  string token = 1;
+  double logprob = 2;
+  repeated TopLogprob top_logprobs = 3;
+}
+
 message TestRunAnswer {
   // Outcome of the primary inference request for this answer.
   enum Status {

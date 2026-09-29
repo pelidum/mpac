@@ -1,23 +1,11 @@
-import dataclasses
 import math
 import re
+
+from server import service_pb2
 
 MAX_ANSWER_TOKENS = 32
 _LEADING_JUNK = " \t\r\n\"'`*"
 _THINK_END = "</think>"
-
-
-@dataclasses.dataclass
-class Token:
-    token: str
-    logprob: float
-    top: list[tuple[str, float]] = dataclasses.field(default_factory=list)
-
-
-@dataclasses.dataclass
-class ConfidenceResult:
-    confidence: float | None = None
-    choice_probs: dict[str, float] = dataclasses.field(default_factory=dict)
 
 
 def _norm_choice(text: str) -> str:
@@ -38,7 +26,7 @@ def _consistent(prefix: str, choice: str) -> bool:
     return bool(prefix) and (choice.startswith(prefix) or _completes(prefix, choice))
 
 
-def _answer_start(tokens: list[Token]) -> int:
+def _answer_start(tokens: list[service_pb2.TokenLogprob]) -> int:
     text = "".join(t.token for t in tokens)
     idx = text.lower().rfind(_THINK_END)
     if idx < 0:
@@ -58,11 +46,15 @@ def _distribute(mass: dict[str, float], targets: list[str], amount: float) -> No
         mass[c] = mass.get(c, 0.0) + share
 
 
-def answer_confidence(
-    tokens: list[Token] | None, choices: list[str], matched_answer: str
-) -> ConfidenceResult:
+def set_answer_confidence(
+    answer_pb: service_pb2.TestRunAnswer,
+    tokens: list[service_pb2.TokenLogprob] | None,
+    choices: list[str],
+) -> None:
+    answer_pb.ClearField("confidence")
+    del answer_pb.choice_probabilities[:]
     if not tokens:
-        return ConfidenceResult()
+        return
 
     norm_to_choice: dict[str, str] = {}
     for c in choices:
@@ -80,7 +72,11 @@ def answer_confidence(
 
     for tok in tokens[_answer_start(tokens) :][:MAX_ANSWER_TOKENS]:
         n_prefix = _norm_prefix(prefix)
-        alternatives = [(t, lp) for t, lp in tok.top if t != tok.token]
+        alternatives = [
+            (alt.token, alt.logprob)
+            for alt in tok.top_logprobs
+            if alt.token != tok.token
+        ]
         next_prefix = prefix + tok.token
         n_next = _norm_prefix(next_prefix)
 
@@ -143,19 +139,7 @@ def answer_confidence(
             completed = pending
 
     choice_probs = {norm_to_choice[c]: min(1.0, p) for c, p in mass.items()}
-    if completed is None or completed != _norm_choice(matched_answer or ""):
-        return ConfidenceResult(choice_probs=choice_probs)
-    return ConfidenceResult(
-        confidence=choice_probs[norm_to_choice[completed]],
-        choice_probs=choice_probs,
-    )
-
-
-def apply_to_answer(answer_pb, result: ConfidenceResult) -> None:
-    if result.confidence is None:
-        answer_pb.ClearField("confidence")
-    else:
-        answer_pb.confidence = result.confidence
-    del answer_pb.choice_probabilities[:]
-    for choice, p in sorted(result.choice_probs.items(), key=lambda kv: -kv[1]):
+    for choice, p in sorted(choice_probs.items(), key=lambda kv: -kv[1]):
         answer_pb.choice_probabilities.add(choice=choice, probability=p)
+    if completed is not None and completed == _norm_choice(answer_pb.answer):
+        answer_pb.confidence = choice_probs[norm_to_choice[completed]]

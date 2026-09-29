@@ -1,6 +1,5 @@
 import asyncio
 import base64
-import dataclasses
 import random
 import re
 import time
@@ -14,7 +13,7 @@ from openai import APIConnectionError, APIError, APIStatusError, BadRequestError
 
 from server import service_pb2
 from server.objects.backend_pool import get_backend_resources
-from server.objects.confidence import Token, answer_confidence, apply_to_answer
+from server.objects.confidence import set_answer_confidence
 
 MPAC_SYSTEM_PROMPT = """
     Take a deep breath, read carefully, and approach the following exercise with
@@ -140,7 +139,7 @@ def _field(obj, name: str):
     return val
 
 
-def _token_logprobs(choice) -> list[Token] | None:
+def _token_logprobs(choice) -> list[service_pb2.TokenLogprob] | None:
     content = _field(_field(choice, "logprobs"), "content")
     if not isinstance(content, list):
         return None
@@ -150,13 +149,13 @@ def _token_logprobs(choice) -> list[Token] | None:
         logprob = _field(entry, "logprob")
         if not isinstance(token, str) or not isinstance(logprob, (int, float)):
             continue
-        top = []
+        token_pb = service_pb2.TokenLogprob(token=token, logprob=logprob)
         for alt in _field(entry, "top_logprobs") or []:
             alt_token = _field(alt, "token")
             alt_logprob = _field(alt, "logprob")
             if isinstance(alt_token, str) and isinstance(alt_logprob, (int, float)):
-                top.append((alt_token, float(alt_logprob)))
-        tokens.append(Token(token, float(logprob), top))
+                token_pb.top_logprobs.add(token=alt_token, logprob=alt_logprob)
+        tokens.append(token_pb)
     return tokens
 
 
@@ -190,9 +189,15 @@ def _reasoning_request_params(backend_type: str, include_reasoning: bool) -> dic
     return {}
 
 
-@dataclasses.dataclass
-class StreamResult:
-    """Accumulated output and timings of one streamed chat completion.
+async def _stream_completion(
+    client,
+    messages,
+    model: str,
+    timeout: float,
+    answer_pb: service_pb2.TestRunAnswer,
+    extra: dict | None = None,
+):
+    """Run a streaming chat completion and measure TTFT / output speed.
 
     Timings follow the usual serving-benchmark definitions (e.g. vLLM
     benchmark_serving): TTFT is dispatch to the first reasoning or content
@@ -205,22 +210,6 @@ class StreamResult:
     were generated before the first chunk, so TPS is measured over the answer
     content alone.
     """
-
-    content: str
-    reasoning: str
-    usage: object | None
-    ttft: float
-    output_tps: float
-    duration: float
-    usage_estimated: bool
-    estimated_output_tokens: int
-    logprobs: list[Token] | None = None
-
-
-async def _stream_completion(
-    client, messages, model: str, timeout: float, extra: dict | None = None
-):
-    """Run a streaming chat completion and measure TTFT / output speed."""
     t0 = time.perf_counter()
     stream = await client.chat.completions.create(
         messages=messages,
@@ -236,7 +225,7 @@ async def _stream_completion(
     t_first = t_last = None
     t_first_content = t_last_content = None
     n_deltas = n_content_deltas = 0
-    logprob_tokens: list[Token] = []
+    logprob_tokens: list[service_pb2.TokenLogprob] = []
     saw_logprobs = False
     try:
         async for chunk in stream:
@@ -299,17 +288,15 @@ async def _stream_completion(
     if w_start is not None and w_end > w_start and n_out >= 2:
         output_tps = (n_out - 1) / (w_end - w_start)
 
-    return StreamResult(
-        content="".join(content_parts),
-        reasoning=reasoning_text,
-        usage=usage,
-        ttft=(t_first - t0) if t_first is not None else 0.0,
-        output_tps=output_tps,
-        duration=t_end - t0,
-        usage_estimated=usage is None,
-        estimated_output_tokens=n_deltas,
-        logprobs=logprob_tokens if saw_logprobs else None,
-    )
+    answer_pb.raw_response = "".join(content_parts)
+    answer_pb.reasoning = reasoning_text.strip()
+    answer_pb.ttft = (t_first - t0) if t_first is not None else 0.0
+    answer_pb.output_tps = output_tps
+    answer_pb.task_duration = t_end - t0
+    answer_pb.usage_estimated = usage is None
+    if usage is None:
+        answer_pb.output_tokens = n_deltas
+    return usage, (logprob_tokens if saw_logprobs else None)
 
 
 _STREAM_SERVER_ERROR_RETRIES = 2
@@ -327,11 +314,18 @@ def _is_in_stream_server_error(e: Exception) -> bool:
 
 
 async def _stream_completion_with_retry(
-    client, messages, model: str, timeout: float, extra: dict | None = None
+    client,
+    messages,
+    model: str,
+    timeout: float,
+    answer_pb: service_pb2.TestRunAnswer,
+    extra: dict | None = None,
 ):
     for attempt in range(_STREAM_SERVER_ERROR_RETRIES + 1):
         try:
-            return await _stream_completion(client, messages, model, timeout, extra)
+            return await _stream_completion(
+                client, messages, model, timeout, answer_pb, extra
+            )
         except APIError as e:
             if (
                 not _is_in_stream_server_error(e)
@@ -477,16 +471,19 @@ class InferenceMixin:
                         chat_messages,
                         model_pb.id,
                         request_timeout,
+                        answer_pb,
                         params,
                     ),
                     timeout=request_timeout + 10.0,
                 )
 
             request_start = time.perf_counter()
-            result = None
+            streamed = False
             try:
                 try:
-                    result = await _attempt({**reasoning_params, **logprob_params})
+                    usage, logprobs = await _attempt(
+                        {**reasoning_params, **logprob_params}
+                    )
                 except BadRequestError as e:
                     if not reasoning_params and not logprob_params:
                         raise
@@ -503,22 +500,21 @@ class InferenceMixin:
                         f"rejected, retrying without: {e}"
                     )
                     try:
-                        result = await _attempt({**reasoning_params, **logprob_params})
+                        usage, logprobs = await _attempt(
+                            {**reasoning_params, **logprob_params}
+                        )
                     except BadRequestError as e2:
                         if not reasoning_params and not logprob_params:
                             raise
                         if logprob_params and "logprob" in str(e2).lower():
                             drop_logprobs = True
-                        result = await _attempt({})
+                        usage, logprobs = await _attempt({})
                     if drop_logprobs:
                         _LOGPROBS_UNSUPPORTED.add(logprob_key)
-                raw_answer = result.content
+                streamed = True
+                raw_answer = answer_pb.raw_response
                 answer_pb.status = service_pb2.TestRunAnswer.OK
-                answer_pb.raw_response = raw_answer
                 logging.debug(f"[{model_pb.id}] raw={raw_answer!r:.200}")
-                answer_pb.ttft = result.ttft
-                answer_pb.output_tps = result.output_tps
-                answer_pb.usage_estimated = result.usage_estimated
 
                 # Reasoning: streamed separately, or inline <think> in content.
                 think_match = re.search(
@@ -526,9 +522,7 @@ class InferenceMixin:
                     raw_answer,
                     flags=re.DOTALL | re.IGNORECASE,
                 )
-                if result.reasoning:
-                    answer_pb.reasoning = result.reasoning.strip()
-                elif think_match:
+                if not answer_pb.reasoning and think_match:
                     answer_pb.reasoning = think_match.group(1).strip()
                 validated_answer = await self._validate_answer(
                     raw_answer=raw_answer,
@@ -538,20 +532,14 @@ class InferenceMixin:
                 answer_pb.is_correct = (
                     True if item_pb.answer == validated_answer else False
                 )
-                apply_to_answer(
-                    answer_pb,
-                    answer_confidence(
-                        result.logprobs, list(item_pb.choices), validated_answer
-                    ),
-                )
+                set_answer_confidence(answer_pb, logprobs, list(item_pb.choices))
 
-                usage = result.usage
                 if usage is not None:
                     input_tokens = _int_attr(usage, "prompt_tokens")
                     output_tokens = _int_attr(usage, "completion_tokens")
                 else:
                     input_tokens = 0
-                    output_tokens = result.estimated_output_tokens
+                    output_tokens = answer_pb.output_tokens
 
                 modality_tokens = self._extract_modality_tokens(usage)
                 answer_pb.reasoning_tokens = modality_tokens["reasoning"]
@@ -630,11 +618,8 @@ class InferenceMixin:
                 answer_pb.status = service_pb2.TestRunAnswer.ERROR
                 answer_pb.error = f"Unexpected error: {e}"
 
-            answer_pb.task_duration = (
-                result.duration
-                if result is not None
-                else time.perf_counter() - request_start
-            )
+            if not streamed:
+                answer_pb.task_duration = time.perf_counter() - request_start
 
             # Models that returned no reasoning of their own are asked to
             # justify their answer in a separate, non-streamed follow-up call.
