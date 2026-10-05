@@ -24,7 +24,7 @@ openai==1.58.1
 orjson==3.11.6
 pandas==2.2.2
 pillow==12.3.0
-protobuf==6.33.5
+protobuf==7.36.2
 pyasn1==0.6.4
 PyJWT==2.13.0
 pytest==9.0.3
