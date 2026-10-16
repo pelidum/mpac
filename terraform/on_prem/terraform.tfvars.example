@@ -35,6 +35,8 @@ tls_domain = "localhost"
 # tls_key_path  = "/path/to/your/key.pem"
 
 # MPAC Server (images published to GitHub Container Registry)
+# Enable to use locally loaded server and UI images instead of registry updates.
+use_local_images    = false
 server_image        = "ghcr.io/pelidum/mpac_server:latest"
 server_port         = 50051
 server_host         = "0.0.0.0"

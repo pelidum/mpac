@@ -50,6 +50,32 @@ That's it. On the first `apply`, Terraform:
 2. Pulls the Postgres, MPAC server, MPAC UI, and Envoy images.
 3. Starts all containers on a private Docker network.
 
+Each subsequent `terraform apply` checks the registry digest for the configured
+server and UI image tags (both default to `latest`). If a digest changes,
+Terraform pulls the updated image and replaces the corresponding container.
+Unchanged images do not cause container restarts.
+Image resources use the resolved registry digest rather than just the tag, so a
+destroy/apply cycle cannot reuse stale locally cached content tagged `latest`.
+
+### Using local development images
+
+Set `use_local_images = true` in `terraform.tfvars` to use the server and UI
+images already loaded in Docker. This skips registry lookups and pulls for those
+two images; PostgreSQL and Envoy keep their normal image behavior.
+
+From the repository root:
+
+```bash
+bazel run //server:server_image_load
+bazel run //ui:mpac_ui_image_load
+terraform -chdir=terraform/on_prem apply -var='use_local_images=true'
+```
+
+Both configured image names must exist locally; a missing image causes an error
+instead of falling back to a registry pull. Rebuilding and loading the same tag
+changes its image ID, so the next apply replaces the corresponding container.
+Set `use_local_images = false` (the default) to resume registry updates.
+
 Then open **https://localhost/** (accept the self-signed certificate warning).
 
 ### Bootstrapping the first admin
@@ -63,6 +89,28 @@ server_admin_onboarding_password = "your-secure-password"
 
 The server **skips onboarding once an admin already exists**, so these are safe to leave set
 after the first deploy — no follow-up apply or flag flip is needed.
+
+### Host inference services (LM Studio, Ollama)
+
+For LM Studio running on the Docker host, enable its option to serve on the local
+network, then configure the backend in MPAC Admin with:
+
+- Base URL: `http://host.docker.internal:1234/v1`
+- **Local backend**: enabled
+
+The inference service must listen on an interface reachable from Docker (for
+example, `0.0.0.0`), and the host firewall must allow the Docker network to reach
+that port. Restrict access to the intended clients. A listener bound only to
+`127.0.0.1` is not reachable through the host gateway. Container `localhost`,
+including `::1`, refers to the container itself; the legacy Terraform localhost
+alias does not reliably override this.
+
+If the models page fails with `Backend URL resolves to private address: ::1`
+even with **Local backend** enabled, check the deployed server image. Older
+versions validated local backends and let validation errors terminate the model
+listing RPC. The current server honors `is_local` and isolates backend listing
+failures. Deploy an image built from the current source; restarting the existing
+container alone does not update its code.
 
 ## TLS
 
