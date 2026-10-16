@@ -61,6 +61,12 @@ variable "mpac_jwt_secret" {
   description = "HS256 signing secret shared between server and UI for JWT-based auth"
 }
 
+variable "use_local_images" {
+  type        = bool
+  default     = false
+  description = "Use server_image and ui_image already loaded in Docker, without registry lookups or pulls. Both images must exist locally."
+}
+
 # MPAC Server variables
 variable "server_image" {
   type    = string

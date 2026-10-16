@@ -137,7 +137,29 @@
     margin-bottom: 10px;
   }
 
-  /* Provider preset card — refined lower-density version of the original */
+  .backend-modal-panel { max-width: 62rem; }
+  .backend-modal-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 28px; }
+  .backend-providers { border-right: 1px solid var(--color-border); padding-right: 24px; }
+  .mobile-provider-picker { display: none; }
+  .provider-group + .provider-group { margin-top: 20px; }
+  .provider-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .backend-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+  .backend-field label { font-size: 0.875rem; }
+  .backend-guidance { padding: 12px; margin: 14px 0 18px; background: var(--color-highlight-shade1); border-left: 3px solid var(--color-accent-secondary); font-size: 0.75rem; line-height: 1.6; overflow-wrap: anywhere; }
+  .backend-guidance p + p { margin-top: 8px; }
+  .backend-advanced { border-top: 1px solid var(--color-border); padding-top: 16px; margin-top: 22px; }
+  .backend-advanced summary { cursor: pointer; font-size: 0.875rem; font-weight: 600; }
+  .preset-card:focus-visible, .modal-close:focus-visible, .backend-advanced summary:focus-visible { outline: 2px solid var(--color-accent-secondary); outline-offset: 3px; }
+  @media (max-width: 700px) {
+    .backend-modal-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+    .backend-providers { border-right: 0; border-bottom: 1px solid var(--color-border); padding: 0 0 20px; }
+    .backend-providers > div, .backend-providers > p { display: none; }
+    .mobile-provider-picker { display: flex; flex-direction: column; gap: 8px; font-size: 0.875rem; }
+    .provider-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .modal-header, .modal-body, .modal-footer { padding-left: 16px; padding-right: 16px; }
+  }
+
+  /* Provider preset cards */
   .preset-card {
     display: flex;
     flex-direction: column;
@@ -323,35 +345,43 @@
 <!-- Provider Preset Data (shared by Add + Edit modals) -->
 <script>
 const PROVIDER_PRESETS = [
-  // defaultConcurrency: 0 = leave at system default; >0 = set explicit value.
-  // Sources: published API rate-limit docs where available, practical defaults otherwise.
-  { id: "openai",     label: "OpenAI",       type: "OPENAI",       url: "https://api.openai.com/v1",                                           icon: "/static/images/providers/openai.png",     needsKey: true,  isLocal: false, defaultConcurrency: 20  },
-  { id: "gemini",     label: "Google Gemini",type: "OPENAI",       url: "https://generativelanguage.googleapis.com/v1beta/openai",             icon: "/static/images/providers/google.png",     needsKey: true,  isLocal: false, defaultConcurrency: 20  },
-  { id: "deepseek",   label: "DeepSeek",     type: "OPENAI",       url: "https://api.deepseek.com/v1",                                         icon: "/static/images/providers/deepseek.png",   needsKey: true,  isLocal: false, defaultConcurrency: 20  },
-  { id: "mistral",    label: "Mistral",      type: "OPENAI",       url: "https://api.mistral.ai/v1",                                           icon: "/static/images/providers/mistral.png",    needsKey: true,  isLocal: false, defaultConcurrency: 20  },
-  { id: "perplexity", label: "Perplexity",   type: "OPENAI",       url: "https://api.perplexity.ai",                                           icon: "/static/images/providers/perplexity.png", needsKey: true,  isLocal: false, defaultConcurrency: 10  },
-  { id: "qwen",       label: "Alibaba Qwen", type: "OPENAI",       url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",              icon: "/static/images/providers/alibaba.png",    needsKey: true,  isLocal: false, defaultConcurrency: 20  },
-  { id: "groq",       label: "Groq",         type: "OPENAI",       url: "https://api.groq.com/openai/v1",                                      icon: null,                                      needsKey: true,  isLocal: false, defaultConcurrency: 5   },
-  { id: "openrouter", label: "OpenRouter",   type: "OPENROUTER",   url: "https://openrouter.ai/api/v1",                                        icon: null,                                      needsKey: true,  isLocal: false, defaultConcurrency: 20  },
-  { id: "together",   label: "Together AI",  type: "OPENAI",       url: "https://api.together.xyz/v1",                                         icon: null,                                      needsKey: true,  isLocal: false, defaultConcurrency: 20  },
-  { id: "fireworks",  label: "Fireworks AI", type: "OPENAI",       url: "https://api.fireworks.ai/inference/v1",                               icon: null,                                      needsKey: true,  isLocal: false, defaultConcurrency: 20  },
-  { id: "ollama",     label: "Ollama",       type: "OLLAMA",       url: "http://localhost:11434/v1",                                            icon: null,                                      needsKey: false, isLocal: true,  defaultConcurrency: 4   },
-  { id: "vllm",       label: "vLLM",         type: "VLLM",         url: "http://localhost:8000/v1",                                             icon: null,                                      needsKey: false, isLocal: true,  defaultConcurrency: 32  },
-  { id: "llamacpp",   label: "llama.cpp",    type: "LLAMA_CPP",    url: "http://localhost:8080/v1",                                             icon: null,                                      needsKey: false, isLocal: true,  defaultConcurrency: 4   },
-  { id: "debug",      label: "Debug",        type: "DEBUG_RANDOM", url: "",                                                                     icon: null,                                      needsKey: false, isLocal: true,  defaultConcurrency: 0   },
+  // Presets choose a protocol and endpoint; concurrency uses the server default.
+  { id: "openai",     label: "OpenAI",       type: "OPENAI",       url: "https://api.openai.com/v1",                                           icon: "/static/images/providers/openai.png",     needsKey: true,  isLocal: false},
+  { id: "gemini",     label: "Google Gemini",type: "OPENAI",       url: "https://generativelanguage.googleapis.com/v1beta/openai",             icon: "/static/images/providers/google.png",     needsKey: true,  isLocal: false},
+  { id: "deepseek",   label: "DeepSeek",     type: "OPENAI",       url: "https://api.deepseek.com/v1",                                         icon: "/static/images/providers/deepseek.png",   needsKey: true,  isLocal: false},
+  { id: "mistral",    label: "Mistral",      type: "OPENAI",       url: "https://api.mistral.ai/v1",                                           icon: "/static/images/providers/mistral.png",    needsKey: true,  isLocal: false},
+  { id: "perplexity", label: "Perplexity",   type: "OPENAI",       url: "https://api.perplexity.ai",                                           icon: "/static/images/providers/perplexity.png", needsKey: true,  isLocal: false},
+  { id: "qwen",       label: "Alibaba Qwen", type: "OPENAI",       url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",              icon: "/static/images/providers/alibaba.png",    needsKey: true,  isLocal: false},
+  { id: "groq",       label: "Groq",         type: "OPENAI",       url: "https://api.groq.com/openai/v1",                                      icon: null,                                      needsKey: true,  isLocal: false},
+  { id: "openrouter", label: "OpenRouter",   type: "OPENROUTER",   url: "https://openrouter.ai/api/v1",                                        icon: null,                                      needsKey: true,  isLocal: false},
+  { id: "together",   label: "Together AI",  type: "OPENAI",       url: "https://api.together.xyz/v1",                                         icon: null,                                      needsKey: true,  isLocal: false},
+  { id: "fireworks",  label: "Fireworks AI", type: "OPENAI",       url: "https://api.fireworks.ai/inference/v1",                               icon: null,                                      needsKey: true,  isLocal: false},
+  { id: "lmstudio", label: "LM Studio", type: "LLAMA_CPP", url: "http://host.docker.internal:1234/v1", icon: null, needsKey: false, isLocal: true},
+  { id: "custom", label: "Custom API", type: "OPENAI", url: "", icon: null, needsKey: false, isLocal: false},
+  { id: "ollama",     label: "Ollama",       type: "OLLAMA",       url: "http://host.docker.internal:11434/v1",                                            icon: null,                                      needsKey: false, isLocal: true},
+  { id: "vllm",       label: "vLLM",         type: "VLLM",         url: "http://host.docker.internal:8000/v1",                                             icon: null,                                      needsKey: false, isLocal: true},
+  { id: "llamacpp",   label: "llama.cpp",    type: "LLAMA_CPP",    url: "http://host.docker.internal:8080/v1",                                             icon: null,                                      needsKey: false, isLocal: true},
+  { id: "debug",      label: "Debug",        type: "DEBUG_RANDOM", url: "",                                                                     icon: null,                                      needsKey: false, isLocal: true},
 ];
 
 // Initials-based fallback colors for providers without icons
 const PRESET_COLORS = {
   groq: "#F55036", openrouter: "#6C63FF", together: "#0066FF",
   fireworks: "#FF4500", ollama: "#4CAF50", vllm: "#9C27B0",
-  llamacpp: "#795548", debug: "#607D8B",
+  lmstudio: "#6858C7", custom: "#526779", llamacpp: "#795548", debug: "#607D8B",
 };
 
 function renderPresetCards(containerId, formPrefix) {
   const container = document.getElementById(containerId);
   if (!container) return;
-  container.innerHTML = PROVIDER_PRESETS.map(p => {
+  const groups = [
+    ['Self-hosted', PROVIDER_PRESETS.filter(p => p.isLocal && p.id !== 'debug')],
+    ['Cloud providers', PROVIDER_PRESETS.filter(p => !p.isLocal && p.id !== 'custom')],
+    ['Other', PROVIDER_PRESETS.filter(p => ['custom', 'debug'].includes(p.id))],
+  ];
+  document.getElementById(`${formPrefix}-backend-preset`).innerHTML = '<option value="">Choose a preset…</option>'
+    + groups.map(([label, presets]) => `<optgroup label="${label}">${presets.map(p => `<option value="${p.id}">${p.label}</option>`).join('')}</optgroup>`).join('');
+  container.innerHTML = groups.map(([label, presets]) => `<div class="provider-group"><span class="modal-section-label">${label}</span><div class="provider-grid">${presets.map(p => {
     const fallbackBg = PRESET_COLORS[p.id] || '#6C63FF';
     const iconHtml = p.icon
       ? `<img src="${p.icon}" alt="${p.label}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
@@ -360,11 +390,11 @@ function renderPresetCards(containerId, formPrefix) {
     return `<button type="button"
       class="preset-card"
       data-preset-id="${p.id}" data-form-prefix="${formPrefix}"
-      title="${p.label}">
+      title="${p.label}" aria-pressed="false">
       <span class="preset-icon">${iconHtml}</span>
       <span class="preset-label">${p.label}</span>
     </button>`;
-  }).join('');
+  }).join('')}</div></div>`).join('');
 }
 
 function applyPreset(presetId, formPrefix) {
@@ -375,196 +405,136 @@ function applyPreset(presetId, formPrefix) {
   const url         = document.getElementById(`${formPrefix}-backend-url`);
   const isLocal     = document.getElementById(`${formPrefix}-backend-is-local`);
   const concurrency = document.getElementById(`${formPrefix}-backend-concurrency`);
-  const keyHint     = document.getElementById(`${formPrefix}-backend-key-hint`);
   if (name)        name.value        = p.label;
   if (type)        type.value        = p.type;
   if (url)         url.value         = p.url;
   if (isLocal)     isLocal.checked   = p.isLocal;
-  if (concurrency) concurrency.value = p.defaultConcurrency || 0;
-  if (keyHint)     keyHint.textContent = p.needsKey ? 'Enter your API key for this provider.' : 'No API key required for local backends.';
+  if (concurrency) concurrency.value = 0;
+  document.getElementById(`${formPrefix}-backend-form`).dataset.preset = presetId;
+  document.getElementById(`${formPrefix}-backend-preset`).value = presetId;
+  syncBackendFields(formPrefix);
 
   // Highlight selected card
   document.querySelectorAll(`[data-form-prefix="${formPrefix}"].preset-card`).forEach(c => {
     c.classList.toggle('is-selected', c.dataset.presetId === presetId);
+    c.setAttribute('aria-pressed', String(c.dataset.presetId === presetId));
   });
+}
+function syncBackendFields(prefix) {
+  const form = document.getElementById(`${prefix}-backend-form`);
+  const debug = form.elements.backend_type.value === 'DEBUG_RANDOM';
+  const local = form.elements.is_local.checked;
+  const preset = PROVIDER_PRESETS.find(p => p.id === form.dataset.preset);
+  document.getElementById(`${prefix}-backend-connection`).classList.toggle('hidden', debug);
+  document.getElementById(`${prefix}-backend-debug-help`).classList.toggle('hidden', !debug);
+  document.getElementById(`${prefix}-backend-local-help`).classList.toggle('hidden', !local);
+  form.elements.base_url.required = !debug;
+  form.elements.base_url.disabled = debug;
+  form.elements.api_key.disabled = debug;
+  form.elements.is_local.disabled = debug;
+  document.getElementById(`${prefix}-backend-key-hint`).textContent = prefix === 'edit'
+    ? 'Leave blank to keep the existing key. Enter a new key to replace it.'
+    : preset?.needsKey ? 'Enter the API key issued by this provider.'
+    : 'Leave blank unless authentication is enabled on your inference server.';
 }
 </script>
 
-<!-- Add Backend Modal -->
-<div id="add-backend-modal" class="overlay hidden flex items-center justify-center p-4">
-  <div class="modal-panel">
-    <!-- Header -->
-    <div class="modal-header">
-      <div class="min-w-0">
-        <h2 class="modal-title flex items-center gap-2">
-          <span class="material-icons text-[var(--color-accent-secondary)]">dns</span>
-          Add Backend
-        </h2>
-        <p class="modal-subtitle">Pick a provider to pre-fill settings, then enter your API key.</p>
+{% macro backend_fields(prefix) %}
+  <section class="backend-config">
+    <span class="modal-section-label">Connection</span>
+    <div class="backend-field">
+      <label for="{{ prefix }}-backend-name" class="label-bold">Backend name</label>
+      <input id="{{ prefix }}-backend-name" name="name" class="input-field" required placeholder="e.g. LM Studio · Workstation">
+    </div>
+    <div class="backend-field">
+      <label for="{{ prefix }}-backend-type" class="label-bold">API protocol</label>
+      <select id="{{ prefix }}-backend-type" name="backend_type" class="select-field" required>
+        <option value="OPENAI">OpenAI-compatible</option>
+        <option value="VLLM">vLLM</option>
+        <option value="OLLAMA">Ollama</option>
+        <option value="OPENROUTER">OpenRouter</option>
+        <option value="LLAMA_CPP">llama.cpp / LM Studio</option>
+        <option value="DEBUG_RANDOM">Debug · random responses</option>
+      </select>
+    </div>
+    <div id="{{ prefix }}-backend-connection">
+      <div class="backend-field">
+        <label for="{{ prefix }}-backend-url" class="label-bold">Base URL</label>
+        <input type="url" id="{{ prefix }}-backend-url" name="base_url" class="input-field" required
+          placeholder="https://api.example.com/v1" aria-describedby="{{ prefix }}-backend-url-hint">
+        <p id="{{ prefix }}-backend-url-hint" class="text-xs muted">Include the API prefix (usually /v1), without /models or /chat/completions.</p>
       </div>
-      <button type="button" id="close-add-backend-btn" class="modal-close" aria-label="Close">
+      <label class="switch-row cursor-pointer">
+        <div>
+          <div class="switch-title">Local / private backend</div>
+          <p class="switch-desc">Allow private network addresses and use longer inference timeouts.</p>
+        </div>
+        <span class="md-switch">
+          <input type="checkbox" id="{{ prefix }}-backend-is-local" name="is_local" value="true">
+          <span class="track"></span>
+        </span>
+      </label>
+      <div id="{{ prefix }}-backend-local-help" class="backend-guidance hidden">
+        <strong>Running on the Docker host?</strong>
+        <p>Use <code>host.docker.internal</code> instead of <code>localhost</code>. The inference server must listen beyond loopback, and the host firewall must allow its port from the Docker network.</p>
+        <p>For LM Studio, enable <strong>Serve on Local Network</strong> and use <code>http://host.docker.internal:1234/v1</code>.</p>
+      </div>
+      <div class="backend-field">
+        <label for="{{ prefix }}-backend-key" class="label-bold">API key <span class="font-normal muted">(if required)</span></label>
+        <input type="password" id="{{ prefix }}-backend-key" name="api_key" class="input-field" autocomplete="new-password"
+          aria-describedby="{{ prefix }}-backend-key-hint" placeholder="{% if prefix == 'edit' %}Leave blank to keep existing key{% else %}Provider API key{% endif %}">
+        <p id="{{ prefix }}-backend-key-hint" class="text-xs muted"></p>
+      </div>
+    </div>
+    <p id="{{ prefix }}-backend-debug-help" class="backend-guidance hidden">Generates random test responses. No inference server or API key is used. Do not use for meaningful evaluations.</p>
+    <details class="backend-advanced">
+      <summary>Optional settings</summary>
+      <div class="backend-field mt-4">
+        <label for="{{ prefix }}-backend-desc" class="label-bold">Description</label>
+        <input id="{{ prefix }}-backend-desc" name="description" class="input-field" placeholder="What is this backend used for?">
+      </div>
+      <div class="backend-field">
+        <label for="{{ prefix }}-backend-concurrency" class="label-bold">Concurrent requests</label>
+        <input type="number" id="{{ prefix }}-backend-concurrency" name="max_concurrency" class="input-field" min="0" step="1" value="0">
+        <p class="text-xs muted">0 uses the server default: 4 for local backends, 20 for remote. Set a limit that matches your server capacity or provider limits.</p>
+      </div>
+    </details>
+  </section>
+{% endmacro %}
+
+{% for prefix in ['add', 'edit'] %}
+<div id="{{ prefix }}-backend-modal" class="overlay hidden flex items-center justify-center p-4"
+  role="dialog" aria-modal="true" aria-labelledby="{{ prefix }}-backend-title" aria-describedby="{{ prefix }}-backend-subtitle">
+  <div class="modal-panel backend-modal-panel">
+    <div class="modal-header">
+      <div>
+        <h2 id="{{ prefix }}-backend-title" class="modal-title">{{ 'Add inference backend' if prefix == 'add' else 'Edit inference backend' }}</h2>
+        <p id="{{ prefix }}-backend-subtitle" class="modal-subtitle">Choose a provider, then review its connection settings.</p>
+      </div>
+      <button type="button" id="close-{{ prefix }}-backend-btn" class="modal-close" aria-label="Close">
         <span class="material-icons">close</span>
       </button>
     </div>
-
-    <!-- Body -->
-    <form id="add-backend-form" class="contents">
-      <div class="modal-body">
-        <!-- Section: Provider preset -->
-        <section class="mb-6">
-          <span class="modal-section-label">Provider</span>
-          <div id="add-preset-cards" class="grid grid-cols-4 sm:grid-cols-7 gap-2"></div>
-        </section>
-
-        <!-- Section: Configuration -->
-        <section>
-          <span class="modal-section-label">Configuration</span>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div class="flex flex-col gap-1.5">
-              <label for="add-backend-name" class="label-bold text-sm">Name</label>
-              <input type="text" id="add-backend-name" name="name" class="input-field" required
-                placeholder="e.g. OpenAI Production">
-            </div>
-            <div class="flex flex-col gap-1.5">
-              <label for="add-backend-type" class="label-bold text-sm">Type</label>
-              <select id="add-backend-type" name="backend_type" class="select-field" required>
-                <option value="OPENAI">OpenAI-compatible</option>
-                <option value="VLLM">vLLM</option>
-                <option value="OLLAMA">Ollama</option>
-                <option value="OPENROUTER">OpenRouter</option>
-                <option value="LLAMA_CPP">Llama.cpp</option>
-                <option value="DEBUG_RANDOM">Debug Random</option>
-              </select>
-            </div>
-            <div class="flex flex-col gap-1.5 md:col-span-2">
-              <label for="add-backend-url" class="label-bold text-sm">Base URL</label>
-              <input type="text" id="add-backend-url" name="base_url" class="input-field"
-                placeholder="e.g. https://api.openai.com/v1">
-            </div>
-            <div class="flex flex-col gap-1.5 md:col-span-2">
-              <label for="add-backend-key" class="label-bold text-sm">API Key</label>
-              <input type="password" id="add-backend-key" name="api_key" class="input-field"
-                placeholder="sk-...">
-              <p id="add-backend-key-hint" class="text-xs muted">Enter your API key for this provider.</p>
-            </div>
-            <div class="flex flex-col gap-1.5 md:col-span-2">
-              <label for="add-backend-desc" class="label-bold text-sm">
-                Description <span class="font-normal muted">(optional)</span>
-              </label>
-              <input type="text" id="add-backend-desc" name="description" class="input-field"
-                placeholder="Brief description of this backend">
-            </div>
-            <div class="flex flex-col gap-1.5">
-              <label for="add-backend-concurrency" class="label-bold text-sm">
-                Max Concurrency <span class="font-normal muted">(optional)</span>
-              </label>
-              <input type="number" id="add-backend-concurrency" name="max_concurrency" class="input-field"
-                min="0" placeholder="0 = default (local: 4, remote: 20)">
-              <p class="text-xs muted">Concurrent requests this backend can handle. Match your server's <code>--parallel</code> setting.</p>
-            </div>
-          </div>
-
-          <!-- Local backend switch row -->
-          <label class="switch-row mt-4 cursor-pointer">
-            <div class="min-w-0">
-              <div class="switch-title">Local backend</div>
-              <p class="switch-desc">Enable for self-hosted services (llama.cpp, Ollama, local vLLM). Increases timeout to 10 min. Disable for cloud APIs.</p>
-            </div>
-            <span class="md-switch">
-              <input type="checkbox" id="add-backend-is-local" name="is_local" value="true">
-              <span class="track"></span>
-            </span>
+    <form id="{{ prefix }}-backend-form" class="contents">
+      {% if prefix == 'edit' %}<input type="hidden" id="edit-backend-id" name="id">{% endif %}
+      <div class="modal-body backend-modal-layout">
+        <aside class="backend-providers" aria-label="Provider presets">
+          <label class="mobile-provider-picker" for="{{ prefix }}-backend-preset">Provider preset
+            <select id="{{ prefix }}-backend-preset" class="select-field"></select>
           </label>
-        </section>
+          <div id="{{ prefix }}-preset-cards"></div>
+          <p class="text-xs muted mt-4">Presets fill in settings. You can change any value.</p>
+        </aside>
+        {{ backend_fields(prefix) }}
       </div>
-
-      <!-- Footer -->
       <div class="modal-footer">
-        <button type="button" id="cancel-add-backend-btn" class="pagination-button">Cancel</button>
-        <button type="submit" id="submit-add-backend-btn" class="button-primary">
-          <span class="material-icons text-[18px]">add</span>
-          Add Backend
-        </button>
+        <button type="button" id="cancel-{{ prefix }}-backend-btn" class="pagination-button">Cancel</button>
+        <button type="submit" id="submit-{{ prefix }}-backend-btn" class="button-primary">{{ 'Add Backend' if prefix == 'add' else 'Save Changes' }}</button>
       </div>
     </form>
   </div>
 </div>
-
-<!-- Edit Backend Modal -->
-<div id="edit-backend-modal" class="overlay hidden flex items-center justify-center">
-  <div class="card w-full max-w-3xl max-h-[92vh] overflow-y-auto">
-    <h2 class="text-xl font-semibold">Edit Backend</h2>
-    <p class="muted mt-1 mb-4">Update backend configuration. Use presets to quickly change provider.</p>
-
-    <!-- Provider Preset Cards -->
-    <div class="mb-5">
-      <p class="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider mb-2">Switch provider preset</p>
-      <div id="edit-preset-cards" class="grid grid-cols-4 sm:grid-cols-7 gap-2"></div>
-    </div>
-
-    <div class="border-t border-[var(--color-border)] pt-4">
-      <form id="edit-backend-form">
-        <input type="hidden" id="edit-backend-id" name="id">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div class="flex flex-col gap-1.5">
-            <label for="edit-backend-name" class="label-bold">Name</label>
-            <input type="text" id="edit-backend-name" name="name" class="input-field" required>
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <label for="edit-backend-type" class="label-bold">Type</label>
-            <select id="edit-backend-type" name="backend_type" class="select-field" required>
-              <option value="OPENAI">OpenAI-compatible</option>
-              <option value="VLLM">vLLM</option>
-              <option value="OLLAMA">Ollama</option>
-              <option value="OPENROUTER">OpenRouter</option>
-              <option value="LLAMA_CPP">Llama.cpp</option>
-              <option value="DEBUG_RANDOM">Debug Random</option>
-            </select>
-          </div>
-          <div class="flex flex-col gap-1.5 md:col-span-2">
-            <label for="edit-backend-url" class="label-bold">Base URL</label>
-            <input type="text" id="edit-backend-url" name="base_url" class="input-field">
-          </div>
-          <div class="flex flex-col gap-1.5 md:col-span-2">
-            <label for="edit-backend-key" class="label-bold">API Key</label>
-            <input type="password" id="edit-backend-key" name="api_key" class="input-field"
-              placeholder="Leave blank to keep existing key">
-            <p id="edit-backend-key-hint" class="text-xs muted mt-1">Leave blank to keep the existing key unchanged.</p>
-          </div>
-          <div class="flex flex-col gap-1.5 md:col-span-2">
-            <label for="edit-backend-desc" class="label-bold">Description</label>
-            <input type="text" id="edit-backend-desc" name="description" class="input-field">
-          </div>
-          <div class="md:col-span-2 flex items-center justify-between gap-6 p-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-highlight-shade1)]">
-            <div class="flex flex-col gap-1">
-              <span class="font-semibold text-sm">Local backend</span>
-              <p class="text-xs text-[var(--color-text-secondary)]">Enable for self-hosted services (llama.cpp, Ollama, local vLLM). Increases timeout to 10 min. Disable for cloud APIs.</p>
-            </div>
-            <label class="inline-flex items-center cursor-pointer shrink-0">
-              <input type="checkbox" id="edit-backend-is-local" name="is_local" value="true"
-                class="sr-only peer">
-              <div class="relative w-11 h-6 bg-[var(--color-border)] rounded-full peer
-                peer-checked:bg-[var(--color-accent-primary)]
-                after:content-[''] after:absolute after:top-0.5 after:left-0.5
-                after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all
-                peer-checked:after:translate-x-5"></div>
-            </label>
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <label for="edit-backend-concurrency" class="label-bold">Max Concurrency <span class="font-normal muted">(optional)</span></label>
-            <input type="number" id="edit-backend-concurrency" name="max_concurrency" class="input-field"
-              min="0" placeholder="0 = default (local: 4, remote: 20)">
-            <p class="text-xs muted">Concurrent requests this backend can handle. Match your server's <code>--parallel</code> setting.</p>
-          </div>
-        </div>
-        <div class="flex justify-end gap-3 mt-6 border-t border-[var(--color-border)] pt-4">
-          <button type="button" id="cancel-edit-backend-btn" class="pagination-button">Cancel</button>
-          <button type="submit" id="submit-edit-backend-btn" class="button-primary">Save Changes</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
+{% endfor %}
 
 <!-- Credits Modal -->
 <div id="credits-modal" class="overlay hidden flex items-center justify-center">
@@ -1125,6 +1095,35 @@ function applyPreset(presetId, formPrefix) {
         e.addForm.addEventListener('submit', (ev) => this.handleCreate(ev));
 
         e.cancelEditBtn.addEventListener('click', () => this.closeModal(e.editModal, e.editForm));
+        document.getElementById('close-edit-backend-btn').addEventListener('click', () => this.closeModal(e.editModal, e.editForm));
+        e.editModal.addEventListener('click', ev => { if (ev.target === e.editModal) this.closeModal(e.editModal, e.editForm); });
+        for (const prefix of ['add', 'edit']) {
+          const form = document.getElementById(`${prefix}-backend-form`);
+          document.getElementById(`${prefix}-backend-preset`).addEventListener('change', ev => applyPreset(ev.target.value, prefix));
+          form.elements.backend_type.addEventListener('change', () => {
+            delete form.dataset.preset;
+            document.getElementById(`${prefix}-backend-preset`).value = '';
+            document.querySelectorAll(`[data-form-prefix="${prefix}"].preset-card`).forEach(card => {
+              card.classList.remove('is-selected');
+              card.setAttribute('aria-pressed', 'false');
+            });
+            syncBackendFields(prefix);
+          });
+          form.elements.is_local.addEventListener('change', () => syncBackendFields(prefix));
+          const modal = document.getElementById(`${prefix}-backend-modal`);
+          modal.addEventListener('keydown', ev => {
+            if (ev.key === 'Escape') {
+              ev.preventDefault();
+              this.closeModal(modal, form);
+            } else if (ev.key === 'Tab') {
+              const controls = [...modal.querySelectorAll('button, input, select, summary, [tabindex="0"]')]
+                .filter(el => !el.disabled && el.getClientRects().length);
+              const first = controls[0], last = controls[controls.length - 1];
+              if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+              else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+            }
+          });
+        }
         e.editForm.addEventListener('submit', (ev) => this.handleUpdate(ev));
 
         e.closeCreditsBtn.addEventListener('click', () => this.closeModal(e.creditsModal));
@@ -1149,15 +1148,13 @@ function applyPreset(presetId, formPrefix) {
       },
 
       openAddModal: function () {
+        this.returnFocus = document.activeElement;
         this.elements.addForm.reset();
-        // Reset preset selection + key-hint text
-        this.elements.addPresetCards?.querySelectorAll('.preset-card.is-selected')
-          .forEach(c => c.classList.remove('is-selected'));
-        if (this.elements.addKeyHint) {
-          this.elements.addKeyHint.textContent = 'Enter your API key for this provider.';
-        }
+        this.elements.addForm.querySelector('details').open = false;
+        applyPreset('lmstudio', 'add');
         this.elements.addModal.classList.remove('hidden');
         this.elements.addModal.classList.add('visible');
+        this.elements.addForm.elements.name.focus();
       },
 
       closeAddModal: function () {
@@ -1167,6 +1164,7 @@ function applyPreset(presetId, formPrefix) {
       },
 
       openEditModal: function (backend) {
+        this.returnFocus = document.activeElement;
         const f = this.elements.editForm;
         f.elements['id'].value               = backend.id || '';
         f.elements['name'].value             = backend.name || '';
@@ -1176,14 +1174,21 @@ function applyPreset(presetId, formPrefix) {
         f.elements['description'].value      = backend.description || '';
         f.elements['is_local'].checked       = !!backend.is_local;
         f.elements['max_concurrency'].value  = backend.max_concurrency || 0;
+        delete f.dataset.preset;
+        document.getElementById('edit-backend-preset').value = '';
+        f.querySelector('details').open = false;
+        this.elements.editModal.querySelectorAll('.preset-card').forEach(c => { c.classList.remove('is-selected'); c.setAttribute('aria-pressed', 'false'); });
+        syncBackendFields('edit');
         this.elements.editModal.classList.remove('hidden');
         this.elements.editModal.classList.add('visible');
+        f.elements.name.focus();
       },
 
       closeModal: function (modal, form) {
         modal.classList.add('hidden');
         modal.classList.remove('visible');
         if (form) form.reset();
+        if (modal === this.elements.addModal || modal === this.elements.editModal) this.returnFocus?.focus();
       },
 
       handleCreate: async function (event) {
@@ -1194,6 +1199,7 @@ function applyPreset(presetId, formPrefix) {
         const data = Object.fromEntries(new FormData(this.elements.addForm));
         data.is_local = document.getElementById('add-backend-is-local').checked;
         data.max_concurrency = parseInt(data.max_concurrency, 10) || 0;
+        if (data.backend_type === 'DEBUG_RANDOM') { data.base_url = ''; data.is_local = false; }
         try {
           const res = await fetch('/admin/add_backend', {
             method: 'POST',
@@ -1223,6 +1229,7 @@ function applyPreset(presetId, formPrefix) {
         if (!data.api_key) delete data.api_key;
         data.is_local = document.getElementById('edit-backend-is-local').checked;
         data.max_concurrency = parseInt(data.max_concurrency, 10) || 0;
+        if (data.backend_type === 'DEBUG_RANDOM') { data.base_url = ''; data.is_local = false; }
         try {
           const res = await fetch('/admin/update_backend', {
             method: 'POST',

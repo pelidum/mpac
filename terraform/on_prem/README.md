@@ -57,6 +57,25 @@ Unchanged images do not cause container restarts.
 Image resources use the resolved registry digest rather than just the tag, so a
 destroy/apply cycle cannot reuse stale locally cached content tagged `latest`.
 
+### Using local development images
+
+Set `use_local_images = true` in `terraform.tfvars` to use the server and UI
+images already loaded in Docker. This skips registry lookups and pulls for those
+two images; PostgreSQL and Envoy keep their normal image behavior.
+
+From the repository root:
+
+```bash
+bazel run //server:server_image_load
+bazel run //ui:mpac_ui_image_load
+terraform -chdir=terraform/on_prem apply -var='use_local_images=true'
+```
+
+Both configured image names must exist locally; a missing image causes an error
+instead of falling back to a registry pull. Rebuilding and loading the same tag
+changes its image ID, so the next apply replaces the corresponding container.
+Set `use_local_images = false` (the default) to resume registry updates.
+
 Then open **https://localhost/** (accept the self-signed certificate warning).
 
 ### Bootstrapping the first admin
