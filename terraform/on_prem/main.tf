@@ -150,9 +150,15 @@ resource "docker_container" "postgres_backup" {
 }
 
 # MPAC Server
+data "docker_registry_image" "server" {
+  name = var.server_image
+}
+
 resource "docker_image" "server" {
-  name         = var.server_image
-  keep_locally = true
+  # Pin the resolved registry digest: creation can otherwise reuse a stale local tag.
+  name          = "${split("@", var.server_image)[0]}@${data.docker_registry_image.server.sha256_digest}"
+  keep_locally  = true
+  pull_triggers = [data.docker_registry_image.server.sha256_digest]
 }
 
 resource "docker_container" "server" {
@@ -187,10 +193,10 @@ resource "docker_container" "server" {
     aliases = ["server", "mpac-server"]
   }
 
-  # Allow container to access host machine services (e.g., Ollama on localhost:11434).
-  # host.docker.internal → host gateway for explicit use.
-  # localhost → host gateway so that backend URLs like http://localhost:11434/v1 work
-  # from inside the container without changing how Ollama is started.
+  # Access host services via host.docker.internal. They must listen on an
+  # interface reachable from Docker; host loopback-only listeners are not reachable.
+  # The legacy localhost alias below does not override every loopback resolution
+  # (notably ::1); use host.docker.internal in backend URLs.
   host {
     host = "host.docker.internal"
     ip   = "host-gateway"
@@ -206,9 +212,14 @@ resource "docker_container" "server" {
 }
 
 # MPAC UI
+data "docker_registry_image" "ui" {
+  name = var.ui_image
+}
+
 resource "docker_image" "ui" {
-  name         = var.ui_image
-  keep_locally = true
+  name          = "${split("@", var.ui_image)[0]}@${data.docker_registry_image.ui.sha256_digest}"
+  keep_locally  = true
+  pull_triggers = [data.docker_registry_image.ui.sha256_digest]
 }
 
 resource "docker_container" "ui" {
