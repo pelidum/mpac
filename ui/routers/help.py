@@ -7,7 +7,7 @@ from ui.dependencies import UserContext, get_current_user
 
 router = APIRouter()
 
-_PROTO_JSON_PATH = "server/mpac_proto_json/mpac_proto_json.json"
+_PROTO_JSON_PATH = "proto/mpac_proto_json/mpac_proto_json.json"
 
 
 @router.get("/help")

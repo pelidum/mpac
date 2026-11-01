@@ -4,10 +4,11 @@ import csv
 import io
 import json
 import zipfile
+from unittest import mock
 
 import pytest
 
-from server import service_pb2
+from proto import service_pb2
 
 
 def _csv_bytes(rows: list[dict], fieldnames: list[str]) -> bytes:
@@ -210,6 +211,39 @@ async def test_import_archive_with_attachment(client, mock_stub):
     assert mock_stub.CreateAttachment.call_count == 1
     created_item = mock_stub.CreateTestItem.call_args.args[0]
     assert created_item.attachment_id == "att-1"
+
+
+@pytest.mark.asyncio
+async def test_import_archive_uploads_attachments_to_blob_storage(client, mock_stub):
+    _wire_create(mock_stub)
+    mock_stub.CreateAttachmentUpload.side_effect = None
+    mock_stub.CreateAttachmentUpload.return_value = (
+        service_pb2.CreateAttachmentUploadReply(
+            attachment_id="upload-1", upload_uri="https://blobs.example/tmp/upload-1"
+        )
+    )
+    mock_stub.FinalizeAttachment.return_value = service_pb2.FileAttachment(id="sha-1")
+    manifest = {
+        "name": "With Blob",
+        "type": "EVALUATION",
+        "items": [{"question": "Q1", "answer": "a", "attachment": "pic.png"}],
+    }
+    with mock.patch("ui.blobs.requests.put") as put:
+        r = await client.post(
+            "/tests/import",
+            files={
+                "file": (
+                    "t.zip",
+                    _zip_bytes(manifest, {"pic.png": b"\x89PNG..."}),
+                    "application/zip",
+                )
+            },
+        )
+
+    assert r.status_code == 200, r.text
+    assert put.call_args.kwargs["data"] == b"\x89PNG..."
+    mock_stub.CreateAttachment.assert_not_called()
+    assert mock_stub.CreateTestItem.call_args.args[0].attachment_id == "sha-1"
 
 
 @pytest.mark.asyncio
@@ -552,3 +586,36 @@ async def test_download_archive_roundtrips_through_import(client, mock_stub):
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+@pytest.mark.asyncio
+async def test_archive_blob_download_runs_outside_event_loop(client, mock_stub):
+    import threading
+
+    event_thread = threading.get_ident()
+    mock_stub.GetTest.return_value = service_pb2.Test(
+        id="t1", name="Archive", item_count=1
+    )
+    mock_stub.ListTestItems.return_value = iter(
+        [service_pb2.TestItem(id="i1", question="Q", attachment_id="a1")]
+    )
+    mock_stub.BatchGetAttachments.return_value = iter(
+        [
+            service_pb2.FileAttachment(
+                id="a1", name="file.txt", uri="https://example.test/blob"
+            )
+        ]
+    )
+
+    def download(attachment, destination):
+        assert threading.get_ident() != event_thread
+        destination.write(b"downloaded")
+
+    with mock.patch(
+        "ui.routers.tests.blobs.copy_content", side_effect=download
+    ) as fetch:
+        response = await client.get("/tests/t1/download/archive")
+    assert response.status_code == 200
+    fetch.assert_called_once()
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        assert archive.read("attachments/file.txt") == b"downloaded"

@@ -11,6 +11,8 @@
 locals {
   invoker_iam_disabled = var.public_access_mode == "invoker_iam_disabled"
   bind_all_users       = var.public_access_mode == "allusers"
+
+  cloud_run_http1_request_bytes = 32 * 1000 * 1000
 }
 
 # gRPC server
@@ -88,6 +90,21 @@ resource "google_cloud_run_v2_service" "server" {
       }
 
       env {
+        name  = "MPAC_BLOB_URL"
+        value = "gs://${google_storage_bucket.blobs.name}"
+      }
+
+      env {
+        name  = "MPAC_MAX_ATTACHMENT_SIZE"
+        value = tostring(var.max_attachment_size_mb * 1024 * 1024)
+      }
+
+      env {
+        name  = "MPAC_SECRET_KEY_URL"
+        value = "gcp-kms:${google_kms_crypto_key.master.id}"
+      }
+
+      env {
         name  = "MPAC_MAX_MESSAGE_SIZE"
         value = tostring(var.server_max_message_size_mb * 1024 * 1024)
       }
@@ -105,15 +122,13 @@ resource "google_cloud_run_v2_service" "server" {
           cpu    = var.server_cpu
           memory = var.server_memory
         }
-        # Inference runs as a background asyncio task AFTER the CreateTestRun
-        # request completes. With cpu_idle = true (request-based billing),
-        # Cloud Run throttles CPU to near zero between requests and starves
-        # the event loop: connections time out, the OpenAI SDK retry-storms,
-        # and runs stall. So CPU must stay allocated while an instance is up.
-        # This switches the server to instance-based billing but does NOT
-        # affect scale-to-zero. With min_instances = 0 it still scales down
-        # when idle, and runs orphaned by scale-down are resumed on the next
-        # cold start (startup resume + periodic sweeper).
+        # The embedded worker runs jobs outside any request. With cpu_idle =
+        # true (request-based billing), Cloud Run throttles CPU to near zero
+        # between requests, so leases expire and runs stall. CPU must stay
+        # allocated while an instance is up. This switches the server to
+        # instance-based billing but does NOT affect scale-to-zero. With
+        # min_instances = 0 it still scales down when idle, and queued jobs
+        # continue on the next instance after their leases expire.
         cpu_idle          = false
         startup_cpu_boost = true
       }
@@ -170,6 +185,9 @@ resource "google_cloud_run_v2_service" "server" {
     google_secret_manager_secret_version.db_password,
     google_secret_manager_secret_version.jwt_secret,
     google_secret_manager_secret_version.admin_password,
+    google_kms_crypto_key_iam_member.server_master_key,
+    google_storage_bucket_iam_member.server_blobs,
+    google_service_account_iam_member.server_signs_urls,
   ]
 }
 
@@ -235,6 +253,11 @@ resource "google_cloud_run_v2_service" "ui" {
       env {
         name  = "MPAC_PORT"
         value = "443"
+      }
+
+      env {
+        name  = "MPAC_MAX_ATTACHMENT_SIZE"
+        value = tostring(min(var.max_attachment_size_mb * 1024 * 1024, local.cloud_run_http1_request_bytes))
       }
 
       env {

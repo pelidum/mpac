@@ -14,7 +14,7 @@ provider "google" {
 locals {
   prefix = var.project_name
 
-  # The server hardcodes the database name (server/server.py), so it is not
+  # The server hardcodes the database name (server/mpac/src/args.rs), so it is not
   # configurable here.
   db_name = "mpac"
 
@@ -34,13 +34,16 @@ data "google_project" "main" {
 resource "google_project_service" "services" {
   for_each = toset(concat(
     [
+      "cloudkms.googleapis.com",
       "cloudresourcemanager.googleapis.com",
       "iam.googleapis.com",
+      "iamcredentials.googleapis.com",
       "logging.googleapis.com",
       "monitoring.googleapis.com",
       "run.googleapis.com",
       "secretmanager.googleapis.com",
       "sqladmin.googleapis.com",
+      "storage.googleapis.com",
     ],
     local.budget_enabled ? ["billingbudgets.googleapis.com"] : [],
   ))

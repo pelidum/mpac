@@ -1,0 +1,18 @@
+[package]
+name = "mpac_db"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+mpac_auth = { path = "../mpac_auth" }
+mpac_proto = { path = "../mpac_proto" }
+prost.workspace = true
+prost-types.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

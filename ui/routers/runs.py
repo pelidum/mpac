@@ -14,8 +14,8 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
 
-from server import service_pb2
-from server.objects.answer_status import normalize_answer
+from proto import service_pb2
+from ui import blobs
 from ui.auth import (
     create_reconnection_token,
     validate_reconnection_token,
@@ -78,7 +78,7 @@ def _consensus_label(score: float) -> str:
     """Human label for an agreement fraction.
 
     Mirrors the threshold ladder in the backend's
-    DbMixin.calculate_confidence (server/objects/db.py); kept in sync by hand
+    the confidence calculation in server/mpac_inference; kept in sync by hand
     because that method lives on the gRPC service, not importable here.
     """
     if score == 1:
@@ -617,7 +617,7 @@ async def download_run_json(
         for a in answer_pbs:
             item_pb = items_by_id.get(a.item_id)
             row = MessageToDict(
-                normalize_answer(a),
+                a,
                 preserving_proto_field_name=True,
                 always_print_fields_with_no_presence=True,
             )
@@ -1038,11 +1038,9 @@ async def _fetch_run_report_data(
             )
         ),
     )
-    # Normalized so answers written before `status` existed render the same
-    # way as new ones (errors in `error`, not in reasoning / raw_response).
     answer_dicts = [
         MessageToDict(
-            normalize_answer(a),
+            a,
             preserving_proto_field_name=True,
             always_print_fields_with_no_presence=True,
         )
@@ -1236,8 +1234,15 @@ async def _fetch_run_report_data(
                         service_pb2.GetRequest(id=aid), metadata=metadata
                     ),
                 )
-                if attachment_pb.file and attachment_pb.modality == 2:  # IMAGE
-                    resized = _resize_image_for_pdf(attachment_pb.file)
+                if (
+                    attachment_pb.id
+                    and attachment_pb.modality == 2  # IMAGE
+                    and attachment_pb.file_size * 1024 <= blobs.MAX_INFERENCE_BYTES
+                ):
+                    content = await loop.run_in_executor(
+                        None, blobs.attachment_content, attachment_pb
+                    )
+                    resized = _resize_image_for_pdf(content)
                     encoded = base64.b64encode(resized).decode("ascii")
                     attachment_data_uris[attachment_id] = (
                         f"data:image/jpeg;base64,{encoded}"

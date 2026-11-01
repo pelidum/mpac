@@ -67,3 +67,12 @@ envoy_http_port  = 80
 envoy_https_port = 443
 envoy_grpc_port  = 50051
 envoy_bind_ip    = "0.0.0.0"
+
+
+# Phase 7.1 storage and workers (Rust server required).
+blob_data_path = "/var/lib/mpac/seaweedfs"
+worker_replicas = 0 # embedded; set 2 for an API container and two separate workers
+worker_concurrency = 32
+server_max_message_size_mb = 8
+max_attachment_size_mb = 2048
+backup_interval_seconds = 86400

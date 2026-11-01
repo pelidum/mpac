@@ -10,8 +10,13 @@ module(
 # Deps
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
 bazel_dep(name = "aspect_rules_py", version = "1.10.0")
-bazel_dep(name = "hermetic_cc_toolchain", version = "4.1.0")
-bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "hermetic_cc_toolchain", version = "4.3.0")
+single_version_override(
+    module_name = "hermetic_cc_toolchain",
+    patch_strip = 1,
+    patches = ["//third_party/hermetic_cc_toolchain:drop_fix_cortex_a53_843419.patch"],
+)
+bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "protobuf", version = "31.1")
 bazel_dep(name = "rules_distroless", version = "0.8.0")
 bazel_dep(name = "rules_oci", version = "2.3.0")
@@ -19,6 +24,7 @@ bazel_dep(name = "rules_pkg", version = "1.2.0")
 bazel_dep(name = "rules_proto_grpc_doc", version = "5.8.0")
 bazel_dep(name = "rules_proto_grpc_python", version = "5.8.0")
 bazel_dep(name = "rules_python", version = "1.9.0")
+bazel_dep(name = "rules_rust", version = "0.75.0")
 
 # Python deps
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
@@ -29,10 +35,85 @@ pip.parse(
 )
 use_repo(pip, "pypi")
 
+# Rust deps
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2024",
+    extra_target_triples = [
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+    ],
+    versions = ["1.99.1"],
+)
+use_repo(rust, "rust_toolchains")
+
+register_toolchains("@rust_toolchains//:all")
+
+zig = use_extension("@hermetic_cc_toolchain//toolchain:ext.bzl", "toolchains")
+use_repo(zig, "zig_sdk")
+
+register_toolchains(
+    "@zig_sdk//libc_aware/toolchain:linux_amd64_gnu.2.28",
+    "@zig_sdk//libc_aware/toolchain:linux_arm64_gnu.2.28",
+)
+
+crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
+crate.from_cargo(
+    name = "crates",
+    cargo_lockfile = "//server:Cargo.lock",
+    manifests = [
+        "//server:Cargo.toml",
+        "//server/mpac:Cargo.toml",
+        "//server/mpac_api:Cargo.toml",
+        "//server/mpac_auth:Cargo.toml",
+        "//server/mpac_blob:Cargo.toml",
+        "//server/mpac_db:Cargo.toml",
+        "//server/mpac_http:Cargo.toml",
+        "//server/mpac_inference:Cargo.toml",
+        "//server/mpac_proto:Cargo.toml",
+        "//server/mpac_queue:Cargo.toml",
+        "//server/mpac_secrets:Cargo.toml",
+        "//server/mpac_testing:Cargo.toml",
+        "//server/mpac_worker:Cargo.toml",
+    ],
+)
+use_repo(crate, "crates")
+
+crate.annotation(
+    crate = "hmac",
+    repositories = ["crates"],
+    rustc_flags = ["-Copt-level=3"],
+)
+
+crate.annotation(
+    crate = "pbkdf2",
+    repositories = ["crates"],
+    rustc_flags = ["-Copt-level=3"],
+)
+
+crate.annotation(
+    crate = "salsa20",
+    repositories = ["crates"],
+    rustc_flags = ["-Copt-level=3"],
+)
+
+crate.annotation(
+    crate = "scrypt",
+    repositories = ["crates"],
+    rustc_flags = ["-Copt-level=3"],
+)
+
+crate.annotation(
+    crate = "sha2",
+    repositories = ["crates"],
+    rustc_flags = ["-Copt-level=3"],
+)
+
 # Docker base image
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 oci.pull(
     name = "py3_11",
+    config = "//:oci-public-config.json",
     digest = "sha256:9358444059ed78e2975ada2c189f1c1a3144a5dab6f35bff8c981afb38946634",
     image = "docker.io/library/python",
     platforms = [
@@ -43,6 +124,23 @@ use_repo(oci, "py3_11")
 use_repo(
     oci,
     "py3_11_linux_amd64",
+)
+
+oci.pull(
+    name = "distroless_base_nossl",
+    config = "//:oci-public-config.json",
+    digest = "sha256:be40c00dfabd86576d92666e87e406714d5618342de1a0c213ad232de255172e",
+    image = "gcr.io/distroless/base-nossl-debian12",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64/v8",
+    ],
+)
+use_repo(
+    oci,
+    "distroless_base_nossl",
+    "distroless_base_nossl_linux_amd64",
+    "distroless_base_nossl_linux_arm64_v8",
 )
 
 apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")

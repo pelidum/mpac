@@ -110,7 +110,7 @@ variable "server_enable_reflection" {
 
 variable "server_max_message_size_mb" {
   type        = number
-  default     = 50
+  default     = 8
   description = "Maximum gRPC message size in megabytes (send and receive)."
 }
 
@@ -222,4 +222,77 @@ variable "tls_validity_days" {
   type        = number
   default     = 825
   description = "Validity period (in days) for the auto-generated self-signed certificate."
+}
+
+
+variable "seaweedfs_image" {
+  type    = string
+  default = "chrislusf/seaweedfs:4.50"
+}
+
+variable "blob_data_path" {
+  type        = string
+  default     = "/var/lib/mpac/seaweedfs"
+  description = "Persistent host path for SeaweedFS volumes, master and filer metadata."
+  validation {
+    condition     = startswith(var.blob_data_path, "/") && !startswith(var.blob_data_path, "/tmp")
+    error_message = "blob_data_path must be an absolute persistent path outside /tmp."
+  }
+}
+
+variable "secret_key_path" {
+  type        = string
+  default     = ""
+  description = "Host path to your own provider key master key: 32 random bytes, base64 encoded. Empty generates one under generated/secrets/."
+}
+
+variable "secret_key_url" {
+  type        = string
+  default     = ""
+  description = "External master key, for example vault+https://vault.example.com/transit/mpac. Overrides secret_key_path."
+}
+
+variable "secret_key_vault_token" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Token for the Vault or OpenBao server named by secret_key_url."
+}
+
+variable "worker_replicas" {
+  type        = number
+  default     = 0
+  description = "0 embeds the worker in the API. Positive values run this many separate worker-only containers."
+  validation {
+    condition     = var.worker_replicas >= 0 && floor(var.worker_replicas) == var.worker_replicas
+    error_message = "worker_replicas must be a non-negative integer."
+  }
+}
+
+variable "worker_concurrency" {
+  type    = number
+  default = 32
+  validation {
+    condition     = var.worker_concurrency >= 1 && floor(var.worker_concurrency) == var.worker_concurrency
+    error_message = "worker_concurrency must be a positive integer."
+  }
+}
+
+variable "max_attachment_size_mb" {
+  type    = number
+  default = 2048
+}
+
+variable "backup_interval_seconds" {
+  type    = number
+  default = 86400
+  validation {
+    condition     = var.backup_interval_seconds >= 1 && floor(var.backup_interval_seconds) == var.backup_interval_seconds
+    error_message = "backup_interval_seconds must be a positive integer."
+  }
+}
+
+variable "rclone_image" {
+  type    = string
+  default = "rclone/rclone:1.70.3"
 }

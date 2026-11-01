@@ -27,6 +27,7 @@ static_resources:
                             prefix: "/"
                           redirect:
                             https_redirect: true
+                            port_redirect: ${https_port}
                             strip_query: false
                 http_filters:
                   - name: envoy.filters.http.router
@@ -55,6 +56,9 @@ static_resources:
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: ingress_https
+                normalize_path: false
+                merge_slashes: false
+                path_with_escaped_slashes_action: KEEP_UNCHANGED
                 stream_idle_timeout: 86400s
                 common_http_protocol_options:
                   idle_timeout: 0s
@@ -64,6 +68,11 @@ static_resources:
                     - name: ui_service
                       domains: ["*"]
                       routes:
+                        - match:
+                            prefix: "/blobs/"
+                          route:
+                            cluster: mpac_blob_cluster
+                            timeout: 0s
                         - match:
                             prefix: "/"
                           route:
@@ -141,7 +150,7 @@ static_resources:
                   address:
                     socket_address:
                       address: ui
-                      port_value: 8080
+                      port_value: ${ui_port}
 
     - name: mpac_server_cluster
       connect_timeout: 2s
@@ -166,4 +175,18 @@ static_resources:
                   address:
                     socket_address:
                       address: server
-                      port_value: 50051
+                      port_value: ${server_port}
+
+    - name: mpac_blob_cluster
+      connect_timeout: 2s
+      type: LOGICAL_DNS
+      dns_lookup_family: V4_ONLY
+      load_assignment:
+        cluster_name: mpac_blob_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: seaweedfs
+                      port_value: 8333

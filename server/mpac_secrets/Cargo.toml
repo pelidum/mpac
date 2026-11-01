@@ -1,0 +1,24 @@
+[package]
+name = "mpac_secrets"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64.workspace = true
+hex.workspace = true
+mpac_http = { path = "../mpac_http" }
+reqwest.workspace = true
+ring.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+mpac_testing = { path = "../mpac_testing" }
+wiremock.workspace = true

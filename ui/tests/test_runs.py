@@ -5,7 +5,7 @@ from unittest import mock
 
 import pytest
 
-from server import service_pb2
+from proto import service_pb2
 
 
 @pytest.mark.asyncio
@@ -439,13 +439,12 @@ def _detail_answers():
             justification="because b",
             raw_response="b",
         ),
-        # Legacy: error encoded in raw_response prefix + message in reasoning.
         _A(
             item_id="item-2",
             model_id="model-a",
             responder_id="model-a",
-            raw_response="[TIMEOUT] Inference request timed out",
-            reasoning="Request timeout - inference took too long",
+            status=_A.TIMEOUT,
+            error="Request timeout - inference took too long",
         ),
         # New: failed request.
         _A(
@@ -470,7 +469,7 @@ def _wire_details_run(mock_stub):
 
 
 @pytest.mark.asyncio
-async def test_report_data_normalizes_legacy_errors(mock_stub):
+async def test_report_data_keeps_answer_errors(mock_stub):
     _wire_details_run(mock_stub)
     from ui.routers.runs import _fetch_run_report_data
 
@@ -482,11 +481,11 @@ async def test_report_data_normalizes_legacy_errors(mock_stub):
         for item_id, d in ctx["answers"].items()
         for rk, r in d["responses"].items()
     }
-    legacy = responses[("item-2", "model-a")]
-    assert legacy["status"] == "TIMEOUT"
-    assert legacy["error"] == "Request timeout - inference took too long"
-    assert legacy["reasoning"] == ""
-    assert legacy["raw_response"] == ""
+    failed = responses[("item-2", "model-a")]
+    assert failed["status"] == "TIMEOUT"
+    assert failed["error"] == "Request timeout - inference took too long"
+    assert failed["reasoning"] == ""
+    assert failed["raw_response"] == ""
     assert responses[("item-1", "model-a")]["status"] == "OK"
     assert responses[("item-1", "model-b")]["justification"] == "because b"
 
@@ -502,7 +501,7 @@ async def test_run_details_answer_details(client, mock_stub):
     assert 'data-reasoning="native thoughts"' in html
     assert 'data-justification="because b"' in html
     assert 'data-error="Connection error: refused"' in html
-    # Legacy error text is shown as an error, not as reasoning.
+    # Error text is shown as an error, not as reasoning.
     assert 'data-error="Request timeout - inference took too long"' in html
     assert 'data-reasoning="Request timeout' not in html
     assert '<span class="ans-status">TIMEOUT</span>' in html
@@ -609,16 +608,16 @@ async def test_pdf_shows_confidence(mock_stub):
 
 
 @pytest.mark.asyncio
-async def test_json_export_normalizes_answers(client, mock_stub):
+async def test_json_export_keeps_answer_errors(client, mock_stub):
     _wire_details_run(mock_stub)
     mock_stub.ListTestItems.return_value = iter([])
     r = await client.get("/runs/run-perf/download/json")
     assert r.status_code == 200
     rows = {(x["item_id"], x["responder_id"]): x for x in r.json()["items"]}
-    legacy = rows[("item-2", "model-a")]
-    assert legacy["status"] == "TIMEOUT"
-    assert legacy["raw_response"] == ""
-    assert legacy["error"] == "Request timeout - inference took too long"
+    failed = rows[("item-2", "model-a")]
+    assert failed["status"] == "TIMEOUT"
+    assert failed["raw_response"] == ""
+    assert failed["error"] == "Request timeout - inference took too long"
 
 
 # ---------------------------------------------------------------------------

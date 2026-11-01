@@ -1,0 +1,10 @@
+[package]
+name = "mpac_http"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+reqwest.workspace = true
+rustls.workspace = true

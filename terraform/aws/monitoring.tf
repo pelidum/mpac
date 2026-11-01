@@ -13,11 +13,10 @@ locals {
       threshold = 50
     }
     login-failures = {
-      pattern   = "\"Failed login attempt\""
+      pattern   = "?\"failed login attempt\" ?\"login attempt for non-existent user\""
       threshold = 20
     }
-    # Python logging ("ERROR:...") and absl ("E0928 ...") error lines, plus
-    # uncaught exceptions.
+    # Server JSON logs ("level":"ERROR"), UI error lines and uncaught exceptions.
     server-errors = {
       pattern   = "?ERROR ?Traceback"
       threshold = 10

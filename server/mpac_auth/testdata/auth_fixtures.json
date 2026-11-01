@@ -1,0 +1,142 @@
+{
+ "api_keys": [
+  {
+   "hash": "4fa5d5b918054cae5d4fc5f3a83faa73b290dcccb7b3e732043573958557826d",
+   "key": "sk_ci_test_key_for_integration_tests"
+  },
+  {
+   "hash": "0e65dbc35b6be9a301331d7bf67db5f385d4e6a5e6b0925be1f7fa83b8e1ed30",
+   "key": "mpac-ключ-🔑"
+  }
+ ],
+ "jwt_secret": "mpac-fixture-secret",
+ "jwts": [
+  {
+   "case": "web",
+   "expect": "ok",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyQGV4YW1wbGUuY29tIiwiYXVkIjoibXBhYy13ZWIiLCJleHAiOjQxMDI0NDQ4MDAsImlhdCI6MTAwMDAwMDAwMCwibmFtZSI6IlUifQ.6mPnH60js2eRUhlBcLouRkDO5ORbfr2hvBSr54F-e7A"
+  },
+  {
+   "case": "system",
+   "expect": "ok",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzeXN0ZW1AbXBhYyIsImF1ZCI6Im1wYWMtc3lzdGVtIiwiZXhwIjo0MTAyNDQ0ODAwLCJpYXQiOjEwMDAwMDAwMDB9.5-Cdql2cO1A0O9zcZlYZkVvhHpFrFxwHUABMKg-xfkU"
+  },
+  {
+   "case": "aud_list",
+   "expect": "ok",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyQGV4YW1wbGUuY29tIiwiYXVkIjpbIm90aGVyIiwibXBhYy13ZWIiXSwiZXhwIjo0MTAyNDQ0ODAwfQ.ZzTA_w8mue_IXmnEkit8eEaasp5pXL4-_VFBw_LMInw"
+  },
+  {
+   "case": "no_exp",
+   "expect": "ok",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhQGIuYyIsImF1ZCI6Im1wYWMtd2ViIn0.ugWShlHP9wXJrK0j349lFFZYCuv-aBhn-kRqfQZeS7g"
+  },
+  {
+   "case": "expired",
+   "expect": "expired",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyQGV4YW1wbGUuY29tIiwiYXVkIjoibXBhYy13ZWIiLCJleHAiOjEwMDAwMDAwMDB9.QqoSK-R2twBPhbi_CASBjHT5ftiQYQk2CF0MnwEU5To"
+  },
+  {
+   "case": "wrong_aud",
+   "expect": "invalid",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyQGV4YW1wbGUuY29tIiwiYXVkIjoib3RoZXIiLCJleHAiOjQxMDI0NDQ4MDB9.sf9agXNekb35VlK4qtHOOZfQj1Eko0gyCepG0oVMtLc"
+  },
+  {
+   "case": "no_aud",
+   "expect": "invalid",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhQGIuYyIsImV4cCI6NDEwMjQ0NDgwMH0.EuNO5FDKXSBFWaymcYeLpMaDJlcbghJhqM-SRtTN3dU"
+  },
+  {
+   "case": "wrong_secret",
+   "expect": "invalid",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyQGV4YW1wbGUuY29tIiwiYXVkIjoibXBhYy13ZWIiLCJleHAiOjQxMDI0NDQ4MDB9.6x168YPzVyD6lnuBi1OF5C0xlKy3HxVI8MBkHrB5KGQ"
+  },
+  {
+   "case": "future_nbf",
+   "expect": "invalid",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyQGV4YW1wbGUuY29tIiwiYXVkIjoibXBhYy13ZWIiLCJleHAiOjQxMDI0NDQ4MDAsIm5iZiI6NDEwMjQ0NDc5OX0.0EecDCJIwEsOP-qAeBKXaW05AswNY5zcw_CAZrBWkQw"
+  },
+  {
+   "case": "future_iat",
+   "expect": "invalid",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyQGV4YW1wbGUuY29tIiwiYXVkIjoibXBhYy13ZWIiLCJleHAiOjQxMDI0NDQ4MDAsImlhdCI6NDEwMjQ0NDc5OX0.Zt1HkIuFiREQcZZ-52lcrllNlWORMz0nX1UqaocFkn4"
+  },
+  {
+   "case": "alg_none",
+   "expect": "invalid",
+   "token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ1c2VyQGV4YW1wbGUuY29tIiwiYXVkIjoibXBhYy13ZWIiLCJleHAiOjQxMDI0NDQ4MDB9."
+  },
+  {
+   "case": "hs512",
+   "expect": "invalid",
+   "token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyQGV4YW1wbGUuY29tIiwiYXVkIjoibXBhYy13ZWIiLCJleHAiOjQxMDI0NDQ4MDB9.4BFy-pkkhZ-iM4gP-edNwLPELejoDDE48f0yLgfzeNRFe4dBS6KawLQYWZ3_Qy48BXiiqEytMOx-2vx4UycWOA"
+  },
+  {
+   "case": "missing_sub",
+   "expect": "missing_sub",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJtcGFjLXdlYiIsImV4cCI6NDEwMjQ0NDgwMH0.lllz2QL0E3kQya9waEugsts3phJpBDNUfoxNtIONIAA"
+  },
+  {
+   "case": "garbage",
+   "expect": "invalid",
+   "token": "not.a.jwt"
+  }
+ ],
+ "passwords": [
+  {
+   "hash": "scrypt:32768:8:1$1fqZ1yDdP7FfM7yh$ded72ab9502b1690da3fa568d7ddd1ad98d0b9a312889fcd747a18576dee65e6da80dbb4ea0e4d7a1f119422a82feb3c1ceee2324a6fa67dd67143538e2a4231",
+   "method": "scrypt",
+   "password": "correct horse battery staple"
+  },
+  {
+   "hash": "scrypt:32768:8:1$70MA5Ak5IRp0B5OA$cd1c378b0f0e5dab82385f5f72380b0577deb1ac0aec009e2c670ae8849e26c8a9ce65b3f855ae1897cefc8df573a3b2597bc00b796ef1f133db773021144fb8",
+   "method": "scrypt",
+   "password": "pässwörd ✓ 🔐"
+  },
+  {
+   "hash": "scrypt:32768:8:1$sZS7DF5NcgOPafSV$84bf54c64b818ad899231f11df1c18dfe05b8299b362cfd48fb0dee99278703c10cba7ad4783e83cab833c80e5b3f7dac35250c4d72884f9afdaa53cb9e96e4d",
+   "method": "scrypt",
+   "password": ""
+  },
+  {
+   "hash": "pbkdf2:sha256:1000$CHXIvhC5Ykczbt4o$66abc1d62456de79793dcc96ece311e8d9bf8f780f2a5fee3d776098ccab8721",
+   "method": "pbkdf2:sha256:1000",
+   "password": "correct horse battery staple"
+  },
+  {
+   "hash": "pbkdf2:sha256:1000$pwzAxrmq9LDGi7WN$6de9321a2f9891e98a2d0588ae7ed23889969b246397640606f35979bf5c8854",
+   "method": "pbkdf2:sha256:1000",
+   "password": "pässwörd ✓ 🔐"
+  },
+  {
+   "hash": "pbkdf2:sha256:1000$okeHWW0qDiTTTEoS$51d268d3a79d08e05e4129f7385170ab3d72408bf74fde980b7956229ba40350",
+   "method": "pbkdf2:sha256:1000",
+   "password": ""
+  },
+  {
+   "hash": "pbkdf2:sha512:1000$dbCVJ2HoCn7qF5M7$709ccc226ebdba8c614addbadc27356125400d91402e5e2bb4f77b1acaed010f09381534f6a67b4debb486513ea819e2641569a1286035d2bc90eccdccfa8ff8",
+   "method": "pbkdf2:sha512:1000",
+   "password": "correct horse battery staple"
+  },
+  {
+   "hash": "pbkdf2:sha512:1000$9h0xRnIMRzBoxd04$4c2b403e152ef1713aceb13f77127e0efc49e5d5c8ccfaa19b386e46e30d898f6a49260840acebc5b05d4a80b45323b96c38ac630ba26fbc6e7af256c01ee6ae",
+   "method": "pbkdf2:sha512:1000",
+   "password": "pässwörd ✓ 🔐"
+  },
+  {
+   "hash": "pbkdf2:sha512:1000$Gn1CObATp7jxpOCS$34b86bdc0046feba8f7dbcfd41891f1fd819d84072e2ce70fca04375cca96dc1fc3c11343ec71d1c1e02566e3bccdd1a76fcaa5c209a5ef89ca8d1c8ef380e8f",
+   "method": "pbkdf2:sha512:1000",
+   "password": ""
+  },
+  {
+   "hash": "pbkdf2:sha256:1000000$Y2Krjlxp1zFLRvyn$2b52c4f0e7b6d3900c705643bd296d795c5814d25a7b3b6b9b89c701432635c6",
+   "method": "pbkdf2",
+   "password": "correct horse battery staple"
+  },
+  {
+   "hash": "pbkdf2:sha512:1000000$C6KKnuJF0VtWM6cK$88b23e1213e05dca233a863580fc63bde4aa39581c358d8e9b8ce2b676ea156880ee05310f3c7168c803805ae343a52ea221d588f519407337aa0fa322a64e93",
+   "method": "pbkdf2:sha512",
+   "password": "correct horse battery staple"
+  }
+ ]
+}

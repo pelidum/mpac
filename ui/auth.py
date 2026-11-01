@@ -13,7 +13,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import RedirectResponse
 from starlette.config import Config
 
-from server import service_pb2
+from proto import service_pb2
 from ui.grpc_client import (
     get_mpac_stub,
     MPAC_JWT_SECRET,

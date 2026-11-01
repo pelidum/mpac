@@ -27,7 +27,7 @@ resource "google_logging_metric" "auth_failures" {
   filter = <<-EOT
     resource.type="cloud_run_revision"
     (${local.cloud_run_services})
-    textPayload=~"AUTH: fail"
+    (textPayload=~"AUTH: fail" OR jsonPayload.message=~"AUTH: fail")
   EOT
   metric_descriptor {
     metric_kind = "DELTA"
@@ -41,7 +41,7 @@ resource "google_logging_metric" "login_failures" {
   filter = <<-EOT
     resource.type="cloud_run_revision"
     resource.labels.service_name="${google_cloud_run_v2_service.server.name}"
-    textPayload=~"Failed login attempt"
+    jsonPayload.message=~"failed login attempt|login attempt for non-existent user"
   EOT
   metric_descriptor {
     metric_kind = "DELTA"
@@ -55,7 +55,7 @@ resource "google_logging_metric" "server_errors" {
   filter = <<-EOT
     resource.type="cloud_run_revision"
     (${local.cloud_run_services})
-    severity>=ERROR
+    (severity>=ERROR OR jsonPayload.level="ERROR")
   EOT
   metric_descriptor {
     metric_kind = "DELTA"

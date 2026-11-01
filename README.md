@@ -1,126 +1,79 @@
 # MPAC
 
-**Multi-Provider Agent Consensus** — a server + API + UI for building custom AI
-evals and measuring model quality across providers.
+**Multi-Provider Agent Consensus** is a platform for AI model evaluation. It runs the same questions against multiple language models and measures their accuracy.
 
-MPAC lets you define **tests** (evaluation or survey), run them against one or
-more **models** served by pluggable **backends** (vLLM, Ollama, OpenAI,
-OpenRouter, llama.cpp), and compare results with metrics, leaderboards,
-head-to-head **benchmarks**, and exportable PDF reports.
+You can use local models, hosted models, or both. MPAC supports vLLM, Ollama, LM Studio, llama.cpp, OpenAI, and OpenRouter.
 
-- **`server/`** — gRPC backend (Python + asyncpg + PostgreSQL). All domain
-  objects are protobuf messages persisted as JSONB + canonical bytes.
-- **`ui/`** — FastAPI, server-side-rendered web frontend (Jinja2 templates)
-  that talks to the backend over gRPC.
+## See It Work
 
-The build is fully hermetic via [Bazel](https://bazel.build/) (Bzlmod). See
-[`docs/mpac_guide.md`](docs/mpac_guide.md) for the full technical guide and
-[`CLAUDE.md`](CLAUDE.md) for a concise structure/patterns overview.
+**Create a test.** Enter your questions and answers in a spreadsheet editor, and attach images, audio, video, or text.
 
-## Prerequisites
+![Create a test in the MPAC spreadsheet editor](ui/static/images/gifs/mpac_create_test.gif)
 
-- **Bazelisk** (pins Bazel `8.2.0` via `.bazelversion`) — `brew install bazelisk`
-  or see the [Bazelisk releases](https://github.com/bazelbuild/bazelisk/releases).
-- **Python 3.11** on the host (`pyenv install 3.11 && pyenv global 3.11`).
-- **Docker** (only needed to build/run container images or the integration test DB).
-- **PostgreSQL** (only for running the server; a container works — see below).
+**Run the test.** Choose your models and watch the run live. When it finishes, compare precision, recall, F1, cost, and speed.
 
-No manual `pip install` is required: Python dependencies are resolved
-hermetically from `requirements_lock.txt` by Bazel.
+![Choose models for a test and start a run](ui/static/images/gifs/mpac_run_test.gif)
 
-## Build & test
+**Run a benchmark.** Put models in a single-elimination tournament to find the best one for your test.
+
+![Create a benchmark tournament between models](ui/static/images/gifs/mpac_create_benchmark.gif)
+
+## On-Premises Quickstart
+
+You need one machine with Docker and Terraform 1.7 or later. Ports 80, 443, and 50051 must be free.
+
+**1. Get the code and copy the settings file.**
 
 ```bash
-# Build everything (both services + container images)
-bazel build //...
-
-# Run all unit tests
-bazel test //server/... //ui/...
-
-# Run a single test
-bazel test //server/objects:users_test
+git clone https://github.com/pelidum/mpac.git && cd mpac
+cp terraform/on_prem/terraform.tfvars.example terraform/on_prem/terraform.tfvars
+chmod 600 terraform/on_prem/terraform.tfvars
 ```
 
-## Run locally
+**2. Set your secrets.** In `terraform.tfvars`, replace each of the three `CHANGE_ME` values. To make a random value, run `openssl rand -hex 32`.
 
-**1. Start PostgreSQL** (any Postgres 16; Docker shown here):
+**3. Deploy.**
 
 ```bash
-docker run -d --name mpac-pg -p 5432:5432 \
-  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=mpac \
-  postgres:16
+terraform -chdir=terraform/on_prem init
+terraform -chdir=terraform/on_prem apply
 ```
 
-**2. Start the gRPC server** (creates the schema and onboards a first admin):
+**4. Sign in.** Open <https://localhost> and accept the self-signed certificate. Sign in as `admin@example.com` with the admin password from step 2.
 
-```bash
-bazel run //server:server -- \
-  --db_host=localhost --db_user=postgres --db_password=postgres \
-  --admin_onboarding_id=admin@example.com \
-  --admin_onboarding_password=changeme \
-  --port=50051
-```
+**5. Add a model backend.** Go to **Admin**, then **Backends**, then **Add Backend**. If the model server is on this machine, use `host.docker.internal` in the URL, not `localhost`.
 
-**3. Start the web UI** (connects to the server; then open http://localhost:8080):
+You can now create a test and run it.
 
-```bash
-MPAC_HOST=localhost MPAC_PORT=50051 MPAC_DEBUG=true \
-MPAC_JWT_SECRET=dev-secret \
-  bazel run //ui:mpac_ui
-```
+## Key Terms
 
-Use `bazel run //server:cli -- --help` for the command-line client.
+| Term | Definition |
+|------|-----------|
+| Test | A named collection of items with metadata and visibility settings |
+| Item | A single question with choices and an optional attachment |
+| Run | One execution of a test against one or more models |
+| Benchmark | A single-elimination tournament that compares models by F1 score |
+| Backend | A server that hosts AI models (for example, vLLM or OpenRouter) |
+| Model | A specific AI model served by a backend |
+| F1 Score | A metric that combines precision and recall into one value |
 
-### Key environment variables
+The [technical guide](docs/mpac_guide.md#13-key-terms) has the full list.
 
-| Variable | Component | Description |
-|----------|-----------|-------------|
-| `MPAC_JWT_SECRET` | server, ui | HS256 signing secret for JWTs |
-| `MPAC_HOST` / `MPAC_PORT` | ui | gRPC server address (default `0.0.0.0:50051`) |
-| `MPAC_DEBUG` | ui | Use an insecure gRPC channel for local dev |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | ui | Optional Google OAuth login |
+## Documentation
 
-See [Appendix A of the guide](docs/mpac_guide.md#appendix-a-environment-variables)
-for the complete list.
+| To Do This | Read This |
+|------------|-----------|
+| Compare deployment options and costs | [Deploying MPAC](terraform/DEPLOYMENT.md) |
+| Deploy on one machine, or use your own TLS certificate and ports | [On-premises README](terraform/on_prem/README.md) |
+| Deploy on a cloud | [Google Cloud](terraform/gcloud/README.md) or [AWS](terraform/aws/README.md) |
+| Learn how to use and operate MPAC | [Technical guide](docs/mpac_guide.md) |
+| Protect your data | [Backups and restore](docs/mpac_guide.md#116-backups-and-restore) |
+| Call the API | [`proto/service.proto`](proto/service.proto) and the [API reference](docs/mpac_guide.md#13-grpc-api-reference) |
+| Build and test the code | [Local development](docs/mpac_guide.md#124-local-development) |
+| Learn the code structure | [`CLAUDE.md`](CLAUDE.md): `server/` (Rust backend), `ui/` (web UI), `proto/` (API), `cli/` (Python client) |
 
-## Container images
-
-Images are built with [`rules_oci`](https://github.com/bazel-contrib/rules_oci)
-(no Dockerfiles) and published to the GitHub Container Registry:
-
-```bash
-# Load a locally-built image into Docker
-bazel run //server:server_image_load
-bazel run //ui:mpac_ui_image_load
-
-# Push (CI does this on merge to main -> ghcr.io/pelidum/mpac_server, .../mpac_ui)
-bazel run //server:server_image_push
-bazel run //ui:mpac_ui_image_push
-```
-
-## Managing Python dependencies
-
-Add or change a pinned version in `requirements.txt`, then regenerate the lock:
-
-```bash
-bazel run //:requirements.update
-```
-
-## Deployment
-
-Self-hosting configurations live under [`terraform/`](terraform/), and each is a single
-`terraform apply` after filling in a `terraform.tfvars`. See
-[`terraform/DEPLOYMENT.md`](terraform/DEPLOYMENT.md) for a side-by-side comparison (cost, TLS,
-security, operations) to help you choose.
-
-- [`terraform/on_prem/`](terraform/on_prem/): a single machine running Docker (PostgreSQL,
-  server, UI, Envoy TLS proxy). Also covered in the
-  [technical guide](docs/mpac_guide.md#11-deployment-on-premises-docker-admin).
-- [`terraform/gcloud/`](terraform/gcloud/): Google Cloud (Cloud Run + Cloud SQL). Scales to
-  zero, roughly $13–15/month for light use.
-- [`terraform/aws/`](terraform/aws/): AWS (ALB + Fargate + RDS). Always on, roughly
-  $65/month.
+The Google Cloud and AWS deployments pass offline tests only. They have not been deployed with the Rust server.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE)

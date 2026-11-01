@@ -152,12 +152,32 @@ run "defaults" {
 
   assert {
     condition     = aws_ecs_task_definition.main.runtime_platform[0].cpu_architecture == "X86_64"
-    error_message = "Images are x86_64 only."
+    error_message = "The UI image is x86_64 only."
   }
 
   assert {
-    condition     = length(aws_iam_role.task) == 0 && !aws_ecs_service.main.enable_execute_command
-    error_message = "No task role or ECS Exec by default."
+    condition     = length(aws_iam_role_policy.task_exec) == 0 && !aws_ecs_service.main.enable_execute_command
+    error_message = "No ECS Exec permissions by default."
+  }
+
+  assert {
+    condition     = local.server_env["MPAC_BLOB_URL"] == "s3://mpac-blobs-123456789012" && local.server_env["AWS_REGION"] == var.region
+    error_message = "The server must use the attachment bucket."
+  }
+
+  assert {
+    condition     = aws_s3_bucket_public_access_block.blobs.restrict_public_buckets && aws_s3_bucket_public_access_block.blobs.block_public_acls
+    error_message = "The attachment bucket must not be public."
+  }
+
+  assert {
+    condition     = contains(keys(local.server_env), "MPAC_SECRET_KEY_URL") && aws_kms_key.master.enable_key_rotation
+    error_message = "The server must use a rotating KMS master key."
+  }
+
+  assert {
+    condition     = !contains(keys(local.ui_env), "MPAC_SECRET_KEY_URL")
+    error_message = "The UI must not use the master key."
   }
 
   assert {
@@ -272,8 +292,8 @@ run "optional_features" {
   }
 
   assert {
-    condition     = length(aws_iam_role.task) == 1 && aws_ecs_service.main.enable_execute_command
-    error_message = "ECS Exec needs a task role."
+    condition     = length(aws_iam_role_policy.task_exec) == 1 && aws_ecs_service.main.enable_execute_command
+    error_message = "ECS Exec needs its task role policy."
   }
 
   assert {

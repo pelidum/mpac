@@ -5,6 +5,7 @@ import json
 import time
 from unittest import mock
 
+import grpc
 import jwt as pyjwt
 import pytest
 import pytest_asyncio
@@ -46,9 +47,23 @@ def expired_jwt():
     return _mint_jwt(_USER_EMAIL, exp_offset=-60)
 
 
+class RpcError(grpc.RpcError):
+    def __init__(self, code, details=""):
+        super().__init__(details)
+        self._code = code
+        self._details = details
+
+    def code(self):
+        return self._code
+
+    def details(self):
+        return self._details
+
+
 @pytest.fixture()
 def mock_stub():
     stub = mock.MagicMock()
+    stub.CreateAttachmentUpload.side_effect = RpcError(grpc.StatusCode.UNIMPLEMENTED)
     stub.ListTestRuns.return_value = iter([])
     stub.ListTests.return_value = iter([])
     stub.ListModels.return_value = iter([])

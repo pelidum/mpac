@@ -46,10 +46,13 @@ locals {
   server_env = merge(
     local.env,
     {
-      # asyncpg honours libpq's PGSSLMODE; RDS rejects non-TLS connections
-      # (rds.force_ssl).
-      PGSSLMODE             = "require"
-      MPAC_MAX_MESSAGE_SIZE = tostring(var.server_max_message_size_mb * 1024 * 1024)
+      # sqlx reads PGSSLMODE; RDS rejects non-TLS connections (rds.force_ssl).
+      PGSSLMODE                = "require"
+      MPAC_MAX_MESSAGE_SIZE    = tostring(var.server_max_message_size_mb * 1024 * 1024)
+      MPAC_MAX_ATTACHMENT_SIZE = tostring(var.max_attachment_size_mb * 1024 * 1024)
+      MPAC_BLOB_URL            = "s3://${aws_s3_bucket.blobs.bucket}"
+      AWS_REGION               = var.region
+      MPAC_SECRET_KEY_URL      = "aws-kms:${aws_kms_key.master.arn}"
     },
     var.server_admin_onboarding_id != "" ? { MPAC_ADMIN_ONBOARDING_ID = var.server_admin_onboarding_id } : {},
     var.server_enable_reflection ? { MPAC_ENABLE_REFLECTION = "true" } : {},
@@ -66,10 +69,11 @@ locals {
   ui_env = merge(
     local.env,
     {
-      MPAC_HOST          = "localhost"
-      MPAC_PORT          = "50051"
-      MPAC_GRPC_INSECURE = "true"
-      MPAC_SYSTEM_USER   = var.ui_system_user
+      MPAC_HOST                = "localhost"
+      MPAC_PORT                = "50051"
+      MPAC_GRPC_INSECURE       = "true"
+      MPAC_SYSTEM_USER         = var.ui_system_user
+      MPAC_MAX_ATTACHMENT_SIZE = tostring(var.max_attachment_size_mb * 1024 * 1024)
       # Only the ALB can reach the container (security group), and it always
       # sets X-Forwarded-For, so trust all sources, as on Cloud Run.
       MPAC_TRUSTED_PROXIES = "*"
@@ -91,9 +95,9 @@ resource "aws_ecs_task_definition" "main" {
   cpu                      = var.task_cpu
   memory                   = var.task_memory
   execution_role_arn       = aws_iam_role.execution.arn
-  task_role_arn            = one(aws_iam_role.task[*].arn)
+  task_role_arn            = aws_iam_role.task.arn
 
-  # The published images are x86_64 only (see server/BUILD, ui/BUILD).
+  # Both containers share this task, and the UI image is x86_64 only (ui/BUILD).
   runtime_platform {
     operating_system_family = "LINUX"
     cpu_architecture        = "X86_64"
@@ -142,8 +146,7 @@ resource "aws_ecs_service" "main" {
 
   # On-demand by default. Spot is ~70% cheaper, but AWS can reclaim the task
   # with 2 minutes' notice, leaving the site down until a replacement starts.
-  # Interrupted runs resume on the next start (server startup resume +
-  # periodic sweeper).
+  # Interrupted runs continue from the job queue after their leases expire.
   capacity_provider_strategy {
     capacity_provider = var.use_spot ? "FARGATE_SPOT" : "FARGATE"
     weight            = 1

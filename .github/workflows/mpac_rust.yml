@@ -1,0 +1,126 @@
+name: MPAC Rust
+
+on:
+  workflow_dispatch:
+  workflow_call:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "server/**"
+      - "proto/**"
+      - "cli/test_db/**"
+      - "tests/contract/**"
+      - "tests/schema/**"
+      - "tests/resilience/**"
+      - "third_party/**"
+      - "MODULE.bazel"
+      - "MODULE.bazel.lock"
+      - ".bazelrc"
+      - ".github/workflows/mpac_rust.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "server/**"
+      - "proto/**"
+      - "cli/test_db/**"
+      - "tests/contract/**"
+      - "tests/schema/**"
+      - "tests/resilience/**"
+      - "third_party/**"
+      - "MODULE.bazel"
+      - "MODULE.bazel.lock"
+      - ".bazelrc"
+      - ".github/workflows/mpac_rust.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test, clippy, rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-test
+          repository-cache: true
+
+      - name: Run Rust tests
+        run: bazel test //server/... --test_output=errors --keep_going
+
+  database:
+    name: Database and contract tests
+    needs: test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-database
+          repository-cache: true
+
+      - name: Run schema, onboarding and contract tests
+        run: |
+          bazel test //tests/schema:all //tests/resilience:all //tests/contract:contract_rust_test //tests/contract:contract_rust_inline_test //tests/contract:contract_rust_split_test \
+            --test_env=MPAC_CONTRACT_PG_HOST=localhost \
+            --test_env=MPAC_CONTRACT_PG_PORT=5432 \
+            --test_env=MPAC_CONTRACT_PG_USER=postgres \
+            --test_env=MPAC_CONTRACT_PG_PASSWORD=postgres \
+            --test_output=errors
+
+  image:
+    name: Multi-arch image
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-image
+          repository-cache: true
+
+      - name: Build image index
+        run: bazel build --config=release //server/mpac:mpac_image_index
+
+      - name: Smoke test each architecture
+        run: |
+          for arch in amd64 arm64; do
+            bazel run --config=release //server/mpac:mpac_image_load_${arch}
+            docker run --rm --platform linux/${arch} ghcr.io/pelidum/mpac_server:latest-${arch} --version
+            size=$(docker image inspect ghcr.io/pelidum/mpac_server:latest-${arch} --format '{{.Size}}')
+            echo "${arch}: ${size} bytes"
+            test "${size}" -lt 41943040
+          done

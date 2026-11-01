@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import os
+import tempfile
 import traceback
 import zipfile
 
@@ -14,8 +15,10 @@ from absl import logging
 from fastapi import APIRouter, Depends, File, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
+from starlette.background import BackgroundTask
 
-from server import service_pb2
+from proto import service_pb2
+from ui import blobs
 from ui.dependencies import (
     UserContext,
     get_current_user,
@@ -24,6 +27,8 @@ from ui.dependencies import (
 from ui.grpc_client import get_grpc_metadata, get_mpac_stub
 
 router = APIRouter()
+
+_ARCHIVE_MEMORY_BYTES = 64 * 1024 * 1024
 
 
 @router.get("/tests")
@@ -77,6 +82,8 @@ async def create_test(
             "page_title": "Pelidum MPAC - Create Test",
             "default_provider": provider,
             "is_admin": user.is_admin,
+            "max_attachment_bytes": blobs.max_attachment_bytes(),
+            "max_inference_bytes": blobs.MAX_INFERENCE_BYTES,
             "edit_mode": False,
         },
     )
@@ -111,20 +118,24 @@ async def submit_test(
 
         attachments_map = {}
         for attachment_data in data.get("attachments", []):
+            if attachment_data.get("uploaded_id"):
+                attachments_map[attachment_data.get("id")] = attachment_data[
+                    "uploaded_id"
+                ]
+                continue
             file_bytes = base64.b64decode(attachment_data.get("file"))
-            attachment_pb = service_pb2.FileAttachment(
-                name=attachment_data.get("name"),
-                extension=attachment_data.get("extension"),
-                modality=attachment_data.get("modality"),
-                file=file_bytes,
-                file_size=attachment_data.get("file_size"),
-                mime=attachment_data.get("mime"),
-            )
-            attachment_response = await loop.run_in_executor(
+            attachments_map[attachment_data.get("id")] = await loop.run_in_executor(
                 None,
-                lambda pb=attachment_pb: stub.CreateAttachment(pb, metadata=metadata),
+                lambda data=attachment_data, content=file_bytes: (
+                    blobs.create_attachment(
+                        stub,
+                        metadata,
+                        data.get("name"),
+                        content,
+                        data.get("mime") or "",
+                    )
+                ),
             )
-            attachments_map[attachment_data.get("id")] = attachment_response.id
 
         for item_data in data.get("items", []):
             attachment_preid = item_data.get("attachment_id")
@@ -354,25 +365,28 @@ async def download_test_archive(
                 item_dict["attachment"] = id_to_filename[item_pb.attachment_id]
             manifest["items"].append(item_dict)
 
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w") as zf:
-            zf.writestr("manifest.json", json.dumps(manifest, indent=2))
-            for att_id, filename in id_to_filename.items():
-                att = attachments_by_id[att_id]
-                zf.writestr(
-                    f"attachments/{filename}",
-                    att.file,
-                    compress_type=zipfile.ZIP_STORED,
-                )
-        buf.seek(0)
+        def build_archive():
+            spool = tempfile.SpooledTemporaryFile(max_size=_ARCHIVE_MEMORY_BYTES)
+            with zipfile.ZipFile(spool, "w", allowZip64=True) as zf:
+                zf.writestr("manifest.json", json.dumps(manifest, indent=2))
+                for att_id, filename in id_to_filename.items():
+                    with zf.open(
+                        f"attachments/{filename}", "w", force_zip64=True
+                    ) as entry:
+                        blobs.copy_content(attachments_by_id[att_id], entry)
+            spool.seek(0)
+            return spool
+
+        spool = await loop.run_in_executor(None, build_archive)
 
         safe_name = "".join(
             c if c.isalnum() or c in "._- " else "_" for c in test_pb.name
         ).strip()[:80]
         return StreamingResponse(
-            buf,
+            iter(lambda: spool.read(blobs.TRANSFER_CHUNK_BYTES), b""),
             media_type="application/zip",
             headers={"Content-Disposition": f'attachment; filename="{safe_name}.zip"'},
+            background=BackgroundTask(spool.close),
         )
     except Exception as e:
         logging.error(f"Archive download failed: {e}")
@@ -598,20 +612,12 @@ async def import_test(
             file_bytes = zf.read(f"attachments/{filename}")
             ext = os.path.splitext(filename)[1].lstrip(".")
             mime = _guess_mime(ext)
-            modality = _mime_to_modality(mime)
-            att_pb = service_pb2.FileAttachment(
-                name=filename,
-                extension=ext,
-                modality=modality,
-                file=file_bytes,
-                file_size=len(file_bytes),
-                mime=mime,
-            )
-            att_response = await loop.run_in_executor(
+            attachment_map[filename] = await loop.run_in_executor(
                 None,
-                lambda pb=att_pb: stub.CreateAttachment(pb, metadata=metadata),
+                lambda name=filename, content=file_bytes, mime=mime: (
+                    blobs.create_attachment(stub, metadata, name, content, mime)
+                ),
             )
-            attachment_map[filename] = att_response.id
 
         for item_data in valid_items:
             att_filename = item_data["attachment"]
@@ -835,6 +841,8 @@ async def edit_test(
                 "page_title": "Pelidum MPAC - Edit Test",
                 "default_provider": test_pb.provider,
                 "is_admin": user.is_admin,
+                "max_attachment_bytes": blobs.max_attachment_bytes(),
+                "max_inference_bytes": blobs.MAX_INFERENCE_BYTES,
                 "edit_mode": True,
                 "test_pb": test_pb,
                 "test_item_pbs": test_item_pbs,
@@ -889,20 +897,24 @@ async def submit_edit_test(
 
         attachments_map = {}
         for attachment_data in data.get("attachments", []):
+            if attachment_data.get("uploaded_id"):
+                attachments_map[attachment_data.get("id")] = attachment_data[
+                    "uploaded_id"
+                ]
+                continue
             file_bytes = base64.b64decode(attachment_data.get("file"))
-            attachment_pb = service_pb2.FileAttachment(
-                name=attachment_data.get("name"),
-                extension=attachment_data.get("extension"),
-                modality=attachment_data.get("modality"),
-                file=file_bytes,
-                file_size=attachment_data.get("file_size"),
-                mime=attachment_data.get("mime"),
-            )
-            attachment_response = await loop.run_in_executor(
+            attachments_map[attachment_data.get("id")] = await loop.run_in_executor(
                 None,
-                lambda pb=attachment_pb: stub.CreateAttachment(pb, metadata=metadata),
+                lambda data=attachment_data, content=file_bytes: (
+                    blobs.create_attachment(
+                        stub,
+                        metadata,
+                        data.get("name"),
+                        content,
+                        data.get("mime") or "",
+                    )
+                ),
             )
-            attachments_map[attachment_data.get("id")] = attachment_response.id
 
         existing_item_pbs = await loop.run_in_executor(
             None,

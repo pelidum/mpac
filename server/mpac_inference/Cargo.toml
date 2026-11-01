@@ -1,0 +1,22 @@
+[package]
+name = "mpac_inference"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64.workspace = true
+futures.workspace = true
+mpac_http = { path = "../mpac_http" }
+mpac_proto = { path = "../mpac_proto" }
+rand.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+wiremock.workspace = true

@@ -17,7 +17,7 @@ async def test_post_without_csrf_token_returns_403(client):
 
 @pytest.mark.asyncio
 async def test_post_with_valid_csrf_token_succeeds(client, mock_stub):
-    from server import service_pb2
+    from proto import service_pb2
 
     mock_stub.GetUser.return_value = service_pb2.User(id=_USER_EMAIL, name="Test User")
     mock_stub.MintApiKey.return_value = service_pb2.User(
@@ -49,7 +49,7 @@ async def test_post_with_valid_csrf_token_succeeds(client, mock_stub):
 
 @pytest.mark.asyncio
 async def test_post_with_wrong_csrf_token_returns_403(client, mock_stub):
-    from server import service_pb2
+    from proto import service_pb2
 
     mock_stub.GetUser.return_value = service_pb2.User(id=_USER_EMAIL, name="Test User")
 
@@ -68,7 +68,7 @@ async def test_post_with_wrong_csrf_token_returns_403(client, mock_stub):
 
 @pytest.mark.asyncio
 async def test_login_exempt_from_csrf(anon_client, mock_stub):
-    from server import service_pb2
+    from proto import service_pb2
 
     mock_stub.LoginUser.return_value = service_pb2.User()
 
