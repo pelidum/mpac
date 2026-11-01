@@ -8,7 +8,7 @@ from absl import logging
 from fastapi import APIRouter, Depends, Request
 from google.protobuf.json_format import MessageToDict
 
-from server import service_pb2
+from proto import service_pb2
 from ui.dependencies import (
     UserContext,
     get_current_user,

@@ -12,6 +12,8 @@
   - [2.3 Web UI](#23-web-ui)
   - [2.4 Database Schema](#24-database-schema)
   - [2.5 Data Flow](#25-data-flow)
+  - [2.6 Job Queue and Workers](#26-job-queue-and-workers)
+  - [2.7 Attachment Storage](#27-attachment-storage)
 - [3 Authentication and Access Control](#3-authentication-and-access-control)
   - [3.1 Authentication Methods](#31-authentication-methods)
   - [3.2 JWT Session Lifecycle](#32-jwt-session-lifecycle)
@@ -35,20 +37,22 @@
   - [5.6 View Run Results](#56-view-run-results)
   - [5.7 Export a PDF Report](#57-export-a-pdf-report)
   - [5.8 Delete a Run](#58-delete-a-run)
-  - [5.9 Stale Run Recovery](#59-stale-run-recovery)
+  - [5.9 Run Recovery](#59-run-recovery)
 - [6 Benchmarks](#6-benchmarks)
   - [6.1 Tournament Format](#61-tournament-format)
   - [6.2 Create a Benchmark](#62-create-a-benchmark)
   - [6.3 Benchmark Lifecycle](#63-benchmark-lifecycle)
   - [6.4 View the Bracket](#64-view-the-bracket)
-  - [6.5 Stale Benchmark Recovery](#65-stale-benchmark-recovery)
-  - [6.6 Delete a Benchmark](#66-delete-a-benchmark)
+  - [6.5 Cancel a Benchmark](#65-cancel-a-benchmark)
+  - [6.6 Benchmark Recovery](#66-benchmark-recovery)
+  - [6.7 Delete a Benchmark](#67-delete-a-benchmark)
 - [7 Models and Backends](#7-models-and-backends)
   - [7.1 Model Catalog](#71-model-catalog)
   - [7.2 Backend Types](#72-backend-types)
   - [7.3 Local and Remote Backends](#73-local-and-remote-backends)
-  - [7.4 Backend Pool and Concurrency](#74-backend-pool-and-concurrency)
+  - [7.4 Backend Concurrency](#74-backend-concurrency)
   - [7.5 Register, Enable, Disable, or Delete a Backend (ADMIN)](#75-register-enable-disable-or-delete-a-backend-admin)
+  - [7.6 Provider Key Security](#76-provider-key-security)
 - [8 Metrics and Analytics](#8-metrics-and-analytics)
   - [8.1 Date Range and Filters](#81-date-range-and-filters)
   - [8.2 Leaderboard, Per-Test Breakdown, Daily Charts](#82-leaderboard-per-test-breakdown-daily-charts)
@@ -67,12 +71,16 @@
   - [11.3 Terraform Variables](#113-terraform-variables)
   - [11.4 Deploy Procedure](#114-deploy-procedure)
   - [11.5 Envoy Proxy Configuration](#115-envoy-proxy-configuration)
-  - [11.6 Database Backups](#116-database-backups)
+  - [11.6 Backups and Restore](#116-backups-and-restore)
   - [11.7 Upgrade Procedure](#117-upgrade-procedure)
+  - [11.8 Attachment Storage Operations](#118-attachment-storage-operations)
+  - [11.9 Worker Modes](#119-worker-modes)
+  - [11.10 Master Key Operations](#1110-master-key-operations)
 - [12 CI/CD Pipeline (ADMIN)](#12-cicd-pipeline-admin)
   - [12.1 Pipeline Overview](#121-pipeline-overview)
   - [12.2 Unit and Integration Tests](#122-unit-and-integration-tests)
   - [12.3 Image Build and Push](#123-image-build-and-push)
+  - [12.4 Local Development](#124-local-development)
 - [13 gRPC API Reference](#13-grpc-api-reference)
   - [13.1 RPC Table](#131-rpc-table)
   - [13.2 Key Message Types](#132-key-message-types)
@@ -86,6 +94,8 @@
   - [ResponseCode](#responsecode)
   - [UserRole](#userrole)
   - [Visibility Options](#visibility-options)
+  - [Answer Status](#answer-status)
+  - [UploadState](#uploadstate)
 
 ---
 
@@ -104,14 +114,18 @@ MPAC also runs benchmarks. A benchmark is a single-elimination tournament that c
 
 ### 1.2 System Components
 
-MPAC consists of four parts:
+MPAC consists of six parts:
 
-- **gRPC backend server** stores all data and runs inference against AI models.
+- **gRPC backend server** is the `mpac` Rust binary. It serves the API and stores all domain data.
+- **Inference worker** runs queued jobs and sends test items to AI models. It runs inside the server process by default, or in separate containers.
 - **Web UI** is a FastAPI application with server-rendered HTML pages.
-- **PostgreSQL database** persists all domain objects as protobuf messages.
-- **Inference backends** are external model servers (vLLM, Ollama, OpenAI, OpenRouter, or llama.cpp).
+- **PostgreSQL database** persists all domain objects as protobuf messages. It also holds the job queue.
+- **SeaweedFS** stores attachment file contents through an S3-compatible API.
+- **Inference backends** are external model servers (vLLM, Ollama, LM Studio, OpenAI, OpenRouter, or llama.cpp).
 
-MPAC deploys on-premises as five Docker containers on a single host behind an Envoy proxy.
+MPAC deploys on-premises as six Docker containers on a single host behind an Envoy proxy. See [Section 11](#11-deployment-on-premises-docker-admin) for this deployment.
+
+Terraform configurations for Google Cloud and AWS also exist. They provision object storage and a KMS master key for provider keys. These configurations pass offline tests only. They have not been deployed with the Rust server. See [Deploying MPAC](../terraform/DEPLOYMENT.md).
 
 ### 1.3 Key Terms
 
@@ -124,6 +138,10 @@ MPAC deploys on-premises as five Docker containers on a single host behind an En
 | Backend | A server that hosts AI models (for example, vLLM or OpenRouter) |
 | Model | A specific AI model served by a backend |
 | Attachment | A file (audio, image, video, or text) linked to a test item |
+| Blob storage | Object storage that holds attachment file contents |
+| Job | One unit of queued work, stored as a row in the `jobs` table |
+| Worker | A process loop that claims and runs jobs |
+| Lease | A time-limited claim on a job by one worker |
 | Visibility | An access-control setting that limits who can view an object |
 | F1 Score | A metric that combines precision and recall into one value |
 | Precision | The fraction of positive predictions that are correct |
@@ -141,31 +159,52 @@ flowchart TB
     Browser["Browser"]
     Envoy["Envoy Proxy"]
     UI["FastAPI Web UI\nport 8080"]
-    Server["gRPC Server\nport 50051"]
-    DB["PostgreSQL 16"]
-    Pool["Backend Pool"]
+    subgraph Mpac["mpac binary"]
+        Server["gRPC API\nport 50051"]
+        Worker["Inference worker"]
+    end
+    DB["PostgreSQL 16\ndomain objects and job queue"]
+    Blob["SeaweedFS\nS3 API, port 8333"]
     VLLM["vLLM"]
     Ollama["Ollama"]
     OpenAI["OpenAI"]
     OpenRouter["OpenRouter"]
-    LlamaCpp["llama.cpp"]
+    LlamaCpp["llama.cpp or LM Studio"]
 
     Browser -->|HTTPS| Envoy
     Envoy --> UI
-    Envoy -->|gRPC/TLS| Server
+    Envoy -->|"gRPC/TLS"| Server
+    Envoy -->|"/blobs/*"| Blob
     UI -->|gRPC| Server
+    UI -->|"signed URLs"| Blob
     Server --> DB
-    Server --> Pool
-    Pool --> VLLM
-    Pool --> Ollama
-    Pool --> OpenAI
-    Pool --> OpenRouter
-    Pool --> LlamaCpp
+    Server --> Blob
+    Worker --> DB
+    Worker --> Blob
+    Worker --> VLLM
+    Worker --> Ollama
+    Worker --> OpenAI
+    Worker --> OpenRouter
+    Worker --> LlamaCpp
 ```
+
+The API and the worker share one process by default. You can also operate workers in separate containers. See [11.9 Worker Modes](#119-worker-modes).
 
 ### 2.2 gRPC Backend Server
 
-The gRPC server exposes 42 RPCs across nine domains:
+The gRPC server is the `mpac` binary, written in Rust. The binary has these subcommands:
+
+| Subcommand | Purpose |
+|------------|---------|
+| `serve` | Starts the API and an embedded worker. This is the image entrypoint. |
+| `worker` | Starts a worker only. It still serves gRPC health. |
+| `migrate` | Applies pending schema migrations, then exits. |
+| `rotate-secret-key` | Rewraps provider keys under a new master key. |
+| `onboard` | Creates the first admin, then exits. |
+
+The `MPAC_ROLES` variable selects `api`, `worker`, or both. The default is `api,worker`.
+
+The server exposes 49 RPCs across nine domains:
 
 - Users
 - Tests
@@ -177,11 +216,13 @@ The gRPC server exposes 42 RPCs across nine domains:
 - Models
 - Benchmarks
 
-The server starts on port `50051` and connects to PostgreSQL. It uses an auth interceptor to verify every request. The server runs background tasks for inference, stale-run recovery, and benchmark orchestration.
+The server starts on port `50051` and connects to PostgreSQL. At startup, it applies pending schema migrations and creates the first admin if none exists. An auth layer authenticates every request except `LoginUser`, gRPC health, and gRPC reflection. Reflection is off by default.
 
-The `MPAC` class composes all domain handlers as mixins. Each mixin lives in a separate file under `objects/`. The server processes requests asynchronously with `grpc.aio`.
+Each domain has one module in `server/mpac_api/src/`. The API does not run inference. It writes jobs to the queue, and workers do the work. See [2.6 Job Queue and Workers](#26-job-queue-and-workers).
 
-The maximum message size is 1 GB. This limit allows large file attachments.
+The maximum message size is 8 MiB when blob storage is active and 50 MiB when it is not. Attachment contents do not pass through gRPC when blob storage is active. Set `MPAC_MAX_MESSAGE_SIZE` to change the limit.
+
+After `SIGTERM`, the server stops new work and drains active requests for up to 25 seconds.
 
 ### 2.3 Web UI
 
@@ -201,6 +242,10 @@ The UI serves these pages:
 
 The UI uses Tailwind CSS with a gold accent color (`#cca139`). A dark mode toggle persists in the browser.
 
+The UI is a Python application. It imports the generated gRPC stubs and uses `ui/blobs.py` for attachment transfers. See [2.7 Attachment Storage](#27-attachment-storage).
+
+The other Python parts are the CLI client `cli/mpac_cli.py` and the test tools. The backend does not use Python.
+
 ### 2.4 Database Schema
 
 The server stores every domain object in a table with four columns:
@@ -212,7 +257,7 @@ The server stores every domain object in a table with four columns:
 | `proto_bytes` | `BYTEA` | Raw protobuf bytes (for deserialization) |
 | `created_at` | `TIMESTAMPTZ` | Row creation time |
 
-The `tests` table has an extra `item_count INTEGER` column. The `test_runs` table has an extra `heartbeat_at TIMESTAMPTZ` column.
+The `tests` table has an extra `item_count INTEGER` column.
 
 A separate `user_tpm_windows` table tracks per-user token consumption for rate limiting:
 
@@ -222,7 +267,20 @@ A separate `user_tpm_windows` table tracks per-user token consumption for rate l
 | `window_minute` | `BIGINT` | Unix minute boundary |
 | `tokens_used` | `BIGINT` | Tokens consumed in this window |
 
-Tables: `attachments`, `backends`, `benchmarks`, `test_items`, `test_runs`, `test_run_answers`, `tests`, `users`.
+Domain tables: `attachments`, `backends`, `benchmarks`, `test_items`, `test_runs`, `test_run_answers`, `tests`, `users`.
+
+The job queue and attachment cleanup use these tables:
+
+| Table | Purpose |
+|-------|---------|
+| `jobs` | The job queue: kind, payload, status, attempts, lease, backend, and model |
+| `run_counters` | The number of answer jobs that remain for each run |
+| `benchmark_runs` | The pairs, BYEs, and run IDs for each benchmark round |
+| `blob_cleanup` | Object keys that wait for deletion from blob storage |
+| `backend_secrets` | Encrypted provider keys, one row per backend |
+| `secret_audit` | An append-only record of provider key changes and decryptions |
+
+The schema is in `server/mpac_db/migrations/`. Migrations are numbered and forward-only. The server applies them at startup unless you set `--skip_migrate`.
 
 ### 2.5 Data Flow
 
@@ -239,13 +297,109 @@ sequenceDiagram
     UI->>UI: Verify JWT cookie
     UI->>UI: Verify CSRF token
     UI->>S: CreateTest RPC (with JWT metadata)
-    S->>S: Auth interceptor verifies JWT
+    S->>S: Auth layer verifies JWT
     S->>S: Serialize proto to JSON and bytes
     S->>DB: INSERT (id, proto_jsonb, proto_bytes)
     DB-->>S: OK
     S-->>UI: StatusReply (SUCCESS, id)
     UI-->>B: JSON response with redirect URL
 ```
+
+### 2.6 Job Queue and Workers
+
+MPAC does background work through a job queue in PostgreSQL. A job is one row in the `jobs` table. Workers claim jobs from any number of processes.
+
+| Job Kind | Work |
+|----------|------|
+| `answer_item` | Sends one test item to one model and stores the answer |
+| `finalize_run` | Publishes the metrics of one model, or finishes the complete run |
+| `benchmark_step` | Starts the next bracket round, or finishes the benchmark |
+
+**Claim rules.** Each claim holds a PostgreSQL advisory lock, so these rules apply across all workers:
+
+- Jobs for one backend start in queue order, up to the concurrency limit of that backend.
+- An `is_local` backend runs one model at a time. The next model starts after all active requests for the current model finish.
+- A remote backend can run several models at the same time.
+- Free worker slots go first to the backend with the fewest jobs in flight. A backlog on one backend cannot block another backend.
+- `finalize_run` jobs start before other jobs.
+
+**Signals.** Workers listen on the `mpac_jobs`, `mpac_cancel`, and `mpac_backend_changed` channels with PostgreSQL `LISTEN`/`NOTIFY`. Workers also poll every 5 seconds. A lost signal only delays work.
+
+**Leases.** A claim gives the worker a 60-second lease. The worker renews the lease every 20 seconds. If a worker stops, its lease expires. Each worker looks for expired leases every 15 seconds and returns those jobs to the queue.
+
+**Commits.** A worker writes its result and the job completion in one transaction. The transaction first makes sure that the worker still holds the lease. If the worker lost its lease, the system discards the result.
+
+**Failures.** A job has three attempts. A failed attempt returns the job to the queue after 2 seconds, then after 4 seconds. A job can also fail permanently if retry cannot help. A permanent failure still counts as finished for the run, so the run can complete.
+
+An inference error is not a job failure. The worker stores the error on the answer, and the job completes. See [Answer Status](#answer-status).
+
+**Shutdown.** After `SIGTERM`, a worker stops claiming jobs and gives active jobs 25 seconds to finish. It then releases the remaining leases. A released job does not lose an attempt.
+
+**Maintenance.** Every hour, each worker deletes finished jobs older than 7 days. It also removes attachment uploads that stayed pending for 24 hours.
+
+### 2.7 Attachment Storage
+
+MPAC stores attachment file contents in blob storage and attachment metadata in the `attachments` table. Set `MPAC_BLOB_URL` to `s3://bucket` or `gs://bucket`. The on-premises deployment uses SeaweedFS with the bucket `blobs`.
+
+If `MPAC_BLOB_URL` is empty, the server stores file contents inline in the database row. The on-premises deployment always sets this variable.
+
+```mermaid
+sequenceDiagram
+    participant C as Client (UI or CLI)
+    participant S as gRPC Server
+    participant B as Blob Storage
+    participant DB as PostgreSQL
+
+    C->>S: CreateAttachmentUpload (name, size, MIME type)
+    S->>DB: INSERT row (upload_state PENDING)
+    S-->>C: attachment_id and signed PUT URL (15 minutes)
+    C->>B: PUT file contents to tmp/ID
+    C->>S: FinalizeAttachment (attachment_id)
+    S->>B: Copy to a staging key
+    S->>B: Read SHA-256, first 8 KB, and UTF-8 validity
+    S->>B: Copy to blobs/SHA256
+    S->>DB: Replace row (id = sha256, upload_state READY)
+    S-->>C: FileAttachment with signed GET URL
+```
+
+The server inspects a private copy, not the upload object. An uploader cannot change the contents after inspection.
+
+| Object Key | Contents |
+|------------|----------|
+| `tmp/<id>` | An upload that is not finalized |
+| `staging/<id>` | A private copy during inspection |
+| `blobs/<sha256>` | Permanent contents, named by their SHA-256 hash |
+
+**Rejected uploads.** If the type is not supported or the file is too large, the server removes the pending row and returns `INVALID_ARGUMENT`. Supported types are audio, image, video, and text.
+
+**Duplicate content.** Equal contents have the same attachment ID. If you can view the existing attachment and its visibility is equal, the server returns the existing attachment. If you cannot view it, the server returns `PERMISSION_DENIED`. If the visibility is different, the server returns `ALREADY_EXISTS`.
+
+**Reads.** `GetAttachment` returns a signed GET URL in `uri`, valid for 1 hour. The database stores only the object key. `ListAttachments` and `BatchGetAttachments` with `metadata_only` return no URL. If the server cannot sign a URL, it returns an error. It does not return an empty file.
+
+**Browser uploads.** The test editor keeps each selected file on disk in the browser until you save. It then sends each file as the body of a `POST /attachments/upload` request. The UI streams the body to blob storage and does not hold the file in memory. The editor shows the progress of each file.
+
+**Downloads.** The UI streams `/attachments/{id}/file` and forwards `Range` requests, so a browser can seek in large video files. ZIP exports use a temporary file on disk above 64 MiB.
+
+**Database size.** With blob storage, an attachment row holds only metadata. The file size does not change the row size, so large files do not add TOAST data or database load. Deployments without blob storage keep file bytes in the database.
+
+**Inference.** A worker downloads the contents through a 256 MiB in-memory cache. The worker then sends the contents to the backend inline as base64. Local backends cannot reach signed URLs, so backends do not receive URLs. Each worker limits the memory for active attachments to about 1 GiB. Jobs with attachments wait when this budget is full, and jobs without attachments do not wait.
+
+**Deletion.** A delete writes the object key to `blob_cleanup` in the same transaction as the row delete. A cleanup step then deletes each object that no attachment references. If an object delete fails, the key stays in the table for a later retry.
+
+**Size limits:**
+
+| Path | Limit | Set By |
+|------|-------|--------|
+| Browser test editor | 2 GiB per file | `MPAC_MAX_ATTACHMENT_SIZE` |
+| `CreateAttachmentUpload` | 2 GiB per file | `MPAC_MAX_ATTACHMENT_SIZE` |
+| ZIP import through the UI | 100 MB upload, 500 MB after decompression | The UI |
+| Browser test editor, no blob storage | 256 MiB per file | The UI |
+| Browser test editor and ZIP import on Google Cloud | 32 MB per request | The Cloud Run HTTP/1 request limit |
+| Inference with a blob-stored attachment | 64 MiB per attachment | The worker |
+| Inline `CreateAttachment`, blob storage active | 8 MiB | The server |
+| Inline `CreateAttachment`, no blob storage | The smaller of 100 MiB and the message size limit | The server |
+
+If an attachment is larger than 64 MiB, the worker does not send it to a model. The worker stores a `BAD_REQUEST` answer for that item, and the run continues. The editor shows a warning when you select such a file.
 
 ---
 
@@ -257,7 +411,7 @@ MPAC supports three authentication methods.
 
 **Password login.** Users enter their email and password on the `/login/password` page. The server verifies the password with a scrypt hash. The server uses a constant-time comparison against a dummy hash for unknown users. This prevents timing attacks that reveal valid accounts.
 
-**Google OAuth (optional).** Users click "Login with Google" on the login page. The button appears only when the UI has a Google OAuth client configured (`GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`); see [Google sign-in](../terraform/DEPLOYMENT.md#google-sign-in-optional) for setup. The system redirects to Google with the OpenID Connect scope. On callback, the system verifies that the user exists in MPAC and updates their profile (name, avatar, organization domain). Google sign-in doesn't create accounts: an admin must invite the user first.
+**Google OAuth (optional).** Users click "Login with Google" on the login page. The button appears only when the UI has a Google OAuth client configured (`GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`). See [Google sign-in](../terraform/DEPLOYMENT.md#google-sign-in-optional) for setup. The system redirects to Google with the OpenID Connect scope. On callback, the system verifies that the user exists in MPAC and updates their profile (name, avatar, organization domain). Google sign-in does not create accounts. An admin must invite the user first.
 
 **API key.** gRPC clients pass an `x-api-key` header. The server hashes the key with SHA-256 and looks up the hash in the database. Results are cached for 60 seconds.
 
@@ -328,7 +482,7 @@ Every test and attachment has a visibility setting. The visibility setting contr
 | Public | `VISIBILITY_PUBLIC` (4) | All authenticated users |
 | Admin | `VISIBILITY_ADMIN` (5) | Admins only |
 
-Admins bypass all visibility filters. The gRPC server applies these filters in the `_visibility_where_clause` method on every read operation.
+Admins bypass all visibility filters. The gRPC server applies these filters with `visibility_clause` in `server/mpac_db/src/crud.rs` on every read operation.
 
 Runs and answers inherit visibility from their parent test. If a test is deleted but the run still exists, the run owner can still view their own run.
 
@@ -383,7 +537,7 @@ Non-admin users who attempt to access the `/admin` page receive a 404 response. 
 3. The editor shows an inline preview for images. Click the preview to open a lightbox.
 4. Supported modalities: Audio, Image, Video, and Text.
 
-Do not attach files larger than 1 GB. The server rejects files that exceed this limit.
+Do not attach files larger than 2 GiB. The editor rejects files that exceed this limit. If an attachment is larger than 64 MiB, a run cannot send it to a model. See [2.7 Attachment Storage](#27-attachment-storage).
 
 6. Click **Save** to submit the test.
 
@@ -427,9 +581,11 @@ The ZIP archive must contain a `manifest.json` file at the root. The manifest ho
 3. Select the ZIP file.
 4. The system creates the test and all items with their attachments.
 
+The UI accepts ZIP files up to 100 MB, or 500 MB after decompression, with up to 100,000 items. The system stores each attachment in blob storage.
+
 ### 4.7 Delete a Test
 
-Only the test owner or an admin can delete a test. The system deletes all items and exclusive attachments in the same transaction.
+Only the test owner or an admin can delete a test. The system deletes all items and exclusive attachments in the same transaction. A cleanup step then removes their file contents from blob storage.
 
 Do not delete a test that has active runs. Cancel all runs first.
 
@@ -465,37 +621,36 @@ Do not exceed your daily or monthly spend limit. The system cancels runs that ex
 ```mermaid
 stateDiagram-v2
     [*] --> IN_PROGRESS: CreateTestRun called
-    IN_PROGRESS --> SUCCESS: All models complete
-    IN_PROGRESS --> ERROR: Unrecoverable failure
-    IN_PROGRESS --> CANCELLED: User cancels
+    IN_PROGRESS --> SUCCESS: Final finalize_run job
+    IN_PROGRESS --> CANCELLED: User cancels or spend limit reached
 
     state IN_PROGRESS {
-        [*] --> Heartbeat
-        Heartbeat --> Inference: Every 30 seconds
-        Inference --> MetricsCalc: Model completes
-        MetricsCalc --> Inference: Next model
-        Inference --> CircuitBreaker: 5 consecutive errors
-        CircuitBreaker --> Inference: Skip model
+        [*] --> Queued
+        Queued --> Answering: Worker claims job
+        Answering --> Queued: Retry or expired lease
+        Answering --> ModelMetrics: Last answer for a model
+        ModelMetrics --> Queued: Next model
+        Answering --> Skipped: 5 connection errors
+        Skipped --> Queued: Next job
     }
 
-    ERROR --> IN_PROGRESS: Stale run recovery
     CANCELLED --> [*]
     SUCCESS --> [*]
-    ERROR --> [*]
 ```
 
 The run lifecycle operates as follows:
 
-1. The server creates the run record with status `IN_PROGRESS`.
-2. The server randomly samples items from the test.
-3. A background task starts inference for each model.
-4. The task sends each item to each model concurrently (throttled by the backend pool).
-5. A heartbeat updates the database every 30 seconds.
-6. A watchdog polls the database for cancellation signals.
-7. On completion, the server calculates per-model metrics and writes status `SUCCESS`.
-8. On failure, the server salvages partial metrics and writes status `ERROR`.
+1. The server makes sure that the run is within the spend limits and the projected cost limits.
+2. In one transaction, the server creates the run with status `IN_PROGRESS`, samples items, and writes the jobs.
+3. The server writes one `answer_item` job for each model and item, grouped by model.
+4. Workers claim the jobs under the rules in [2.6 Job Queue and Workers](#26-job-queue-and-workers).
+5. For each job, the worker loads the attachment, sends the request, and stores the answer.
+6. When a model has all its answers, a `finalize_run` job publishes the metrics of that model.
+7. When no answer jobs remain, a final `finalize_run` job calculates all metrics and the total cost. It then writes status `SUCCESS`.
 
-The system enforces a circuit breaker. If a model produces five consecutive connection errors, the system skips that model and writes `SKIPPED` answers for the remaining items.
+The system enforces a circuit breaker. If the last five answers from a model in a run are all connection errors, the model is skipped. Workers then write `SKIPPED` answers for its remaining items.
+
+A run ends with `SUCCESS` even if some answers contain errors. The metrics include these answers in `refusal_error_rate`. Workers do not write status `ERROR` to a run.
 
 ### 5.4 Monitor a Run
 
@@ -511,9 +666,13 @@ The page redirects to the run details page on completion.
 
 1. Open the run status page or the run details page.
 2. Click **Cancel**.
-3. The system sets the cancel event. The background task stops inference and writes status `CANCELLED`.
+3. The system writes status `CANCELLED` and cancels all queued and leased jobs for the run.
+4. Workers receive a signal and stop the active requests of the run.
+5. A final job calculates metrics from the answers that exist.
 
-You can cancel a run from any instance. The watchdog detects the cancellation in the database.
+You can cancel a run through any API instance. The signal reaches all workers through PostgreSQL.
+
+The API accepts only this change to a run. `UpdateTestRun` ignores other fields, and it does not change a finished run. `UpdateBenchmark` works the same way.
 
 ### 5.6 View Run Results
 
@@ -584,25 +743,20 @@ Images in the report are embedded as base64 data URIs. The system resizes images
 
 ### 5.8 Delete a Run
 
-Only the run owner or an admin can delete a run. The system deletes all answers for the run in the same transaction.
+Only the run owner or an admin can delete a run. The system cancels the jobs of the run, then deletes all its answers in one transaction.
 
 1. Open the run details page.
 2. Click **Delete**.
 3. Confirm the deletion.
 
-### 5.9 Stale Run Recovery
+### 5.9 Run Recovery
 
-The server detects and resumes stale runs automatically. A run is stale if its status is `IN_PROGRESS` and its heartbeat is older than 5 minutes (or the heartbeat is absent).
+The state of a run is in the job queue, so runs continue after a restart.
 
-The stale run sweeper runs at startup and every 120 seconds. The recovery process works as follows:
-
-1. The sweeper queries for stale runs.
-2. The sweeper claims a run with a conditional database update. This prevents two instances from claiming the same run.
-3. The sweeper loads all completed answer pairs (model, item) for the run.
-4. The sweeper reconstructs the sample from completed answers and fills the remainder.
-5. The sweeper restarts inference. Completed items are skipped.
-
-This recovery mechanism allows runs to survive instance restarts and scale-down events.
+- If a worker restarts, workers claim the jobs that remain in the queue.
+- If a worker stops without warning, its leases expire within 60 seconds. Another worker then claims those jobs.
+- Stored answers stay in the database. The system repeats only the jobs that did not commit.
+- An expired lease uses one of the three attempts of a job. A normal shutdown does not.
 
 ---
 
@@ -612,14 +766,16 @@ This recovery mechanism allows runs to survive instance restarts and scale-down 
 
 A benchmark is a single-elimination tournament. Each match pits two models against each other on the same test. The model with the higher F1 score wins and advances to the next round. Ties are broken randomly.
 
-If an odd number of models enter a round, one model receives a BYE and advances without a match.
+The system shuffles the entrants before round 1. Later rounds keep the order of the winners.
 
-Round names are generated from the bracket size:
+If an odd number of models enter a round, one model receives a BYE and advances without a match. The BYE goes to the last entrant with the fewest earlier BYEs. A model receives a second BYE only if all entrants in that round already had one.
 
-- 2 models: "Final"
-- 4 models: "Semifinals", "Final"
-- 8 models: "Quarterfinals", "Semifinals", "Final"
-- Larger brackets: "First Round", "Second Round", and so on
+Round names come from the distance to the last round:
+
+- Last round: "Final"
+- One round before: "Semifinals"
+- Two rounds before: "Quarterfinals"
+- Earlier rounds: "First Round" for round 1, then "Round 2", "Round 3", and so on
 
 Only evaluation tests (type `EVALUATION`) are valid for benchmarks.
 
@@ -639,20 +795,22 @@ The system verifies your spend limits before the benchmark starts. The cost proj
 
 ```mermaid
 flowchart TB
-    Start["N models entered"] --> R1["Round 1"]
-    R1 --> Pair["Pair models sequentially"]
-    Pair --> Odd{Odd model out?}
-    Odd -->|Yes| BYE["BYE: advance without match"]
-    Odd -->|No| Match["Run match\n(CreateTestRun for both models)"]
-    Match --> Compare["Compare F1 scores"]
-    Compare --> Winner["Higher F1 advances\n(random on tie)"]
-    Winner --> NextRound{More rounds?}
-    BYE --> NextRound
-    NextRound -->|Yes| R1
+    Start["N models entered"] --> Step["benchmark_step job"]
+    Step --> Pair["Pair entrants in order"]
+    Pair --> Odd{Odd number of entrants?}
+    Odd -->|Yes| BYE["BYE to the entrant\nwith the fewest BYEs"]
+    Odd -->|No| Match
+    BYE --> Match["Create one run per match\nAll matches start together"]
+    Match --> Done["Last run finishes\nand queues benchmark_step"]
+    Done --> Compare["Compare F1 scores\nHigher F1 advances, random on tie"]
+    Compare --> NextRound{More than one winner?}
+    NextRound -->|Yes| Step
     NextRound -->|No| Final["Winner declared\nStatus: SUCCESS"]
 ```
 
-Each match is a full test run with both models. The system creates the run internally and polls for completion. The match timeout is 30 minutes.
+Each match is a full test run with both models. All matches in a round start at the same time, and backend concurrency limits still apply. A round resolves when none of its runs has status `IN_PROGRESS`.
+
+The match has no overall time limit. Each request has the timeout in [7.3 Local and Remote Backends](#73-local-and-remote-backends). If a model has no metrics for a match, its score is -1.
 
 ### 6.4 View the Bracket
 
@@ -663,11 +821,21 @@ The benchmark details page shows:
 - Per-match confusion matrix data
 - The overall winner
 
-### 6.5 Stale Benchmark Recovery
+The system records each match when its run finishes. A BYE appears when its round starts. The status page shows all unfinished matches in the current round as active, and it polls every 3 seconds.
 
-At server startup, the system queries for `IN_PROGRESS` benchmarks. It uses a PostgreSQL advisory lock (derived from a SHA-256 hash of the benchmark ID) to prevent concurrent resume across instances. The system reconstructs the bracket state from the match history and resumes from the last completed match.
+### 6.5 Cancel a Benchmark
 
-### 6.6 Delete a Benchmark
+1. Open the benchmark status page.
+2. Click **Cancel Benchmark**.
+3. Confirm the cancellation.
+
+The system cancels all active match runs and their jobs.
+
+### 6.6 Benchmark Recovery
+
+The bracket state is in the `benchmarks` and `benchmark_runs` tables. Each step runs in one transaction with an advisory lock on the benchmark ID. After a restart, workers continue the match runs in the queue. The last run in a round then starts the next step.
+
+### 6.7 Delete a Benchmark
 
 1. Open the benchmark details page.
 2. Click **Delete**.
@@ -743,23 +911,28 @@ MPAC classifies backends as local or remote. The classification determines timeo
 |---------|-------|--------|
 | Request timeout | 600 seconds (10 minutes) | 120 seconds (2 minutes) |
 | Default concurrency | 4 | 20 |
-| Keepalive expiry | 30 seconds | 10 seconds |
-| Semaphore acquire timeout | 4 hours | 1 hour |
+| Models in flight | One at a time | Any number |
 
-Local backends include Ollama, llama.cpp, and self-hosted vLLM. Remote backends include OpenAI, OpenRouter, and cloud-hosted vLLM.
+Local backends include Ollama, LM Studio, llama.cpp, and self-hosted vLLM. Remote backends include OpenAI, OpenRouter, and cloud-hosted vLLM.
 
 Set the `is_local` flag to `true` for self-hosted backends. This flag controls the timeout and concurrency behavior.
 
-### 7.4 Backend Pool and Concurrency
+If a backend runs on the Docker host, use `host.docker.internal` in the base URL, for example `http://host.docker.internal:1234/v1`. The service must listen on an interface that Docker can reach.
 
-The backend pool manages connections and concurrency for each backend. Each backend gets:
+### 7.4 Backend Concurrency
 
-- An `AsyncOpenAI` client with a custom `httpx.AsyncClient`
-- An `asyncio.Semaphore` that limits concurrent requests
+Two limits control concurrent requests:
 
-The semaphore prevents overloading a backend. If a backend has `max_concurrency` set to 0, the system uses the default (4 for local, 20 for remote).
+- **Backend limit.** The `max_concurrency` value of a backend. If the value is 0, the system uses the default (4 for local, 20 for remote). The claim query enforces this limit in PostgreSQL, so it holds across all workers.
+- **Worker limit.** The `MPAC_WORKER_CONCURRENCY` value limits the jobs that one worker runs at the same time. The default is 32.
 
-The pool invalidates and recreates connections on `APIConnectionError`. This prevents stale connections from causing repeated failures. The pool also invalidates connections when you update or delete a backend.
+Set the worker limit equal to or higher than the sum of your backend limits. A lower value caps your backends and leaves their slots empty.
+
+A local backend runs one model at a time, because local model servers can stop active requests when they load another model. A run with several models on a local backend therefore takes longer than the same run on a remote backend.
+
+Workers use one shared HTTP client with connection pooling. The client retries a failed request up to two times, with a delay of up to 8 seconds. It also obeys a `Retry-After` value of up to 60 seconds. The client retries an error inside a response stream up to two times.
+
+When you update or delete a backend, the system sends a signal. Workers then clear their stored information about that backend, for example whether a model supports logprobs.
 
 ### 7.5 Register, Enable, Disable, or Delete a Backend (ADMIN)
 
@@ -790,6 +963,37 @@ The system enables the backend by default. Non-admin users can view the backend 
 3. Confirm the deletion.
 
 Do not delete a backend while runs are active against its models. The runs will fail with connection errors.
+
+### 7.6 Provider Key Security
+
+MPAC encrypts each provider API key before it reaches the database. The `backends` table, its JSON, and database dumps do not contain the key.
+
+**Encryption.** Each key has its own random data key and uses AES-256-GCM. The ciphertext is bound to the backend ID, so a row cannot move to another backend. A master key outside the database wraps each data key.
+
+**Use.** A provider request needs the plaintext key, so the worker must hold it in memory. A worker decrypts a key when it first needs it, then caches it for 5 minutes. A run with 1,000 answers therefore causes few decryptions. Each request reads the backend URL and the stored key in one query, then uses a cached key only if it matches that stored key. A change to a backend therefore takes effect at the next request in every process, with no signal. The `mpac_backend_changed` signal only removes old plaintext from memory earlier.
+
+**Master key options.** Set `MPAC_SECRET_KEY_URL` to one of these values:
+
+| Value | Master Key |
+|-------|-----------|
+| `file:///path/to/key` | A file with 32 random bytes, base64 encoded |
+| `vault+https://host:8200/transit/mpac` | A Vault or OpenBao transit key. `VAULT_TOKEN` holds the token |
+| `aws-kms:arn:aws:kms:region:account:key/id` | An AWS KMS key or alias ARN. MPAC uses `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, or the ECS task role |
+| `gcp-kms:projects/P/locations/L/keyRings/R/cryptoKeys/K` | A Google Cloud KMS key. MPAC uses the attached service account, or `GOOGLE_OAUTH_ACCESS_TOKEN` |
+
+If `MPAC_SECRET_KEY_URL` is empty, the server rejects any new provider key with `FAILED_PRECONDITION`. Backends without a key still work.
+
+**Audit.** The `secret_audit` table records each key create, update, delete, rewrap, and decryption, with the actor and key version. It records a decryption on a cache miss, not on every request. A decryption fails if the system cannot write its audit row. Admins read the trail with the `ListSecretAudit` RPC.
+
+**Changing a host.** If you move a backend to a new host, the server requires the key again. This stops the stored key from going to a host that you did not intend.
+
+**KMS availability.** With Vault or KMS, a decryption needs a network request. The worker makes one request for each cache miss, so a large run causes few requests. If the service is down, a cached key continues to work for up to 5 minutes. After that, requests that need the key fail until the service returns.
+
+**Key failures.** If MPAC cannot load a stored key, it does not call the provider without the key. `ListModels` omits that backend and logs the error. If no models remain, it returns the error, and so does `GetModel` if it cannot find the model. `GetCredits` returns the error. The code is `UNAVAILABLE` if the key service failed, and `FAILED_PRECONDITION` if the master key is missing or wrong. A worker retries the job, and the normal job failure rules apply.
+
+**Limits.** This design protects against leaks of the database, dumps, and SQL read access. It does not protect against root access on the server. Cached keys are in server memory. With a key file, the master key is also on that host. With Vault or KMS, the master key cannot leave the service, but the server can ask the service to decrypt. To limit the effect of a leak, set credit limits on your provider keys.
+
+Client API keys (`x-api-key`) are a separate mechanism. The server stores only their SHA-256 hash.
 
 ---
 
@@ -870,7 +1074,9 @@ The server bootstraps the first admin user at startup. Set these environment var
 | `MPAC_ADMIN_ONBOARDING_PASSWORD` | `--admin_onboarding_password` | The admin password |
 | `MPAC_ADMIN_API_KEY` | `--admin_onboarding_api_key` | The raw API key |
 
-Environment variables take priority over flags. If the user already exists, the system promotes them to ADMIN and updates their password and API key.
+Flags take priority over environment variables. If any admin exists, the system skips onboarding, so you can leave these values in place. If no admin exists and the user exists, the system promotes that user to ADMIN and replaces their password and API key.
+
+You can also create the first admin with the `mpac onboard` subcommand.
 
 After the first admin exists, you can create more users and promote them through the Admin page.
 
@@ -927,7 +1133,7 @@ For OpenRouter backends, you can view the remaining credit balance.
 
 MPAC enforces three rate-limit types.
 
-**Tokens per minute (TPM).** The system tracks token consumption in 60-second windows. The `user_tpm_windows` table stores the count per user per minute boundary. During inference, the system records tokens and pauses if the user exceeds the limit. The pause lasts until the next minute window.
+**Tokens per minute (TPM).** The system tracks token consumption in 60-second windows. The `user_tpm_windows` table stores the count per user per minute boundary. The worker records tokens after each answer. Before it sends a request, the worker reads the count. If the user exceeded the limit, the worker returns the job to the queue until the next minute window. The job does not lose an attempt.
 
 **Daily spend.** The system sums `total_cost_usd` from the `test_runs` table for the current UTC day. If the total reaches the limit (in USD cents), the system blocks new runs and cancels active runs.
 
@@ -947,7 +1153,7 @@ projected_cost = (2 * (n - 1) / n) * num_items * sum_of_per_model_costs
 
 If the projected cost exceeds the remaining daily or monthly budget, the system blocks the run with a `RESOURCE_EXHAUSTED` error.
 
-**Mid-run enforcement.** The system flushes cost data to the database every 30 seconds during a run. If the cumulative spend exceeds a limit during the run, the system cancels the run.
+**Mid-run enforcement.** After each answer, the worker adds the cost of the current run to the stored spend of the user. If the total reaches a limit, the system cancels the run. This calculation does not include unfinished costs of other active runs. The system writes `total_cost_usd` when the run finishes.
 
 ---
 
@@ -955,10 +1161,14 @@ If the projected cost exceeds the remaining daily or monthly budget, the system 
 
 ### 11.1 Prerequisites
 
-- Docker Engine (with Compose support)
-- Terraform (version 1.0 or later)
-- TLS certificate and private key (self-signed, Let's Encrypt, or manual)
-- A host directory for PostgreSQL data (not `/tmp`)
+- Docker Engine
+- Terraform (version 1.7 or later)
+- Bazel, if you build the images locally
+- Free host ports 80, 443, and 50051 (or other ports that you set)
+- Host directories for PostgreSQL data, SeaweedFS data, and backups (not `/tmp`)
+- An existing inference service (this deployment does not install one)
+
+Terraform generates a self-signed TLS certificate by default. To use your own certificate, set `tls_cert_path` and `tls_key_path`.
 
 ### 11.2 Deployment Topology
 
@@ -968,14 +1178,18 @@ flowchart TB
 
     subgraph Host["Docker Host"]
         subgraph Network["mpac-network (Docker bridge)"]
-            Envoy["Envoy Proxy\nPorts: 80, 443, 50051"]
+            Envoy["Envoy Proxy\nHost ports: 80, 443, 50051"]
             UI["MPAC UI\nPort: 8080"]
-            Server["MPAC Server\nPort: 50051"]
+            Server["MPAC Server\nAPI and embedded worker\nPort: 50051"]
+            Workers["MPAC Workers (optional)\nworker_replicas"]
             PG["PostgreSQL 16\nPort: 5432"]
-            Backup["Backup Sidecar\nDaily pg_dump"]
+            Seaweed["SeaweedFS\nS3 port: 8333"]
+            Backup["Backup Sidecar\npg_dump and rclone"]
         end
-        PGData["Persistent Volume\n/var/lib/mpac/postgres"]
-        BackupData["Backup Volume\n/var/lib/mpac/backups"]
+        PGData["Host path\n/var/lib/mpac/postgres"]
+        BlobData["Host path\n/var/lib/mpac/seaweedfs"]
+        BackupData["Host path\n/var/lib/mpac/backups"]
+        Inference["Host inference service\nhost.docker.internal"]
     end
 
     Internet -->|"80 (HTTP redirect)"| Envoy
@@ -983,100 +1197,233 @@ flowchart TB
     Internet -->|"50051 (gRPC/TLS)"| Envoy
     Envoy -->|"8080"| UI
     Envoy -->|"50051"| Server
+    Envoy -->|"/blobs/* to 8333"| Seaweed
     UI -->|"gRPC"| Server
+    UI -->|"signed URLs"| Seaweed
     Server -->|"5432"| PG
+    Server --> Seaweed
+    Server --> Inference
+    Workers --> PG
+    Workers --> Seaweed
+    Workers --> Inference
+    Backup -->|"pg_dump"| PG
+    Backup -->|"rclone"| Seaweed
     PG --- PGData
-    Backup --- PGData
+    Seaweed --- BlobData
     Backup --- BackupData
 ```
 
-All backend containers have no external port exposure. Only the Envoy proxy binds to host ports. The Docker network provides DNS aliases:
+The deployment has six long-running containers: `mpac-envoy`, `mpac-ui`, `mpac-server`, `mpac-postgres`, `mpac-postgres-backup`, and `mpac-seaweedfs`. If `worker_replicas` is above 0, it also has `mpac-worker-1`, `mpac-worker-2`, and so on.
+
+Two short-lived containers run during `terraform apply` and then exit. `mpac-blob-init` creates the `blobs` bucket. `mpac-backup-tools-init` copies the `rclone` binary into a shared volume.
+
+Only the Envoy proxy binds to host ports. The Docker network provides DNS aliases:
 
 - `postgres` / `db`
 - `server` / `mpac-server`
 - `ui` / `mpac-ui`
 - `envoy` / `proxy`
+- `seaweedfs`
 
-The server container maps `localhost` and `host.docker.internal` to the host gateway. This allows the server to reach host-side services (for example, Ollama on `localhost:11434`).
+The server and worker containers map `host.docker.internal` to the host gateway. This allows them to reach host-side services (for example, Ollama on port 11434). Use `host.docker.internal` in backend URLs. Do not use `localhost`, because the mapping does not cover every loopback address.
 
 ### 11.3 Terraform Variables
 
 | Variable | Default | Sensitive | Description |
 |----------|---------|-----------|-------------|
 | `project_name` | `"mpac"` | No | Resource naming prefix |
+| `use_local_images` | `false` | No | Use loaded server and UI images, with no registry lookup |
 | `postgres_version` | `"16"` | No | PostgreSQL version |
 | `postgres_user` | `"postgres"` | No | Database username |
 | `postgres_password` | (required) | Yes | Database password |
 | `postgres_db` | `"mpac"` | No | Database name |
 | `postgres_data_path` | `/var/lib/mpac/postgres` | No | Host path for data volume |
 | `postgres_backup_path` | `/var/lib/mpac/backups` | No | Host path for backup files |
-| `postgres_backup_retention_days` | `30` | No | Days to retain backups |
-| `postgres_backup_schedule` | `"0 2 * * *"` | No | Cron schedule for backups |
+| `postgres_backup_retention_days` | `30` | No | Days to retain database dumps |
+| `postgres_backup_schedule` | `"0 2 * * *"` | No | Not used. Kept for compatibility. See `backup_interval_seconds` |
+| `backup_interval_seconds` | `86400` | No | Seconds between backups |
+| `rclone_image` | `rclone/rclone:1.70.3` | No | Image that supplies the backup copy tool |
 | `mpac_jwt_secret` | (required) | Yes | HS256 secret for JWT |
-| `server_image` | `ghcr.io/pelidum/mpac_server:latest` | No | Server container image |
+| `server_image` | `ghcr.io/pelidum/mpac_server:latest` | No | Server and worker container image |
 | `server_port` | `50051` | No | Internal gRPC port |
 | `server_host` | `"0.0.0.0"` | No | Server bind address |
 | `server_db_pool_size` | `100` | No | Database connection pool size |
 | `server_admin_onboarding_id` | `""` | No | First admin email |
 | `server_admin_onboarding_password` | `""` | Yes | First admin password |
+| `server_enable_reflection` | `false` | No | Expose the gRPC reflection API |
+| `server_max_message_size_mb` | `8` | No | Maximum gRPC message size in MB |
+| `max_attachment_size_mb` | `2048` | No | Maximum attachment upload size in MB |
+| `seaweedfs_image` | `chrislusf/seaweedfs:4.50` | No | SeaweedFS container image |
+| `blob_data_path` | `/var/lib/mpac/seaweedfs` | No | Host path for SeaweedFS data |
+| `secret_key_path` | `""` | No | Host path to your provider key master key (empty generates one) |
+| `secret_key_url` | `""` | No | External master key, for example a Vault transit URL |
+| `secret_key_vault_token` | `""` | Yes | Token for the server in `secret_key_url` |
+| `worker_replicas` | `0` | No | Separate worker containers (0 embeds the worker in the server) |
+| `worker_concurrency` | `32` | No | Maximum concurrent jobs per worker |
 | `ui_image` | `ghcr.io/pelidum/mpac_ui:latest` | No | UI container image |
 | `ui_port` | `8080` | No | Internal UI port |
 | `ui_debug` | `false` | No | Enable debug mode |
+| `ui_grpc_insecure` | `true` | No | Use a plaintext gRPC channel from the UI to the server |
 | `ui_system_user` | `system@mpac.internal` | No | Background task identity |
-| `google_oauth_client_id` | `""` | No | Google OAuth client ID (optional; enables "Login with Google") |
+| `ui_trusted_proxies` | `"envoy,proxy"` | No | Trusted proxies for `X-Forwarded-For` |
+| `google_oauth_client_id` | `""` | No | Google OAuth client ID (optional). Enables "Login with Google" |
 | `google_oauth_client_secret` | `""` | Yes | Google OAuth client secret (optional) |
 | `envoy_image` | `envoyproxy/envoy:v1.29-latest` | No | Envoy container image |
 | `envoy_http_port` | `80` | No | External HTTP port |
 | `envoy_https_port` | `443` | No | External HTTPS port |
 | `envoy_grpc_port` | `50051` | No | External gRPC port |
 | `envoy_bind_ip` | `"0.0.0.0"` | No | Envoy bind address |
-| `envoy_config_path` | (required) | No | Host path to `envoy.yaml` |
-| `envoy_cert_path` | (required) | No | Host path to TLS certificate |
-| `envoy_key_path` | (required) | No | Host path to TLS private key |
+| `envoy_config_path` | `""` | No | Host path to your own `envoy.yaml` (empty uses the generated file) |
+| `tls_cert_path` | `""` | No | Host path to your TLS certificate (empty generates a certificate) |
+| `tls_key_path` | `""` | Yes | Host path to your TLS private key |
+| `tls_domain` | `"localhost"` | No | Public hostname, used in URLs and in the generated certificate |
+| `tls_validity_days` | `825` | No | Validity of the generated certificate |
 
-Do not set `postgres_data_path` to a path under `/tmp`. The validation rule rejects this to prevent data loss on reboot.
+Do not set `postgres_data_path` or `blob_data_path` to a path under `/tmp`. The validation rules reject these paths to prevent data loss on reboot.
+
+Terraform generates the S3 access keys for SeaweedFS. Protect the Terraform state, `terraform.tfvars`, and the `generated/` directory, because they contain secrets. After the first apply, run `chmod 600 terraform.tfvars terraform.tfstate`.
 
 ### 11.4 Deploy Procedure
 
-1. Create a `terraform.tfvars` file with the required variable values.
-2. Place your TLS certificate and key on the host.
-3. Place the `envoy.yaml` configuration file on the host.
-4. Run `terraform init` from the on-prem directory.
-5. Run `terraform plan` to review the changes.
-6. Run `terraform apply` to create all containers.
-7. Run `docker ps` and verify that all five containers are active.
+Run these steps from the repository root.
+
+1. Copy `terraform/on_prem/terraform.tfvars.example` to `terraform/on_prem/terraform.tfvars`.
+2. Set `postgres_password`, `mpac_jwt_secret`, and the two `server_admin_onboarding_*` values.
+3. If you build the images locally, load them into Docker:
+
+   ```bash
+   bazel run //server/mpac:mpac_image_load_amd64
+   bazel run //ui:mpac_ui_image_load
+   ```
+
+4. If you build the images locally, also set these values in `terraform.tfvars`:
+
+   ```hcl
+   use_local_images = true
+   server_image     = "ghcr.io/pelidum/mpac_server:latest-amd64"
+   ```
+
+5. Run `terraform -chdir=terraform/on_prem init`.
+6. Run `terraform -chdir=terraform/on_prem plan` to review the changes.
+7. Run `terraform -chdir=terraform/on_prem apply` to create all containers.
+8. Run `docker ps` and make sure that the six long-running containers are active.
+9. Run `terraform -chdir=terraform/on_prem output ui_url` and open that address.
+10. Sign in with the onboarding admin credentials.
+11. Register your inference backends. See [7.5 Register, Enable, Disable, or Delete a Backend (ADMIN)](#75-register-enable-disable-or-delete-a-backend-admin).
+
+The server image also has an arm64 build: `mpac_image_load_arm64` and the `latest-arm64` tag. The UI image builds for `linux/amd64` only.
+
+To test the deployed system, run the smoke check in the [on-premises README](../terraform/on_prem/README.md#local-end-to-end-quickstart).
+
+For a longer test, run `bazel run //terraform/on_prem:soak`. This test uses a scripted provider. It covers a multi-model local run, key decryption, cancellation, a server kill, live benchmark updates, and a 2 GiB upload. Use a separate test deployment, because the test kills the server and leaves its records in the database. The test needs the smoke check options, plus `--server-container`, `--ui-container`, and `--network`.
 
 ### 11.5 Envoy Proxy Configuration
 
-The `envoy.yaml` file defines three listeners:
+Terraform renders `generated/envoy.yaml` from `terraform/on_prem/envoy.yaml`. The file defines three listeners:
 
-**Port 80 (HTTP).** Redirects all traffic to HTTPS with a 301 response.
+| Listener | Container Port | Host Port |
+|----------|----------------|-----------|
+| HTTP | 8080 | `envoy_http_port` (80) |
+| HTTPS | 8443 | `envoy_https_port` (443) |
+| gRPC TLS | 50051 | `envoy_grpc_port` (50051) |
 
-**Port 443 (HTTPS).** Terminates TLS with ALPN negotiation (HTTP/2 and HTTP/1.1). Routes traffic to the UI container at `ui:8080`. TCP keepalive settings:
+**HTTP listener.** Redirects all traffic to HTTPS with a 301 response.
+
+**HTTPS listener.** Terminates TLS with ALPN negotiation (HTTP/2 and HTTP/1.1). It has two routes:
+
+- `/blobs/` goes to SeaweedFS at `seaweedfs:8333`. Envoy does not change the host, path, or query, because any change makes the URL signature invalid.
+- All other requests go to the UI container at `ui:<ui_port>`. Envoy adds a `Content-Security-Policy: upgrade-insecure-requests` header to these responses.
+
+The stream idle timeout is 86,400 seconds (24 hours). This long timeout supports long-running requests and large transfers.
+
+**gRPC listener.** Terminates TLS with HTTP/2 only. Routes traffic to the gRPC server at `server:<server_port>`. Uses the same TLS certificate and key as the HTTPS listener.
+
+The connections to the UI and the server use these TCP keepalive values:
 
 - Keepalive time: 300 seconds
 - Keepalive interval: 60 seconds
 - Keepalive probes: 5
 
-The stream idle timeout is 86,400 seconds (24 hours). This long timeout supports long-running inference requests.
+If you set `envoy_config_path` to your own file, keep the `/blobs/` route and the ports.
 
-A `Content-Security-Policy: upgrade-insecure-requests` header is added to all responses.
+### 11.6 Backups and Restore
 
-**Port 50051 (gRPC/TLS).** Terminates TLS with HTTP/2 only. Routes traffic to the gRPC server at `server:50051`. Uses the same TLS certificate and key as the HTTPS listener.
+The backup sidecar makes one backup at startup, then one every `backup_interval_seconds` (default: 86400). Each backup has these steps:
 
-### 11.6 Database Backups
+1. The sidecar takes the attachment lifecycle lock. Attachment publication, deletion, and cleanup then wait. Reads and other work continue.
+2. The sidecar runs `pg_dump`.
+3. The sidecar copies permanent blobs to `/backups/blobs` with `rclone`.
+4. The sidecar publishes the dump as `mpac_<UTC timestamp>.dump` and releases the lock.
 
-The backup sidecar runs `pg_dump` daily at the time set by `postgres_backup_schedule` (default: 02:00 UTC). Backups are stored at `postgres_backup_path` (default: `/var/lib/mpac/backups`).
+A failed dump or copy does not publish a backup. The sidecar tries again at the next interval. The backup directory has mode `0700` and its files have mode `0600`, so only root can read them on the host.
 
-The sidecar deletes backups older than `postgres_backup_retention_days` (default: 30 days) after each dump.
+The sidecar deletes dumps older than `postgres_backup_retention_days` (default: 30 days). The `blobs/` directory is append-only, because older dumps refer to those objects. You must prune it manually.
+
+**Restore a backup:**
+
+Stop all MPAC server, UI, and worker containers before a restore. A running server can write during the restore and leave inconsistent data.
+
+```bash
+docker stop mpac-server mpac-ui
+# Also stop any mpac-worker-* containers.
+docker exec mpac-postgres-backup /tools/rclone copy /backups/blobs :s3:blobs/blobs
+docker exec mpac-postgres-backup pg_restore -d mpac --clean --if-exists \
+  /backups/mpac_20261031_120000.dump
+docker start mpac-server mpac-ui
+# Also start any mpac-worker-* containers.
+```
+
+These commands use the default names. Change the dump file name to the backup that you want.
 
 ### 11.7 Upgrade Procedure
 
-1. Pull the latest server and UI images from the registry.
-2. Run `terraform apply` to recreate the server and UI containers with the new images.
-3. Verify the services are healthy.
+1. Publish or load the new images. In registry mode, Terraform resolves each tag to its current digest.
+2. Run `terraform -chdir=terraform/on_prem apply` to recreate the changed containers.
+3. Make sure that the services are healthy.
 
-The PostgreSQL data persists on the host volume. Database schema migrations run automatically at server startup.
+The PostgreSQL and SeaweedFS data persist on host paths. Database schema migrations run automatically at server startup. Containers have 35 seconds to stop, which covers the worker shutdown period. Jobs that do not finish return to the queue.
+
+### 11.8 Attachment Storage Operations
+
+The server and workers reach SeaweedFS at `http://seaweedfs:8333`. Signed URLs name the public HTTPS origin, which comes from `tls_domain` and `envoy_https_port`.
+
+The UI transfers attachments over the private network. It sends the request to `MPAC_BLOB_INTERNAL_ENDPOINT` and keeps the signed `Host` value. This works with `localhost` URLs and self-signed certificates.
+
+Do not share a bucket or key prefix between MPAC databases. Attachment maintenance deletes old objects that its own database does not reference.
+
+### 11.9 Worker Modes
+
+| Mode | `worker_replicas` | Containers |
+|------|-------------------|------------|
+| Embedded (default) | `0` | `mpac-server` runs the API and one worker |
+| Separate | `1` or more | `mpac-server` runs the API only, and each `mpac-worker-<n>` runs one worker |
+
+`worker_concurrency` applies to each worker. Separate workers share the database, blob credentials, and JWT secret. They have no published ports. They can reach host inference services through `host.docker.internal`.
+
+Backend concurrency limits apply across all workers, so extra workers do not overload a backend.
+
+### 11.10 Master Key Operations
+
+By default, Terraform generates the master key at `generated/secrets/master.key` and mounts it read-only into the server and worker containers. The backup container does not receive it. Terraform state also holds the generated key, so protect the state file.
+
+Back up the master key separately from the database dumps. If a backup includes both, the backup can reveal the provider keys. If you lose the master key, delete and create your backends again with their provider keys. Other data is not affected.
+
+**Rotate the master key:**
+
+1. Place the new key file on the host.
+2. Run this command in a container that can read both key files:
+
+   ```bash
+   mpac rotate-secret-key --db_host=postgres --db_user=postgres --db_name=mpac \
+     --secret_key_url=file:///run/mpac/new.key \
+     --previous_secret_key_url=file:///run/mpac/secret.key
+   ```
+
+3. Set `secret_key_path` to the new file and run `terraform apply`.
+
+**Cloud KMS keys.** The Google Cloud and AWS deployments rotate their KMS key automatically. Old key versions stay available for decryption, so you do not need to run this command. Run it only to move to a different key. The cloud deployments do not include a job for this command, so you must start it as a one-off Cloud Run job or ECS task.
+
+The command rewraps each data key and does not change the provider keys. Until step 3 finishes, running servers cannot decrypt rewrapped keys, so do this during a quiet period.
 
 ---
 
@@ -1086,64 +1433,108 @@ The PostgreSQL data persists on the host volume. Database schema migrations run 
 
 ```mermaid
 flowchart LR
-    Push["Push to main\n(matching paths)"]
-    UnitTests["Unit Tests\n(Bazel)"]
-    IntTests["Integration Tests\n(PostgreSQL + live server)"]
-    Build["Build OCI Images\n(Bazel rules_oci)"]
+    Change["Pull request or push to main\n(matching paths)"]
+    UI["mpac_test.yml\nUI and CLI tests"]
+    Rust["mpac_rust.yml\nRust, schema, contract, image"]
+    TF["terraform.yml\nfmt, validate, test"]
+    Main["Push to main\n(server, proto, or ui paths)"]
+    Build["mpac_docker_build.yml\nAll Rust and UI checks, then images"]
     Registry["GitHub Container Registry\nghcr.io"]
 
-    Push --> UnitTests
-    UnitTests --> Build
-    Push --> IntTests
+    Change --> UI
+    Change --> Rust
+    Change --> TF
+    Main --> Build
     Build --> Registry
 ```
 
-Two GitHub Actions workflows exist:
+Five GitHub Actions workflows exist:
 
-- `mpac_test.yml`: Runs on pull requests and pushes to `main`.
-- `mpac_docker_build.yml`: Runs on pushes to `main` only.
-
-Both workflows trigger only on changes to these paths:
-
-- `server/**`
-- `ui/**`
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `mpac_test.yml` | Pull requests and pushes to `main` that change `proto/`, `cli/`, `ui/`, `tests/`, or Bazel module files | UI, CLI, and proto compatibility tests |
+| `mpac_rust.yml` | Pull requests and pushes to `main` that change `server/`, the proto files, `cli/test_db/`, `tests/contract/`, `tests/schema/`, `tests/resilience/`, or Bazel files | Rust tests, database suites, and a multi-architecture image build |
+| `terraform.yml` | Pull requests and pushes to `main` that change `terraform/` | Terraform format, validation, and offline tests for all three targets |
+| `mpac_docker_build.yml` | Pushes to `main` that change `server/`, the proto files, or `ui/`, or a manual start | Runs `mpac_rust.yml` and `mpac_test.yml`, then pushes the server image and the UI image if both pass |
+| `ruff.yml` | Pull requests | Runs the Ruff format check |
 
 ### 12.2 Unit and Integration Tests
 
-**Unit tests** run with Bazel. The `mpac_test.yml` workflow runs tests for:
+**UI and CLI tests** run in `mpac_test.yml`: `//proto/... //cli/...` and `//ui/...`.
 
-- Auth (`auth_test`)
-- Database (`db_test`)
-- Runs (`runs_test`)
-- Proto compatibility
-- UI tests (auth, admin, runs, settings)
+**Rust tests** run in `mpac_rust.yml`:
 
-**Integration tests** start a PostgreSQL 16 service in GitHub Actions. The workflow:
+- `//server/...`, which includes unit tests, Clippy, rustfmt, and rate limit tests.
+- `//tests/schema:all`, which tests migrations, onboarding, and attachment reads without blob storage.
+- `//tests/resilience:all`, which tests worker kills, restarts, long and fragmented responses, cancellation, and attachment memory against a fake provider.
+- Three contract suites that black-box test every RPC:
+  - `contract_rust_test`: embedded worker with SeaweedFS
+  - `contract_rust_inline_test`: no blob storage
+  - `contract_rust_split_test`: an API-only server and three separate workers
 
-1. Builds the MPAC server binary with Bazel.
-2. Starts the server in the background.
-3. Waits for the server to become ready (gRPC health probe or TCP port check).
-4. Runs the full `server_test` integration suite against the live server and database.
+The same workflow builds the image index, then starts each architecture image with `--version`. It also makes sure that each image is smaller than 40 MiB.
 
 ### 12.3 Image Build and Push
 
 Images are built with Bazel using `rules_oci`, not with Dockerfiles. The `mpac_docker_build.yml` workflow:
 
 1. Logs in to the GitHub Container Registry (`ghcr.io`) using the built-in `GITHUB_TOKEN`.
-2. Builds and pushes both images:
+2. Builds and pushes the server image and the UI image:
 
 ```bash
-bazel run //server:server_image_push
+bazel run --config=release //server/mpac:mpac_image_push
 bazel run //ui:mpac_ui_image_push
 ```
 
-**Server image:** Base Python 3.11, entrypoint at `/server/server`, platform `linux/amd64`.
+**Server image:** Distroless base image, no Python, entrypoint `/usr/local/bin/mpac serve`, user `nonroot`, platforms `linux/amd64` and `linux/arm64`, tag `latest`. The `release` configuration uses optimized builds with full link-time optimization.
 
-**UI image:** Base Python 3.11, includes WeasyPrint system libraries for PDF generation, entrypoint at `/ui/mpac_ui`, platform `linux/amd64`.
+**UI image:** Base Python 3.11, includes WeasyPrint system libraries for PDF generation, entrypoint at `/ui/mpac_ui`, platform `linux/amd64`, tag `latest`.
 
-Both images are pushed to `ghcr.io/pelidum/` with the `latest` tag.
+All images are pushed to `ghcr.io/pelidum/`.
 
-A third workflow (`ruff.yml`) runs the Ruff linter on all pull requests.
+### 12.4 Local Development
+
+You need [Bazelisk](https://github.com/bazelbuild/bazelisk/releases), Python 3.11, and Docker. Bazel fetches the Rust toolchain and the Python packages.
+
+**Build and test:**
+
+```bash
+bazel build //...
+bazel test //server/... //proto/... //cli/... //ui/... //tests/...
+```
+
+**Run the system without Terraform:**
+
+1. Start PostgreSQL:
+
+   ```bash
+   docker run -d --name mpac-pg -p 5432:5432 \
+     -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=mpac \
+     postgres:16
+   ```
+
+2. Start the server. It creates the schema and the first admin:
+
+   ```bash
+   bazel run //server/mpac -- serve \
+     --db_host=localhost --db_user=postgres --db_password=postgres \
+     --admin_onboarding_id=admin@example.com \
+     --admin_onboarding_password=changeme \
+     --port=50051
+   ```
+
+3. Start the web UI, then open <http://localhost:8080>:
+
+   ```bash
+   MPAC_HOST=localhost MPAC_PORT=50051 MPAC_DEBUG=true MPAC_JWT_SECRET=dev-secret \
+     bazel run //ui:mpac_ui
+   ```
+
+This setup has no blob storage or master key. Attachments stay inline in the database, and you cannot save a provider key.
+
+**Use the CLI client:** `bazel run //cli -- --help`
+
+**Change a Python package:** Edit `requirements.txt`, then run `bazel run //:requirements.update`.
 
 ---
 
@@ -1161,6 +1552,7 @@ A third workflow (`ruff.yml`) runs the Ruff linter on all pull requests.
 | | `UpdateBackend` | `Backend` | `StatusReply` | Admin |
 | | `DeleteBackend` | `DeleteRequest` | `StatusReply` | Admin |
 | | `ListBackends` | `ListRequest` | stream `Backend` | Yes |
+| | `ListSecretAudit` | `ListRequest` | stream `SecretAuditEvent` | Admin |
 | **Benchmarks** | `GetBenchmark` | `GetRequest` | `Benchmark` | Yes |
 | | `CreateBenchmark` | `BenchmarkRequest` | stream `BenchmarkResponse` | Yes |
 | | `UpdateBenchmark` | `Benchmark` | `StatusReply` | Yes |
@@ -1171,6 +1563,8 @@ A third workflow (`ruff.yml`) runs the Ruff linter on all pull requests.
 | | `DeleteAttachment` | `DeleteRequest` | `StatusReply` | Yes |
 | | `ListAttachments` | `ListRequest` | stream `FileAttachment` | Yes |
 | | `BatchGetAttachments` | `BatchGetAttachmentsRequest` | stream `FileAttachment` | Yes |
+| | `CreateAttachmentUpload` | `CreateAttachmentUploadRequest` | `CreateAttachmentUploadReply` | Yes |
+| | `FinalizeAttachment` | `GetRequest` | `FileAttachment` | Yes |
 | **Tests** | `GetTest` | `GetRequest` | `Test` | Yes |
 | | `CreateTest` | `Test` | `StatusReply` | Yes |
 | | `UpdateTest` | `Test` | `StatusReply` | Yes |
@@ -1202,11 +1596,15 @@ A third workflow (`ruff.yml`) runs the Ruff linter on all pull requests.
 
 **Streaming RPCs.** RPCs that return `stream` yield one message per object. The client reads until the stream closes.
 
-**Public RPC.** `LoginUser` does not require authentication. It accepts a `LoginRequest` with `user_id` and `password`.
+**Public RPCs.** `LoginUser` does not require authentication. It accepts a `LoginRequest` with `user_id` and `password`. gRPC health and gRPC reflection are also public. Reflection is off by default.
+
+**Unimplemented RPCs.** `GetTestRunAnswer`, `CreateTestRunAnswer`, and `DeleteTestRunAnswer` return `UNIMPLEMENTED`. Workers create answers, and deleting a run deletes its answers.
+
+**Attachment RPCs.** `CreateAttachmentUpload` and `FinalizeAttachment` need blob storage. If blob storage is not active, they return `FAILED_PRECONDITION`. Then use `CreateAttachment` with inline bytes. See [2.7 Attachment Storage](#27-attachment-storage).
 
 ### 13.2 Key Message Types
 
-**`ListRequest`** — shared request for all list operations:
+**`ListRequest`**: shared request for all list operations:
 
 | Field | Type | Description |
 |-------|------|-----------|
@@ -1215,7 +1613,7 @@ A third workflow (`ruff.yml`) runs the Ruff linter on all pull requests.
 | `created_after` | `Timestamp` | Optional inclusive lower bound on creation time |
 | `created_before` | `Timestamp` | Optional exclusive upper bound on creation time |
 
-**`StatusReply`** — shared response for create, update, and delete operations:
+**`StatusReply`**: shared response for create, update, and delete operations:
 
 | Field | Type | Description |
 |-------|------|-----------|
@@ -1223,7 +1621,52 @@ A third workflow (`ruff.yml`) runs the Ruff linter on all pull requests.
 | `reason` | `string` | Error or status message |
 | `id` | `string` | The object ID |
 
-**`TestRunRequest`** — request to create a run:
+**`FileAttachment`**: attachment metadata, with contents in blob storage:
+
+| Field | Type | Description |
+|-------|------|-----------|
+| `id` | `string` | The SHA-256 hash of the contents, or a temporary ID while `PENDING` |
+| `name` | `string` | The file name |
+| `extension` | `string` | The file extension that the server detected |
+| `modality` | `FileModality` | The file type that the server detected |
+| `file` | `bytes` | Inline contents, on deployments without blob storage |
+| `file_size` | `int64` | The size in kilobytes |
+| `visibility` | `Visibility` | The access-control setting |
+| `owner` | `string` | The uploader |
+| `mime` | `string` | The MIME type |
+| `uri` | `string` | A signed download URL in API responses |
+| `sha256` | `string` | The SHA-256 hash of the contents |
+| `upload_state` | `UploadState` | `PENDING` or `READY` |
+
+**`CreateAttachmentUploadRequest`**: request to start an upload:
+
+| Field | Type | Description |
+|-------|------|-----------|
+| `name` | `string` | The file name |
+| `size_bytes` | `int64` | The file size in bytes |
+| `mime` | `string` | The MIME type from the client |
+| `visibility` | `Visibility` | The access-control setting (default: org only) |
+
+**`CreateAttachmentUploadReply`**: the upload target:
+
+| Field | Type | Description |
+|-------|------|-----------|
+| `attachment_id` | `string` | The ID to pass to `FinalizeAttachment` |
+| `upload_uri` | `string` | The signed URL for the HTTP PUT request |
+| `headers` | map `string` to `string` | Headers to send with the PUT request |
+| `expires_at` | `Timestamp` | The expiry time of the URL (15 minutes) |
+
+**`SecretAuditEvent`**: one provider key event. The event never contains the key:
+
+| Field | Type | Description |
+|-------|------|-----------|
+| `backend_id` | `string` | The backend that owns the key |
+| `action` | `string` | `create`, `update`, `delete`, `decrypt`, or `rewrap` |
+| `actor` | `string` | The admin who changed the key, or the MPAC process that used it |
+| `key_version` | `int32` | The version of the key |
+| `created_at_utc` | `Timestamp` | The time of the event |
+
+**`TestRunRequest`**: request to create a run:
 
 | Field | Type | Description |
 |-------|------|-----------|
@@ -1234,7 +1677,7 @@ A third workflow (`ruff.yml`) runs the Ruff linter on all pull requests.
 | `sample_size` | `int64` | Number of items to sample |
 | `backend_id` | `string` | The backend to use |
 
-**`BenchmarkRequest`** — request to create a benchmark:
+**`BenchmarkRequest`**: request to create a benchmark:
 
 | Field | Type | Description |
 |-------|------|-----------|
@@ -1243,7 +1686,7 @@ A third workflow (`ruff.yml`) runs the Ruff linter on all pull requests.
 | `sample_size` | `int64` | Items per match |
 | `include_reasoning` | `bool` | Request model reasoning |
 
-**`TestRunMetrics`** — per-model metrics within a run:
+**`TestRunMetrics`**: per-model metrics within a run:
 
 | Field | Type | Description |
 |-------|------|-----------|
@@ -1287,6 +1730,11 @@ A third workflow (`ruff.yml`) runs the Ruff linter on all pull requests.
 | `NOT_FOUND` | Object does not exist |
 | `INVALID_ARGUMENT` | Request contains invalid data |
 | `RESOURCE_EXHAUSTED` | Rate limit or spend limit exceeded |
+| `ALREADY_EXISTS` | Equal attachment contents exist with a different visibility |
+| `FAILED_PRECONDITION` | Blob storage is not active, an upload has no contents, or a provider key has a missing or wrong master key |
+| `OUT_OF_RANGE` | A gRPC message exceeds the maximum message size |
+| `UNAVAILABLE` | The server cannot sign an attachment URL, or the key service for a provider key failed |
+| `UNIMPLEMENTED` | The RPC has no implementation |
 | `ABORTED` | Operation cancelled or conflicted |
 | `INTERNAL` | Server-side error |
 
@@ -1294,16 +1742,40 @@ A third workflow (`ruff.yml`) runs the Ruff linter on all pull requests.
 
 ## Appendix A: Environment Variables
 
+If you set both a server flag and its environment variable, the flag takes priority.
+
 | Variable | Component | Description |
 |----------|-----------|-----------|
-| `MPAC_DB_PASSWORD` | Server | PostgreSQL password (overrides `--db_password` flag) |
+| `MPAC_DB_PASSWORD` | Server, Worker | PostgreSQL password (same as `--db_password`) |
 | `MPAC_JWT_SECRET` | Server, UI | HS256 signing secret for JWT tokens |
-| `MPAC_ADMIN_ONBOARDING_ID` | Server | First admin email (overrides flag) |
-| `MPAC_ADMIN_ONBOARDING_PASSWORD` | Server | First admin password (overrides flag) |
-| `MPAC_ADMIN_API_KEY` | Server | First admin API key (overrides flag) |
+| `MPAC_ADMIN_ONBOARDING_ID` | Server | First admin email |
+| `MPAC_ADMIN_ONBOARDING_PASSWORD` | Server | First admin password |
+| `MPAC_ADMIN_API_KEY` | Server | First admin API key |
+| `MPAC_ROLES` | Server | `api`, `worker`, or both, separated by a comma (default: `api,worker`) |
+| `MPAC_WORKER_CONCURRENCY` | Server, Worker | Maximum concurrent jobs per worker (default: `32`) |
+| `MPAC_LOG_FORMAT` | Server, Worker | Log format, `json` or `text` (default: `text` in a terminal, otherwise `json`) |
+| `RUST_LOG` | Server, Worker | Log level filter (default: `info`) |
+| `MPAC_MAX_MESSAGE_SIZE` | Server | Maximum gRPC message size in bytes (default: 8 MiB with blob storage, 50 MiB without) |
+| `MPAC_MAX_ATTACHMENT_SIZE` | Server, UI | Maximum attachment upload size in bytes (default: 2 GiB) |
+| `MPAC_ENABLE_REFLECTION` | Server | Expose the gRPC reflection API (`1` or `true`, default: off) |
+| `MPAC_SECRET_KEY_URL` | Server, Worker | Master key for provider keys: `file://`, `vault+https://`, `aws-kms:`, or `gcp-kms:`. Empty rejects new provider keys |
+| `VAULT_TOKEN` | Server, Worker | Token for a Vault or OpenBao master key |
+| `AWS_ENDPOINT_URL_KMS` | Server, Worker | Other AWS KMS endpoint, for example a test emulator |
+| `AWS_SESSION_TOKEN` | Server, Worker | Session token for temporary AWS credentials |
+| `GOOGLE_OAUTH_ACCESS_TOKEN` | Server, Worker | Google Cloud KMS token, outside Google Cloud. It expires, so use it only for tests |
+| `MPAC_BLOB_URL` | Server, Worker | Blob storage URL, `s3://bucket` or `gs://bucket`. Empty stores attachments inline |
+| `MPAC_BLOB_PUBLIC_ENDPOINT` | Server, Worker, UI | Origin that signed URLs name. The UI compares signed URLs against this value |
+| `MPAC_BLOB_INTERNAL_ENDPOINT` | UI | Private blob storage origin for UI transfers |
+| `AWS_ENDPOINT` | Server, Worker | S3 endpoint URL (on-premises: `http://seaweedfs:8333`) |
+| `AWS_ALLOW_HTTP` | Server, Worker | Allow a plaintext S3 endpoint |
+| `AWS_REGION` | Server, Worker | S3 region |
+| `AWS_ACCESS_KEY_ID` | Server, Worker | S3 access key |
+| `AWS_SECRET_ACCESS_KEY` | Server, Worker | S3 secret key |
 | `MPAC_DEBUG` | UI | Enable debug mode (`true` or `false`) |
 | `MPAC_HOST` | UI | gRPC server hostname (default: `0.0.0.0`) |
 | `MPAC_PORT` | UI | gRPC server port (default: `50051`) |
+| `MPAC_GRPC_INSECURE` | UI | Use a plaintext gRPC channel to the server (`true` or `false`) |
+| `MPAC_TRUSTED_PROXIES` | UI | Trusted proxies for `X-Forwarded-For`, separated by commas (default: `127.0.0.1`) |
 | `MPAC_SYSTEM_USER` | UI | System identity for background tasks (default: `system@mpac.internal`) |
 | `GOOGLE_OAUTH_CLIENT_ID` | UI | Google OAuth client ID. "Login with Google" is shown only when this and the secret are set |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | UI | Google OAuth client secret |
@@ -1312,7 +1784,7 @@ A third workflow (`ruff.yml`) runs the Ruff linter on all pull requests.
 
 MPAC's on-premises Docker deployment is driven by Terraform. See [Section 11.3](#113-terraform-variables) for the complete variable table.
 
-*Cloud / managed deployment configurations are out of scope for this repository for now and will be added in a follow-up migration.*
+Google Cloud and AWS have separate Terraform configurations with their own variables. See [Deploying MPAC](../terraform/DEPLOYMENT.md).
 
 ## Appendix C: Protobuf Enums
 
@@ -1374,3 +1846,27 @@ MPAC's on-premises Docker deployment is driven by Terraform. See [Section 11.3](
 | `VISIBILITY_SPECIFIED_USERS` | 3 | Named users, owner, and admins |
 | `VISIBILITY_PUBLIC` | 4 | All authenticated users |
 | `VISIBILITY_ADMIN` | 5 | Admins only |
+
+### Answer Status
+
+The `TestRunAnswer.Status` enum shows the result of one answer.
+
+| Name | Value | Description |
+|------|-------|-----------|
+| `STATUS_UNSPECIFIED` | 0 | Not set |
+| `OK` | 1 | The model answered |
+| `TIMEOUT` | 2 | The request timed out |
+| `CANCELLED` | 3 | The request was cancelled |
+| `BAD_REQUEST` | 4 | The backend rejected the request |
+| `CONNECTION_ERROR` | 5 | The worker cannot connect to the backend |
+| `ERROR` | 6 | Other error |
+| `CAPACITY` | 7 | Not used |
+| `SKIPPED` | 8 | Not sent, because the circuit breaker was open |
+
+### UploadState
+
+| Name | Value | Description |
+|------|-------|-----------|
+| `UPLOAD_STATE_UNSPECIFIED` | 0 | Attachment with inline contents |
+| `PENDING` | 1 | The upload is not finalized. Lists do not show this attachment |
+| `READY` | 2 | The contents are in blob storage |

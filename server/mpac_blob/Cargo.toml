@@ -1,0 +1,23 @@
+[package]
+name = "mpac_blob"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bytes.workspace = true
+futures.workspace = true
+hex.workspace = true
+http.workspace = true
+infer.workspace = true
+mpac_http = { path = "../mpac_http" }
+mpac_proto = { path = "../mpac_proto" }
+object_store.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]

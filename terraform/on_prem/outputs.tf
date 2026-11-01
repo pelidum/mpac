@@ -17,3 +17,13 @@ output "google_oauth_redirect_uri" {
   value       = "${local.ui_origin}/callback/google"
   description = "Authorized redirect URI to add to your Google OAuth client (see ../DEPLOYMENT.md#google-sign-in-optional)."
 }
+
+
+output "blob_endpoint" {
+  value       = "${local.ui_origin}/blobs/"
+  description = "Signed attachment URLs are served through this HTTPS route."
+}
+
+output "worker_mode" {
+  value = var.worker_replicas == 0 ? "embedded" : "separate (${var.worker_replicas} replicas)"
+}

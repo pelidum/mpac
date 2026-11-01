@@ -1,9 +1,13 @@
 terraform {
-  required_version = ">= 1.0"
+  required_version = ">= 1.7"
   required_providers {
     docker = {
       source  = "kreuzwerker/docker"
       version = "~> 3.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
     }
     tls = {
       source  = "hashicorp/tls"
@@ -27,7 +31,17 @@ locals {
   generate_cert = var.tls_cert_path == ""
   envoy_cert    = local.generate_cert ? abspath("${path.module}/generated/envoy.crt") : var.tls_cert_path
   envoy_key     = local.generate_cert ? abspath("${path.module}/generated/envoy.key") : var.tls_key_path
-  envoy_config  = var.envoy_config_path != "" ? abspath(var.envoy_config_path) : abspath("${path.module}/envoy.yaml")
+  envoy_config  = var.envoy_config_path != "" ? abspath(var.envoy_config_path) : abspath("${path.module}/generated/envoy.yaml")
+}
+
+resource "local_file" "envoy_config" {
+  content = templatefile("${path.module}/envoy.yaml", {
+    https_port  = var.envoy_https_port
+    server_port = var.server_port
+    ui_port     = var.ui_port
+  })
+  filename        = "${path.module}/generated/envoy.yaml"
+  file_permission = "0644"
 }
 
 resource "tls_private_key" "envoy" {
@@ -108,6 +122,15 @@ resource "docker_container" "postgres" {
     aliases = ["postgres", "db"]
   }
 
+  healthcheck {
+    test     = ["CMD-SHELL", "pg_isready -U ${var.postgres_user} -d ${var.postgres_db}"]
+    interval = "2s"
+    timeout  = "2s"
+    retries  = 60
+  }
+  wait         = true
+  wait_timeout = 120
+
   restart = "unless-stopped"
 }
 
@@ -117,23 +140,28 @@ resource "docker_container" "postgres_backup" {
   name  = "${var.project_name}-postgres-backup"
   image = docker_image.postgres.image_id
 
-  env = [
+  env = concat(local.backup_env, [
     "PGPASSWORD=${var.postgres_password}",
-  ]
-
-  entrypoint = ["/bin/bash", "-c"]
-  command = [<<-EOT
-    while true; do
-      echo "[$(date)] Starting pg_dump..."
-      pg_dump -h postgres -U ${var.postgres_user} -d ${var.postgres_db} -Fc \
-        -f /backups/${var.postgres_db}_$(date +%Y%m%d_%H%M%S).dump
-      echo "[$(date)] Pruning backups older than ${var.postgres_backup_retention_days} days..."
-      find /backups -name '*.dump' -mtime +${var.postgres_backup_retention_days} -delete
-      echo "[$(date)] Backup complete. Sleeping 24h..."
-      sleep 86400
-    done
-  EOT
-  ]
+    "PGHOST=postgres",
+    "PGUSER=${var.postgres_user}",
+    "PGDATABASE=${var.postgres_db}",
+    "RETENTION_DAYS=${var.postgres_backup_retention_days}",
+    "BACKUP_INTERVAL=${var.backup_interval_seconds}",
+  ])
+  entrypoint = ["/bin/bash", "/etc/mpac/backup.sh"]
+  upload {
+    content = file("${path.module}/backup.sh")
+    file    = "/etc/mpac/backup.sh"
+  }
+  upload {
+    content = file("${path.module}/backup-once.sh")
+    file    = "/etc/mpac/backup-once.sh"
+  }
+  volumes {
+    volume_name    = docker_volume.backup_tools.name
+    container_path = "/tools"
+    read_only      = true
+  }
 
   volumes {
     host_path      = var.postgres_backup_path
@@ -146,7 +174,7 @@ resource "docker_container" "postgres_backup" {
 
   restart = "unless-stopped"
 
-  depends_on = [docker_container.postgres]
+  depends_on = [docker_container.postgres, docker_container.seaweed_init, docker_container.backup_tools]
 }
 
 # MPAC Server
@@ -172,28 +200,27 @@ resource "docker_container" "server" {
   name  = "${var.project_name}-server"
   image = docker_image.server.image_id
 
-  env = concat(
-    [
-      "MPAC_JWT_SECRET=${var.mpac_jwt_secret}",
-      "MPAC_MAX_MESSAGE_SIZE=${var.server_max_message_size_mb * 1024 * 1024}",
-    ],
-    var.server_enable_reflection ? ["MPAC_ENABLE_REFLECTION=true"] : [],
-  )
-
-  command = concat(
-    [
-      "--db_host=postgres",
-      "--db_user=${var.postgres_user}",
-      "--db_password=${var.postgres_password}",
-      "--db_pool_size=${var.server_db_pool_size}",
-      "--host=${var.server_host}",
-      "--port=${var.server_port}",
-    ],
-    var.server_admin_onboarding_id != "" ? ["--admin_onboarding_id=${var.server_admin_onboarding_id}"] : [],
-    var.server_admin_onboarding_password != "" ? ["--admin_onboarding_password=${var.server_admin_onboarding_password}"] : [],
-  )
+  env = concat(local.server_env, [
+    "MPAC_ROLES=${var.worker_replicas == 0 ? "api,worker" : "api"}",
+    "MPAC_ADMIN_ONBOARDING_ID=${var.server_admin_onboarding_id}",
+    "MPAC_ADMIN_ONBOARDING_PASSWORD=${var.server_admin_onboarding_password}",
+  ])
+  command      = concat(local.db_args, ["--host=${var.server_host}", "--port=${var.server_port}"])
+  stop_timeout = 35
+  lifecycle {
+    replace_triggered_by = [docker_container.postgres.id, docker_container.seaweed_init.id]
+  }
 
   # No external ports - only accessible via Envoy
+
+  dynamic "volumes" {
+    for_each = local.secret_key_file == "" ? [] : [local.secret_key_file]
+    content {
+      host_path      = volumes.value
+      container_path = local.secret_key_mount
+      read_only      = true
+    }
+  }
 
   networks_advanced {
     name    = docker_network.app_network.name
@@ -215,7 +242,7 @@ resource "docker_container" "server" {
 
   restart = "unless-stopped"
 
-  depends_on = [docker_container.postgres]
+  depends_on = [docker_container.postgres, docker_container.seaweed_init, local_sensitive_file.secret_key]
 }
 
 # MPAC UI
@@ -248,6 +275,9 @@ resource "docker_container" "ui" {
       "MPAC_PORT=${var.server_port}",
       "MPAC_HOST=${var.project_name}-server",
       "MPAC_TRUSTED_PROXIES=${var.ui_trusted_proxies}",
+      "MPAC_BLOB_INTERNAL_ENDPOINT=http://seaweedfs:8333",
+      "MPAC_BLOB_PUBLIC_ENDPOINT=${local.ui_origin}",
+      "MPAC_MAX_ATTACHMENT_SIZE=${var.max_attachment_size_mb * 1024 * 1024}",
     ],
     var.ui_grpc_insecure ? ["MPAC_GRPC_INSECURE=true"] : [],
     var.ui_debug ? ["MPAC_DEBUG=true"] : [],
@@ -274,6 +304,15 @@ resource "docker_image" "envoy" {
 resource "docker_container" "envoy" {
   name  = "${var.project_name}-envoy"
   image = docker_image.envoy.image_id
+
+  labels {
+    label = "mpac.config-sha256"
+    value = var.envoy_config_path == "" ? sha256(local_file.envoy_config.content) : filesha256(var.envoy_config_path)
+  }
+  labels {
+    label = "mpac.cert-sha256"
+    value = local.generate_cert ? sha256(tls_self_signed_cert.envoy[0].cert_pem) : filesha256(var.tls_cert_path)
+  }
 
   # HTTP -> HTTPS redirect
   ports {
@@ -333,6 +372,8 @@ resource "docker_container" "envoy" {
   depends_on = [
     docker_container.server,
     docker_container.ui,
+    local_file.envoy_config,
+    docker_container.seaweed_init,
     local_file.envoy_cert,
     local_sensitive_file.envoy_key,
   ]

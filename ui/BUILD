@@ -18,7 +18,7 @@ py_library(
     name = "grpc_client",
     srcs = ["grpc_client.py"],
     deps = [
-        "//server:service_py_proto",
+        "//proto:service_py_proto",
         "@pypi//absl_py",
         "@pypi//grpcio",
         "@pypi//pyjwt",
@@ -27,11 +27,23 @@ py_library(
 )
 
 py_library(
+    name = "blobs",
+    srcs = ["blobs.py"],
+    deps = [
+        "//proto:service_py_proto",
+        "@pypi//absl_py",
+        "@pypi//grpcio",
+        "@pypi//httpx",
+        "@pypi//requests",
+    ],
+)
+
+py_library(
     name = "auth_lib",
     srcs = ["auth.py"],
     deps = [
         ":grpc_client",
-        "//server:service_py_proto",
+        "//proto:service_py_proto",
         "@pypi//absl_py",
         "@pypi//authlib",
         "@pypi//fastapi",
@@ -70,7 +82,7 @@ py_library(
     srcs = ["state.py"],
     deps = [
         ":grpc_client",
-        "//server:service_py_proto",
+        "//proto:service_py_proto",
         "@pypi//absl_py",
         "@pypi//pyjwt",
     ],
@@ -80,12 +92,12 @@ py_library(
     name = "routers",
     srcs = glob(["routers/*.py"]),
     deps = [
-        "//server/objects:answer_status",
         ":auth_lib",
+        ":blobs",
         ":dependencies",
         ":grpc_client",
         ":state",
-        "//server:service_py_proto",
+        "//proto:service_py_proto",
         "@pypi//absl_py",
         "@pypi//duckdb",
         "@pypi//fastapi",
@@ -108,7 +120,7 @@ py_library(
         ":rate_limit",
         ":routers",
         ":state",
-        "//server:service_py_proto",
+        "//proto:service_py_proto",
         "@pypi//absl_py",
         "@pypi//authlib",
         "@pypi//duckdb",
@@ -136,7 +148,7 @@ py_binary(
     data = [
         ":static",
         ":templates",
-        "//server:mpac_proto_json",
+        "//proto:mpac_proto_json",
     ],
     deps = [":server_lib"],
 )
@@ -150,7 +162,7 @@ _UI_TEST_DEPS = [
     ":routers",
     ":server_lib",
     ":state",
-    "//server:service_py_proto",
+    "//proto:service_py_proto",
     "@pypi//authlib",
     "@pypi//duckdb",
     "@pypi//fastapi",
@@ -170,7 +182,7 @@ _UI_TEST_DEPS = [
 _UI_TEST_DATA = [
     ":static",
     ":templates",
-    "//server:mpac_proto_json",
+    "//proto:mpac_proto_json",
 ]
 
 py_test(
@@ -214,6 +226,17 @@ py_test(
         "tests/test_tests.py",
     ],
     deps = _UI_TEST_DEPS,
+    data = _UI_TEST_DATA,
+)
+
+py_test(
+    name = "test_attachments",
+    size = "small",
+    srcs = [
+        "tests/conftest.py",
+        "tests/test_attachments.py",
+    ],
+    deps = _UI_TEST_DEPS + [":blobs"],
     data = _UI_TEST_DATA,
 )
 

@@ -2,7 +2,7 @@ import os
 
 import grpc
 
-from server import service_pb2_grpc
+from proto import service_pb2_grpc
 
 MPAC_DEBUG = os.getenv("MPAC_DEBUG", "false").lower() == "true"
 # Use a plaintext (insecure) gRPC channel to the backend, independent of

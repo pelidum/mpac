@@ -1,5 +1,7 @@
 load("@rules_python//python:pip.bzl", "compile_pip_requirements")
 
+exports_files(["oci-public-config.json"], visibility = ["//visibility:public"])
+
 compile_pip_requirements(
     name = "requirements",
     src = "requirements.txt",

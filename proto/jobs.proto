@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+// Internal work items stored in the `jobs` table (column `payload`). These
+// messages never cross the public gRPC API. The `jobs.kind` column holds the
+// name of the populated `Job.kind` field.
+package pelidum.services.grpc.mpac.jobs;
+
+import "proto/service.proto";
+
+message Job {
+  reserved 4;
+  reserved "migrate_blob";
+
+  oneof kind {
+    // Run one model (responder) against one test item and store the answer.
+    AnswerItem answer_item = 1;
+    // Publish a completed responder's metrics, or finalize the complete run.
+    FinalizeRun finalize_run = 2;
+    // Advance a benchmark bracket by one round.
+    BenchmarkStep benchmark_step = 3;
+  }
+}
+
+message AnswerItem {
+  string run_id = 1;
+  string item_id = 2;
+  // The per-run responder instance id (see Model.responder_id).
+  string responder_id = 3;
+  // The model snapshot taken when the run was created.
+  pelidum.services.grpc.mpac.Model model = 4;
+  bool include_reasoning = 5;
+}
+
+message FinalizeRun {
+  string run_id = 1;
+  // Empty finalizes the complete run; otherwise publish only this responder.
+  string responder_id = 2;
+}
+
+message BenchmarkStep {
+  string benchmark_id = 1;
+  // Zero-based bracket round to execute.
+  int64 round = 2;
+}

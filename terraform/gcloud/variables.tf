@@ -170,9 +170,15 @@ variable "server_enable_reflection" {
   description = "Expose the gRPC reflection API. Enable only for development or debugging."
 }
 
+variable "max_attachment_size_mb" {
+  type        = number
+  default     = 2048
+  description = "Maximum attachment size in megabytes for signed uploads. Browser uploads through the UI stop at 32 MB, the Cloud Run HTTP/1 request limit."
+}
+
 variable "server_max_message_size_mb" {
   type        = number
-  default     = 50
+  default     = 8
   description = "Maximum gRPC message size in megabytes (send and receive)."
 }
 

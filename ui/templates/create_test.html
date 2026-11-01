@@ -527,20 +527,78 @@
         });
     }
 
-    function makeAttachmentObject(file, dataUrl) {
+    const MAX_ATTACHMENT_BYTES = {{ max_attachment_bytes | tojson }};
+    const MAX_INFERENCE_BYTES = {{ max_inference_bytes | tojson }};
+    const MAX_INLINE_BYTES = 256 * 1024 * 1024;
+
+    function attachmentSizeAllowed(file) {
+        if (file.size > MAX_ATTACHMENT_BYTES) {
+            alert(`${file.name} exceeds the ${formatFileSize(MAX_ATTACHMENT_BYTES)} limit`);
+            return false;
+        }
+        if (file.size > MAX_INFERENCE_BYTES) {
+            alert(`${file.name} will be stored, but runs cannot send files over ${formatFileSize(MAX_INFERENCE_BYTES)} to a model. Those answers will show an error.`);
+        }
+        return true;
+    }
+
+    function makeAttachmentObject(file) {
         return {
             id: crypto.randomUUID(),
             name: file.name,
             extension: getFileExtension(file.name),
             modality: getFileModality(file.type),
-            file: dataUrl.split(',')[1],
+            file: null,
             file_size: file.size,
             mime: file.type,
-            dataUrl: dataUrl,
+            blob: file,
+            objectUrl: URL.createObjectURL(file),
         };
     }
 
+    function uploadAttachment(att, onProgress) {
+        return new Promise((resolve, reject) => {
+            const query = new URLSearchParams({ name: att.name, mime: att.mime || '' });
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `/attachments/upload?${query}`);
+            const token = document.querySelector('meta[name="csrf-token"]');
+            if (token) xhr.setRequestHeader('X-CSRF-Token', token.content);
+            xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+            xhr.onerror = () => reject(new Error(`${att.name}: the upload failed`));
+            xhr.onload = () => {
+                let body = {};
+                try { body = JSON.parse(xhr.responseText); } catch (e) { body = {}; }
+                if (xhr.status === 200 && body.id) resolve({ id: body.id });
+                else if (xhr.status === 501 && body.inline) resolve({ inline: true });
+                else reject(new Error(`${att.name}: ${body.error || 'the server rejected the file (' + xhr.status + ')'}`));
+            };
+            xhr.send(att.blob);
+        });
+    }
+
+    async function uploadPendingAttachments(usedIds, btn) {
+        const pending = Array.from(attachments.values())
+            .filter(a => usedIds.has(a.id) && a.blob && !a.uploadedId && !a.file);
+        for (let i = 0; i < pending.length; i++) {
+            const att = pending[i];
+            const show = fraction => {
+                const percent = Math.round(fraction * 100);
+                btn.innerHTML = `<span class="material-icons animate-spin" style="font-size:18px;">refresh</span> Uploading ${i + 1}/${pending.length} (${percent}%)…`;
+            };
+            show(0);
+            const result = await uploadAttachment(att, show);
+            if (result.id) {
+                att.uploadedId = result.id;
+            } else if (att.blob.size > MAX_INLINE_BYTES) {
+                throw new Error(`${att.name}: this server has no blob storage, so files over ${formatFileSize(MAX_INLINE_BYTES)} cannot be uploaded`);
+            } else {
+                att.file = (await readFileAsDataURL(att.blob)).split(',')[1];
+            }
+        }
+    }
+
     function getAttSrc(att) {
+        if (att.objectUrl) return att.objectUrl;
         if (att.dataUrl) return att.dataUrl;
         if (att.existing) return `/attachments/${att.id}/file`;
         if (att.file && att.mime) return `data:${att.mime};base64,${att.file}`;
@@ -953,18 +1011,16 @@
 
     function handleRowFile(idx, file) {
         if (!file) return;
-        if (file.size > 1024 ** 3) { alert(file.name + ' exceeds 1 GB'); return; }
-        readFileAsDataURL(file).then(dataUrl => {
-            if (idx >= rows.length) return;
-            const oldId = rows[idx].attachment_id;
-            if (oldId && !rows.some((r, i) => i !== idx && r.attachment_id === oldId)) {
-                attachments.delete(oldId);
-            }
-            const att = makeAttachmentObject(file, dataUrl);
-            attachments.set(att.id, att);
-            rows[idx].attachment_id = att.id;
-            renderTable();
-        });
+        if (!attachmentSizeAllowed(file)) return;
+        if (idx >= rows.length) return;
+        const oldId = rows[idx].attachment_id;
+        if (oldId && !rows.some((r, i) => i !== idx && r.attachment_id === oldId)) {
+            attachments.delete(oldId);
+        }
+        const att = makeAttachmentObject(file);
+        attachments.set(att.id, att);
+        rows[idx].attachment_id = att.id;
+        renderTable();
     }
 
     function removeRowAttachment(idx) {
@@ -987,11 +1043,8 @@
         this.value = '';
         if (!files.length) return;
 
-        Promise.all(files.map(f => {
-            if (f.size > 1024 ** 3) { alert(f.name + ' exceeds 1 GB'); return null; }
-            return readFileAsDataURL(f).then(d => makeAttachmentObject(f, d));
-        })).then(atts => {
-            const valid = atts.filter(Boolean);
+        Promise.resolve(files.filter(attachmentSizeAllowed).map(makeAttachmentObject)).then(atts => {
+            const valid = atts;
             let emptyIdx = 0;
             let firstIdx = null;
             valid.forEach(att => {
@@ -1121,11 +1174,8 @@
             }
         }
 
-        Promise.all(files.map(f => {
-            if (f.size > 1024 ** 3) { alert(f.name + ' exceeds 1 GB'); return null; }
-            return readFileAsDataURL(f).then(d => makeAttachmentObject(f, d));
-        })).then(atts => {
-            atts.filter(Boolean).forEach(att => {
+        Promise.resolve(files.filter(attachmentSizeAllowed).map(makeAttachmentObject)).then(atts => {
+            atts.forEach(att => {
                 attachments.set(att.id, att);
                 rows.push({ ...makeEmptyRow(), attachment_id: att.id });
             });
@@ -1218,9 +1268,9 @@
 
         const labels = document.getElementById('test-labels').value.split(',').map(l => l.trim()).filter(Boolean);
         const usedAttIds = new Set(validRows.filter(r => r.attachment_id).map(r => r.attachment_id));
-        const attachmentsArray = Array.from(attachments.values())
+        const pendingPayload = () => Array.from(attachments.values())
             .filter(a => usedAttIds.has(a.id) && !a.existing)
-            .map(a => ({
+            .map(a => (a.uploadedId ? { id: a.id, uploaded_id: a.uploadedId } : {
                 id: a.id, name: a.name, extension: a.extension,
                 modality: a.modality, file: a.file, file_size: a.file_size, mime: a.mime,
             }));
@@ -1241,7 +1291,6 @@
                 is_relevant: !!r.is_relevant,
                 attachment_id: r.attachment_id,
             })),
-            attachments: attachmentsArray,
         };
 
         const btn = document.getElementById('create-btn');
@@ -1249,13 +1298,18 @@
 
         const submitUrl = EDIT_MODE ? `/tests/${EDIT_TEST_ID}/edit/submit` : '/tests/create/submit';
         const actionLabel = EDIT_MODE ? 'Saving' : 'Creating';
-        btn.innerHTML = `<span class="material-icons animate-spin" style="font-size:18px;">refresh</span> ${actionLabel}…`;
+        const savingLabel = `<span class="material-icons animate-spin" style="font-size:18px;">refresh</span> ${actionLabel}…`;
+        btn.innerHTML = savingLabel;
 
-        fetch(submitUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        })
+        uploadPendingAttachments(usedAttIds, btn)
+            .then(() => {
+                btn.innerHTML = savingLabel;
+                return fetch(submitUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...payload, attachments: pendingPayload() }),
+                });
+            })
             .then(r => r.json())
             .then(resp => {
                 if (resp.status === 'ok' && resp.test_id) {

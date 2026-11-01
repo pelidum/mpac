@@ -15,7 +15,7 @@ provider "aws" {
 locals {
   prefix = var.project_name
 
-  # The server hardcodes the database name (server/server.py).
+  # The server hardcodes the database name (server/mpac/src/args.rs).
   db_name = "mpac"
 
   alerts_enabled = var.alert_email != ""

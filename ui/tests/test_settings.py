@@ -4,7 +4,7 @@ from unittest import mock
 
 import pytest
 
-from server import service_pb2
+from proto import service_pb2
 
 
 @pytest.mark.asyncio

@@ -12,15 +12,12 @@ filetype==1.2.0
 google-auth==2.40.0
 grpcio==1.72.0
 grpcio-health-checking==1.72.0
-grpcio-reflection==1.72.0
 h11==0.16.0
 httpx==0.28.1
-huggingface-hub==0.36.0
 idna==3.15
 itsdangerous==2.2.0
 Jinja2==3.1.6
 Markdown==3.8.1
-openai==1.58.1
 orjson==3.11.6
 pandas==2.2.2
 pillow==12.3.0
@@ -31,9 +28,7 @@ pytest==9.0.3
 pytest-asyncio==1.4.0
 python-multipart==0.0.31
 requests==2.33.0
-scikit-learn==1.6.0
 starlette==1.7.0
-tenacity==8.2.3
 tqdm==4.66.3
 urllib3==2.7.0
 uvicorn==0.34.0

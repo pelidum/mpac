@@ -12,6 +12,7 @@ Internet ─ HTTPS ─► Cloud Run: UI (FastAPI)              scale-to-zero, re
 Internet ─ HTTPS ─► Cloud Run: server (gRPC, h2c)        scale-to-zero, instance-billed
                         │  /cloudsql unix socket (Cloud SQL Auth Proxy, IAM + mTLS)
                     Cloud SQL: PostgreSQL 16             db-f1-micro, no authorized networks
+                    Cloud Storage: attachments           private bucket, signed URLs
 ```
 
 - Secrets (DB password, JWT secret, OAuth secret, admin password) live in **Secret Manager**
@@ -19,6 +20,14 @@ Internet ─ HTTPS ─► Cloud Run: server (gRPC, h2c)        scale-to-zero, in
 - The server and UI run as **separate service accounts**, and only the server can reach the database.
 - Both services are public and authenticate requests themselves (password/OAuth login → JWT;
   API keys for gRPC clients).
+- Attachments live in a private **Cloud Storage** bucket. The server signs URLs with its own
+  service account, and browsers download through those URLs.
+- Browser uploads go through the UI, so Cloud Run's HTTP/1 request limit stops them at 32 MB.
+  ZIP imports through the UI have the same limit. gRPC clients can upload up to
+  `max_attachment_size_mb` (2 GiB) with `CreateAttachmentUpload`.
+- The embedded worker runs only while a server instance is up. With `server_min_instances = 0`,
+  Cloud Run can stop the instance during a long run if no requests arrive. The work continues at
+  the next request. Set `server_min_instances = 1` to keep runs moving (see [Cost](#cost)).
 - Inference backends are registered after deploying through the MPAC API/UI (`CreateBackend`).
   They are not part of the infrastructure.
 
@@ -58,12 +67,14 @@ Open the UI URL and sign in as the onboarding admin.
 | Cloud SQL storage + backups | 10 GB SSD, 7 daily backups | $2.20 |
 | Cloud Run server | 2 vCPU / 2 GiB, scale-to-zero, billed while an instance is up | $2+ |
 | Cloud Run UI | 1 vCPU / 512 MiB, scale-to-zero, billed per request | <$1 |
-| Secret Manager, logging metrics, egress | | ~$1 |
+| Secret Manager, Cloud KMS, logging metrics, egress | | ~$1 |
+| Cloud Storage | $0.02 per GB, by attachment volume | <$1 |
 
 Cost guardrails built in:
 
-- **Scale to zero** on both services (`*_min_instances = 0`). Setting either to 1 removes cold
-  starts but adds roughly $5–60/month depending on CPU.
+- **Scale to zero** on both services (`*_min_instances = 0`). `server_min_instances = 1` keeps
+  runs moving and removes cold starts, but adds about $100/month at the default 2 vCPU / 2 GiB
+  (about $53 at 1 vCPU / 2 GiB). `ui_min_instances = 1` adds about $10/month.
 - **Instance caps** (`*_max_instances = 3`). The server is billed for as long as an instance is
   up, so the cap bounds runaway spend. A precondition also refuses configs where
   `server_max_instances × server_db_pool_size` would exhaust `db_max_connections`.
@@ -97,6 +108,20 @@ else. Commonly used settings:
 stored in Terraform state. The OAuth client secret and admin password you supply are written to
 Secret Manager as **write-only** values and are never kept in state. After changing either of
 them, bump `secrets_version` to push the new value.
+
+### Provider key master key
+
+Terraform creates a **Cloud KMS** key that rotates every 90 days. The key cannot leave KMS, and
+only the server service account can encrypt and decrypt with it. Cloud Audit Logs record each
+use, so Terraform turns on data access logs for Cloud KMS in this project. If you already manage
+that setting for the project elsewhere, the two configurations conflict.
+
+The server decrypts a provider key on first use and caches it for 5 minutes. If Cloud KMS is
+down, requests that need an uncached provider key fail until it returns.
+
+Google Cloud cannot delete a key ring or a key name. After `terraform destroy`, use a new
+`project_name` in that project, or import the existing ring and key. See
+[Master Key Operations](../../docs/mpac_guide.md#1110-master-key-operations).
 
 Treat state as sensitive either way. For anything long-lived, move it to the private,
 versioned GCS bucket this config can create:

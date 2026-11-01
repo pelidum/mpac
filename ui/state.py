@@ -5,7 +5,7 @@ from typing import Any
 
 from absl import logging
 
-from server import service_pb2
+from proto import service_pb2
 
 _REAPER_INTERVAL = 300  # 5 minutes
 ACTIVE_RUN_STREAMS_LOCK = asyncio.Lock()

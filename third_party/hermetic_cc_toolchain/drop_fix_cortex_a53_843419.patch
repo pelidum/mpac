@@ -1,0 +1,13 @@
+--- a/toolchain/zig-wrapper.zig
++++ b/toolchain/zig-wrapper.zig
+@@ -270,7 +270,9 @@
+     // This is needed because zig c++ doesn't handle the -u flag correctly
+     // (it tries to open the symbol name as a file instead of passing it to the linker)
+     while (argv_it.next()) |arg| {
+-        if (mem.eql(u8, arg, "-u")) {
++        if (mem.eql(u8, arg, "-Wl,--fix-cortex-a53-843419")) {
++            continue;
++        } else if (mem.eql(u8, arg, "-u")) {
+             // Get the next argument (the symbol name)
+             if (argv_it.next()) |symbol| {
+                 const transformed = try std.fmt.allocPrint(arena, "-Wl,-u,{s}", .{symbol});

@@ -7,6 +7,12 @@ mock_provider "google" {
       number = "123456789012"
     }
   }
+
+  mock_resource "google_kms_crypto_key" {
+    defaults = {
+      id = "projects/test-project/locations/us-central1/keyRings/mpac/cryptoKeys/mpac-master"
+    }
+  }
 }
 
 mock_provider "random" {}
@@ -57,6 +63,46 @@ run "defaults" {
   assert {
     condition     = google_cloud_run_v2_service.server.template[0].scaling[0].min_instance_count == 0 && google_cloud_run_v2_service.ui.template[0].scaling[0].min_instance_count == 0
     error_message = "Both services should scale to zero by default."
+  }
+
+  assert {
+    condition     = google_storage_bucket.blobs.uniform_bucket_level_access && google_storage_bucket.blobs.public_access_prevention == "enforced"
+    error_message = "The attachment bucket must not be public."
+  }
+
+  assert {
+    condition     = contains([for e in google_cloud_run_v2_service.server.template[0].containers[0].env : e.value if e.name == "MPAC_BLOB_URL"], "gs://test-project-mpac-blobs")
+    error_message = "The server must use the attachment bucket."
+  }
+
+  assert {
+    condition     = contains([for e in google_cloud_run_v2_service.server.template[0].containers[0].env : e.name], "MPAC_SECRET_KEY_URL")
+    error_message = "The server must use the KMS master key."
+  }
+
+  assert {
+    condition     = !contains([for e in google_cloud_run_v2_service.ui.template[0].containers[0].env : e.name], "MPAC_SECRET_KEY_URL")
+    error_message = "The UI must not use the master key."
+  }
+
+  assert {
+    condition     = contains([for e in google_cloud_run_v2_service.ui.template[0].containers[0].env : e.value if e.name == "MPAC_MAX_ATTACHMENT_SIZE"], "32000000")
+    error_message = "UI uploads must stay under the Cloud Run HTTP/1 request limit."
+  }
+
+  assert {
+    condition     = google_kms_crypto_key.master.purpose == "ENCRYPT_DECRYPT" && google_kms_crypto_key.master.rotation_period == "7776000s"
+    error_message = "The master key must encrypt and rotate automatically."
+  }
+
+  assert {
+    condition     = google_kms_crypto_key_iam_member.server_master_key.role == "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+    error_message = "The server must only encrypt and decrypt with the master key."
+  }
+
+  assert {
+    condition     = length(google_project_iam_audit_config.kms.audit_log_config) == 2
+    error_message = "Cloud KMS data access must be logged."
   }
 
   assert {

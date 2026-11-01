@@ -20,6 +20,7 @@ Internet ─► ALB (public subnets, TLS 1.2/1.3)       same ports as the on-pre
                ui ──localhost:50051, plaintext──► server
                 │  database security group: only the task may connect; TLS required
              RDS PostgreSQL 16, db.t4g.micro, isolated subnets, not publicly accessible
+             S3: attachments, private bucket, signed URLs (task role)
 ```
 
 - The ALB does the job Envoy does on-prem (TLS termination, HTTP→HTTPS redirect, UI and gRPC
@@ -28,6 +29,8 @@ Internet ─► ALB (public subnets, TLS 1.2/1.3)       same ports as the on-pre
   network on-prem.
 - Secrets live in **SSM Parameter Store** (SecureString) and are injected by ECS at startup.
   **No secret is ever written to Terraform state**; see [Secrets](#secrets).
+- Attachments live in a private **S3** bucket, up to `max_attachment_size_mb` (2 GiB) per file.
+  Only the task role can reach it, and browsers download through signed URLs.
 - Inference backends are registered after deploying through the MPAC API/UI (`CreateBackend`).
   They are not part of the infrastructure.
 
@@ -40,8 +43,8 @@ Internet ─► ALB (public subnets, TLS 1.2/1.3)       same ports as the on-pre
   account is simplest.
 
 Images come from the public GitHub Container Registry (`ghcr.io/pelidum/mpac_server`,
-`ghcr.io/pelidum/mpac_ui`), which Fargate pulls directly, so you don't need ECR. They are
-built for x86_64 only, so the task runs on x86 Fargate.
+`ghcr.io/pelidum/mpac_ui`), which Fargate pulls directly, so you don't need ECR. The UI image
+is built for x86_64 only, so the task runs on x86 Fargate.
 
 ## Quick start
 
@@ -69,8 +72,10 @@ us-east-1 on-demand prices, default settings:
 | Public IPv4 addresses | 2 for the ALB, 1 for the task | $11 |
 | Fargate task | 0.5 vCPU / 2 GB, x86, always on | $21 |
 | RDS | db.t4g.micro single-AZ + 20 GB gp3 | $14 |
-| CloudWatch Logs, SSM, KMS | 30-day log retention | ~$1 |
-| **Total** | | **~$65** |
+| CloudWatch Logs, SSM | 30-day log retention | ~$1 |
+| KMS key | $1, rising to $3 after two yearly rotations | $1–3 |
+| S3 | $0.023 per GB, by attachment volume | <$1 |
+| **Total** | | **~$66** |
 
 Choices that keep it there:
 
@@ -144,6 +149,22 @@ secrets_version = 2
 your own), updates RDS and SSM together, and rolls the ECS service so the containers pick up
 the new values. Rotating the JWT secret signs everyone out. Changing a supplied value (e.g.
 `google_oauth_client_secret`) also needs a `secrets_version` bump to take effect.
+
+**Provider key master key.** Terraform creates an **AWS KMS** key with automatic yearly rotation.
+The key cannot leave KMS, and only the task role can encrypt and decrypt with it. CloudTrail
+records each use.
+
+**The server and UI share one trust boundary.** ECS gives a task one role, and both containers run
+in the same task. A compromised UI container can therefore use the role to read or delete any
+attachment and to call KMS. It already holds the JWT secret, so it can also act as any user through
+the API. It cannot read the encrypted provider keys directly, because only the server container has
+the database password. Google Cloud does not have this limit, because each service has its own
+service account. Separating them here needs a second ECS service and service discovery, and adds
+about $13 a month.
+
+ The server decrypts a provider key on first use and caches it for 5 minutes. If
+KMS is down, requests that need an uncached provider key fail until it returns. See
+[Master Key Operations](../../docs/mpac_guide.md#1110-master-key-operations).
 
 The one exception: in self-signed mode the TLS private key is kept in state, because ACM
 import needs it. Treat state as sensitive and keep it in the private bucket below.

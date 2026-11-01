@@ -51,7 +51,7 @@ resource "aws_lb_target_group" "server" {
   port                 = 50051
   deregistration_delay = 30
 
-  # The server registers the standard gRPC health service (server/server.py).
+  # The server registers the standard gRPC health service (server/mpac_api/src/server.rs).
   health_check {
     path                = "/grpc.health.v1.Health/Check"
     matcher             = "0"

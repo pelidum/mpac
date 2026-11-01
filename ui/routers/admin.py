@@ -1,12 +1,13 @@
 import traceback
 
+import grpc
 from absl import logging
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from google.protobuf.json_format import MessageToDict, ParseDict
 from werkzeug.security import generate_password_hash
 
-from server import service_pb2
+from proto import service_pb2
 from ui.dependencies import (
     UserContext,
     get_jwt_token,
@@ -159,6 +160,15 @@ async def admin_update_backend(
             None, lambda: stub.UpdateBackend(backend_pb, metadata=metadata)
         )
         return JSONResponse({"success": response.code == 1})
+    except grpc.RpcError as e:
+        if e.code() == grpc.StatusCode.INVALID_ARGUMENT:
+            return JSONResponse(
+                {"success": False, "error": e.details()}, status_code=400
+            )
+        logging.error(f"Error updating backend: {e}\n{traceback.format_exc()}")
+        return JSONResponse(
+            {"success": False, "error": "An internal error occurred."}, status_code=500
+        )
     except Exception as e:
         logging.error(f"Error updating backend: {e}\n{traceback.format_exc()}")
         return JSONResponse(

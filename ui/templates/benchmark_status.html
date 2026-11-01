@@ -525,31 +525,23 @@
 
         if (isFinished) return;
 
-        // Determine the true active round: if no matches yet, it's round 1.
-        // If all slots in currentRound have winners, advance to next round.
-        let activeRound = Number(currentRound) || 1;
-        let completedThisRound = (matchHistory || []).filter(m => Number(m.round) === activeRound).length;
-        const slotsInRound = $tournament.querySelectorAll(`.matchup[data-round-id='${activeRound}']`).length;
-        if (completedThisRound >= slotsInRound && slotsInRound > 0) {
-            activeRound++;
-            completedThisRound = (matchHistory || []).filter(m => Number(m.round) === activeRound).length;
-        }
-
-        const activeIdx = completedThisRound;
-        const activeEl = $tournament.querySelector(
-            `.matchup[data-round-id='${activeRound}'][data-matchup-id='${activeIdx}']`
+        const openMatchups = round => Array.from(
+            $tournament.querySelectorAll(`.matchup[data-round-id='${round}']:not([data-winner])`)
         );
-        if (!activeEl || activeEl.dataset.winner) return;
+        const activeRound = Number(currentRound) || 1;
+        let pending = openMatchups(activeRound);
+        if (!pending.length) pending = openMatchups(activeRound + 1);
 
-        activeEl.classList.add('active');
-        if (!activeEl.querySelector('.running-indicator')) {
+        pending.forEach(activeEl => {
+            activeEl.classList.add('active');
+            if (activeEl.querySelector('.running-indicator')) return;
             const ind = document.createElement('div');
             ind.className = 'running-indicator';
             ind.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
                 <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
             </svg> Evaluating…`;
             activeEl.insertBefore(ind, activeEl.firstChild);
-        }
+        });
     }
 
     // ── Champion reveal ───────────────────────────────────
@@ -662,14 +654,15 @@
                     initBracket(modelCount);
                 }
 
+                updateBracket(matchHistory);
+
                 // Update status line
                 const currentRound = Number(data.current_round) || 0;
                 const totalRounds = Number(data.total_rounds) || 0;
                 if (totalRounds > 0 && currentRound > 0) {
                     // Show next round if current is fully complete
-                    const matchesInRound = (data.match_history || []).filter(m => Number(m.round) === currentRound).length;
-                    const slotsInRound = $tournament.querySelectorAll(`.matchup[data-round-id='${currentRound}']`).length;
-                    const displayRound = (matchesInRound >= slotsInRound && slotsInRound > 0)
+                    const openInRound = $tournament.querySelectorAll(`.matchup[data-round-id='${currentRound}']:not([data-winner])`).length;
+                    const displayRound = openInRound === 0
                         ? Math.min(currentRound + 1, totalRounds) : currentRound;
                     document.getElementById('round-status').textContent =
                         `${roundLabel(displayRound)} · Round ${displayRound} of ${totalRounds}`;
@@ -678,7 +671,6 @@
                         `${modelCount} models · ${roundLabel(1)}`;
                 }
 
-                updateBracket(matchHistory);
                 markActiveMatchup(data.current_round, matchHistory, isFinished);
 
                 if (isFinished) {

@@ -1,0 +1,11 @@
+[package]
+name = "mpac_testing"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+mpac_db = { path = "../mpac_db" }
+sqlx.workspace = true
+uuid.workspace = true

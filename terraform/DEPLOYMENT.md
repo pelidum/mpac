@@ -9,13 +9,16 @@ database.
 
 | | [On-prem](on_prem/) | [Google Cloud](gcloud/) | [AWS](aws/) |
 |---|---|---|---|
-| **Est. monthly cost** | Your hardware only | **~$13–15** | **~$65** (Spot: ~$50) |
+| **Est. monthly cost** | Your hardware only | **~$13–15** | **~$66** (Spot: ~$51) |
 | **Main cost drivers** | — | Cloud SQL instance (~$7.50) | Load balancer + public IPv4 (~$29), always-on task (~$21), RDS (~$14) |
 | **Scale to zero** | n/a | Yes, both services | No, 1 task always on |
 | **Cold starts** | None | A few seconds after idle | None |
 | **Compute** | Docker on one host | Cloud Run: server 2 vCPU / 2 GiB, UI 1 vCPU / 512 MiB, up to 3 instances each | Fargate: one 0.5 vCPU / 2 GB x86 task running both containers |
 | **Database** | Postgres container, data on a host path | Cloud SQL db-f1-micro, zonal | RDS db.t4g.micro, single-AZ |
-| **Backups** | Daily `pg_dump`, 30 days, on the host | Daily, 7 kept (no point-in-time recovery) | Daily + point-in-time recovery, 7 days; final snapshot on destroy |
+| **Attachment storage** | SeaweedFS (S3 API), data on a host path, 2 GiB per file | Cloud Storage, 2 GiB per file with gRPC clients, 32 MB through the browser | S3, 2 GiB per file |
+| **Provider key encryption** | Master key file (generated) or Vault/OpenBao | Cloud KMS, rotated every 90 days | AWS KMS, rotated yearly |
+| **Workers** | Embedded by default, or `worker_replicas` | Embedded | Embedded |
+| **Backups** | Coordinated `pg_dump` + immutable blob copy, 30-day dump retention, on the host | Daily, 7 kept (no point-in-time recovery) | Daily + point-in-time recovery, 7 days; final snapshot on destroy |
 | **High availability** | None | Managed restarts; zonal DB | Managed restarts; single-AZ DB |
 | **TLS certificate** | Self-signed (generated) or bring your own | Google-managed on `*.run.app`, trusted, nothing to do | Self-signed on the ALB hostname (default), ACM + Route 53 (automatic), or your own ACM cert |
 | **Custom domain** | Bring your own cert | Not wired up (use Cloud Run domain mapping manually) | Yes (`domain_name`) |
@@ -34,10 +37,70 @@ database.
 | **Logs** | `docker logs` | Cloud Logging | CloudWatch Logs (30 days) |
 | **Alerting** | — | Auth/error spikes, UI uptime, optional budget (`alert_email`) | Auth/error spikes, unhealthy targets, 5xx, DB storage, budget (`alert_email`) |
 | **Remote state** | Local only | Optional GCS bucket (`create_state_bucket`) | Optional S3 bucket with native locking (`create_state_bucket`) |
-| **Offline tests** | `terraform validate` | `terraform test` (mocked) | `terraform test` (mocked) |
+| **Offline tests** | `terraform test` (mocked) | `terraform test` (mocked) | `terraform test` (mocked) |
 
 Costs are list prices for light use (us-central1 / us-east-1), excluding model inference, which
-is billed by your model providers. The cost section of each README has the breakdown.
+is billed by your model providers. See [Cost estimates](#cost-estimates) for each configuration.
+
+On-prem deploys SeaweedFS attachments, optional separate workers and connections to existing
+inference services. See its [local development quickstart](on_prem/README.md) to build the
+current images and run the end-to-end smoke check. The cloud targets run the same server image
+with an embedded worker, object storage and a KMS master key. **These cloud configurations
+pass offline tests only. They have not been deployed with the Rust server.**
+
+## Cost estimates
+
+**Estimated on 2026-11-01.** Prices change, so check them before you budget. These are default
+sizes at 730 hours a month, in us-central1 and us-east-1. They exclude model inference, egress and
+attachment storage, and Google Cloud's daily figures exclude its free tier.
+
+| Configuration | Per day | Per month |
+|---|---|---|
+| Google Cloud, default, idle | ~$0.35 | ~$11 |
+| Google Cloud, default, server up 8 hours that day | ~$1.50 | n/a |
+| Google Cloud, `server_min_instances = 1`, `server_cpu = "1"` | ~$2.25 | ~$63 |
+| Google Cloud, `server_min_instances = 1`, default 2 vCPU / 2 GiB | ~$3.80 | ~$110 |
+| Google Cloud, server and UI `min_instances = 1`, default sizes | ~$4.15 | ~$120 |
+| AWS, default, one task always on | ~$2.20 | ~$66 |
+| AWS, `use_spot = true` | ~$1.70 | ~$51 |
+
+AWS has no scale-to-zero or `min_instances` setting. Its default already matches
+`min_instances = 1`.
+
+**Google Cloud parts:**
+
+| Part | Rate | Per day | Per month |
+|---|---|---|---|
+| Cloud SQL db-f1-micro (always on) | $0.0105/hour | $0.25 | $7.67 |
+| Cloud SQL storage and backups (always on) | 10 GB SSD, 7 backups | $0.07 | ~$2.20 |
+| Secret Manager, Cloud KMS, logs (always on) | | $0.02 | ~$0.60 |
+| Server at 2 vCPU / 2 GiB, while up | $0.000018/vCPU-s, $0.000002/GiB-s | $3.46 if up all day | $105, less about $5 free tier |
+| Server at 1 vCPU / 2 GiB, while up | Same | $1.90 if up all day | $58, less about $5 free tier |
+| UI, idle at `ui_min_instances = 1` | $0.0000025/vCPU-s, $0.0000025/GiB-s | $0.32 | $9.86 |
+
+The server costs $0.144 an hour at the default size, whether busy or idle. The free tier covers
+about the first 33 hours of that a month. Request-billed UI time is a small extra.
+
+**AWS parts:**
+
+| Part | Rate | Per day | Per month |
+|---|---|---|---|
+| Fargate, 0.5 vCPU / 2 GB | $0.04048/vCPU-hour, $0.004445/GB-hour | $0.70 | $21.26 |
+| Application Load Balancer | $0.0225/hour, $0.008/LCU-hour | ~$0.59 | ~$18 |
+| 3 public IPv4 addresses | $0.005/hour each | $0.36 | $10.95 |
+| RDS db.t4g.micro and 20 GB gp3 | $0.016/hour, $0.115/GB-month | $0.46 | $13.98 |
+| KMS key | $1/month, rising to $3 after two yearly rotations | $0.03–0.10 | $1–3 |
+| Logs, SSM | | $0.05 | ~$1.50 |
+
+**How firm these prices are:**
+
+- **AWS load balancer, RDS and KMS:** from AWS price files and pricing pages.
+- **AWS Fargate and IPv4:** from third-party guides that agree with each other.
+- **Cloud Run:** from search results that quote Google's pricing page, not from the page itself.
+- **Cloud SQL and Cloud KMS:** the least certain, from older and third-party figures. One source
+  puts SSD storage at $0.22/GB rather than $0.17/GB. Check Google's calculator.
+
+No deployment has measured these figures.
 
 ## Choosing
 
@@ -161,6 +224,9 @@ Rotating the JWT secret signs every user out.
   login session (password or Google OAuth → JWT) or an API key. The infrastructure doesn't add
   a second auth layer. To limit who can even reach MPAC, restrict the network: firewall rules
   on-prem, `allowed_ingress_cidrs` on AWS, or Cloud Armor / IAP (not included) on Google Cloud.
+- **AWS runs the server and UI in one task, with one role.** A compromised UI container can use
+  the bucket and KMS permissions. See [Secrets](aws/README.md#secrets). Google Cloud gives each
+  service its own service account.
 - **Terraform state is sensitive.** On-prem state holds every secret. Google Cloud state holds
   the generated DB password and JWT secret. AWS state holds none, except the self-signed TLS
   key. Keep state in the provided private, versioned buckets and limit who can read them.

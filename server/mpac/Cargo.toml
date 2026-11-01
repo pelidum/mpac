@@ -1,0 +1,18 @@
+[package]
+name = "mpac"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+mpac_api = { path = "../mpac_api" }
+mpac_blob = { path = "../mpac_blob" }
+mpac_db = { path = "../mpac_db" }
+mpac_secrets = { path = "../mpac_secrets" }
+mpac_worker = { path = "../mpac_worker" }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
